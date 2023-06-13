@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:dart_pdf/pdf.dart' as flutter_pdf;
+import 'package:dart_pdf/pdf.dart' as dart_pdf;
 import 'package:intl/intl.dart';
 
 void main(List<String> args) async {
@@ -10,20 +10,20 @@ void main(List<String> args) async {
 Future<void> generateInvoice() async {
   //Create a PDF document.
 
-  final flutter_pdf.PdfDocument document = flutter_pdf.PdfDocument();
+  final dart_pdf.PdfDocument document = dart_pdf.PdfDocument();
   //Add page to the PDF
-  final flutter_pdf.PdfPage page = document.pages.add();
+  final dart_pdf.PdfPage page = document.pages.add();
 
   //Get page client size
   final  pageSize = page.getClientSize();
   //Draw rectangle
   page.graphics.drawRectangle(
-      bounds: flutter_pdf.Rect.fromLTWH(0, 0, pageSize.width, pageSize.height),
-      pen: flutter_pdf.PdfPen(flutter_pdf.PdfColor(142, 170, 219, 255)));
+      bounds: dart_pdf.Rect.fromLTWH(0, 0, pageSize.width, pageSize.height),
+      pen: dart_pdf .PdfPen(dart_pdf.PdfColor(142, 170, 219, 255)));
   //Generate PDF grid.
-  final flutter_pdf.PdfGrid grid = getGrid();
+  final dart_pdf .PdfGrid grid = getGrid();
   //Draw the header section by creating text element
-  final flutter_pdf.PdfLayoutResult result = drawHeader(page, pageSize, grid);
+  final dart_pdf .PdfLayoutResult result = drawHeader(page, pageSize, grid);
 
   //Draw grid
   drawGrid(page, grid, result);
@@ -34,7 +34,7 @@ Future<void> generateInvoice() async {
   //Dispose the document.
   document.dispose();
   //Save and launch the file.
-  await saveAndLaunchFile(bytes, 'Invoice.pdf');
+  await saveAndLaunchFile(bytes, 'example.pdf');
 }
 
 ///To save the pdf file in the device
@@ -68,76 +68,76 @@ Future<void> saveAndLaunchFile(List<int> bytes, String fileName) async {
 
 //Draws the invoice header
 
-flutter_pdf.PdfLayoutResult drawHeader(flutter_pdf.PdfPage page,
-    flutter_pdf.Size pageSize, flutter_pdf.PdfGrid grid) {
+dart_pdf .PdfLayoutResult drawHeader(dart_pdf .PdfPage page,
+    dart_pdf .Size pageSize, dart_pdf .PdfGrid grid) {
   //Draw rectangle
   page.graphics.drawRectangle(
-      brush: flutter_pdf.PdfSolidBrush(flutter_pdf.PdfColor(91, 126, 215, 255)),
-      bounds: flutter_pdf.Rect.fromLTWH(0, 0, pageSize.width - 115, 90));
+      brush: dart_pdf .PdfSolidBrush(dart_pdf .PdfColor(91, 126, 215, 255)),
+      bounds: dart_pdf .Rect.fromLTWH(0, 0, pageSize.width - 115, 90));
   //Draw string
   page.graphics.drawString('INVOICE',
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 30),
-      brush: flutter_pdf.PdfBrushes.white,
-      bounds: flutter_pdf.Rect.fromLTWH(25, 0, pageSize.width - 115, 90),
-      format: flutter_pdf.PdfStringFormat(
-          lineAlignment: flutter_pdf.PdfVerticalAlignment.middle));
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 30),
+      brush: dart_pdf .PdfBrushes.white,
+      bounds: dart_pdf .Rect.fromLTWH(25, 0, pageSize.width - 115, 90),
+      format: dart_pdf .PdfStringFormat(
+          lineAlignment: dart_pdf .PdfVerticalAlignment.middle));
 
   page.graphics.drawRectangle(
-      bounds: flutter_pdf.Rect.fromLTWH(400, 0, pageSize.width - 400, 90),
-      brush: flutter_pdf.PdfSolidBrush(flutter_pdf.PdfColor(65, 104, 205)));
+      bounds: dart_pdf .Rect.fromLTWH(400, 0, pageSize.width - 400, 90),
+      brush: dart_pdf .PdfSolidBrush(dart_pdf .PdfColor(65, 104, 205)));
 
   page.graphics.drawString(r'$' + getTotalAmount(grid).toString(),
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 18),
-      bounds: flutter_pdf.Rect.fromLTWH(400, 0, pageSize.width - 400, 100),
-      brush: flutter_pdf.PdfBrushes.white,
-      format: flutter_pdf.PdfStringFormat(
-          alignment: flutter_pdf.PdfTextAlignment.center,
-          lineAlignment: flutter_pdf.PdfVerticalAlignment.middle));
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 18),
+      bounds: dart_pdf .Rect.fromLTWH(400, 0, pageSize.width - 400, 100),
+      brush: dart_pdf .PdfBrushes.white,
+      format: dart_pdf .PdfStringFormat(
+          alignment: dart_pdf .PdfTextAlignment.center,
+          lineAlignment: dart_pdf .PdfVerticalAlignment.middle));
 
-  final flutter_pdf.PdfFont contentFont =
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 9);
+  final dart_pdf .PdfFont contentFont =
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 9);
   //Draw string
   page.graphics.drawString('Amount', contentFont,
-      brush: flutter_pdf.PdfBrushes.white,
-      bounds: flutter_pdf.Rect.fromLTWH(400, 0, pageSize.width - 400, 33),
-      format: flutter_pdf.PdfStringFormat(
-          alignment: flutter_pdf.PdfTextAlignment.center,
-          lineAlignment: flutter_pdf.PdfVerticalAlignment.bottom));
+      brush: dart_pdf .PdfBrushes.white,
+      bounds: dart_pdf .Rect.fromLTWH(400, 0, pageSize.width - 400, 33),
+      format: dart_pdf .PdfStringFormat(
+          alignment: dart_pdf .PdfTextAlignment.center,
+          lineAlignment: dart_pdf .PdfVerticalAlignment.bottom));
 
   //Create data foramt and convert it to text.
   final DateFormat format = DateFormat.yMMMMd('en_US');
   final String invoiceNumber =
       'Invoice Number: 2058557939\r\n\r\nDate: ${format.format(DateTime.now())}';
-  final flutter_pdf.Size contentSize = contentFont.measureString(invoiceNumber);
+  final dart_pdf .Size contentSize = contentFont.measureString(invoiceNumber);
   // ignore: leading_newlines_in_multiline_strings
   const String address = '''Bill To: \r\n\r\nAbraham Swearegin, 
         \r\n\r\nUnited States, California, San Mateo, 
         \r\n\r\n9920 BridgePointe Parkway, \r\n\r\n9365550136''';
 
-  flutter_pdf.PdfTextElement(text: invoiceNumber, font: contentFont).draw(
+  dart_pdf .PdfTextElement(text: invoiceNumber, font: contentFont).draw(
       page: page,
-      bounds: flutter_pdf.Rect.fromLTWH(
+      bounds: dart_pdf .Rect.fromLTWH(
           pageSize.width - (contentSize.width + 30),
           120,
           contentSize.width + 30,
           pageSize.height - 120));
 
-  return flutter_pdf.PdfTextElement(text: address, font: contentFont).draw(
+  return dart_pdf .PdfTextElement(text: address, font: contentFont).draw(
       page: page,
-      bounds: flutter_pdf.Rect.fromLTWH(30, 120,
+      bounds: dart_pdf .Rect.fromLTWH(30, 120,
           pageSize.width - (contentSize.width + 30), pageSize.height - 120))!;
 }
 
 //Draws the grid
 
-void drawGrid(flutter_pdf.PdfPage page, flutter_pdf.PdfGrid grid,
-    flutter_pdf.PdfLayoutResult result) {
-  flutter_pdf.Rect? totalPriceCellBounds;
-  flutter_pdf.Rect? quantityCellBounds;
+void drawGrid(dart_pdf .PdfPage page, dart_pdf .PdfGrid grid,
+    dart_pdf .PdfLayoutResult result) {
+  dart_pdf .Rect? totalPriceCellBounds;
+  dart_pdf .Rect? quantityCellBounds;
   //Invoke the beginCellLayout event.
   grid.beginCellLayout =
-      (Object sender, flutter_pdf.PdfGridBeginCellLayoutArgs args) {
-    final flutter_pdf.PdfGrid grid = sender as flutter_pdf.PdfGrid;
+      (Object sender, dart_pdf .PdfGridBeginCellLayoutArgs args) {
+    final dart_pdf .PdfGrid grid = sender as dart_pdf .PdfGrid;
 
     if (args.cellIndex == grid.columns.count - 1) {
       totalPriceCellBounds = args.bounds;
@@ -148,15 +148,15 @@ void drawGrid(flutter_pdf.PdfPage page, flutter_pdf.PdfGrid grid,
   //Draw the PDF grid and get the result.
   result = grid.draw(
       page: page,
-      bounds: flutter_pdf.Rect.fromLTWH(0, result.bounds.bottom + 40, 0, 0))!;
+      bounds: dart_pdf .Rect.fromLTWH(0, result.bounds.bottom + 40, 0, 0))!;
 
   //Draw grand total.
 
   page.graphics.drawString(
       'Grand Total',
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 9,
-          style: flutter_pdf.PdfFontStyle.bold),
-      bounds: flutter_pdf.Rect.fromLTWH(
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 9,
+          style: dart_pdf .PdfFontStyle.bold),
+      bounds: dart_pdf .Rect.fromLTWH(
           quantityCellBounds!.left,
           result.bounds.bottom + 10,
           quantityCellBounds!.width,
@@ -164,9 +164,9 @@ void drawGrid(flutter_pdf.PdfPage page, flutter_pdf.PdfGrid grid,
 
   page.graphics.drawString(
       getTotalAmount(grid).toString(),
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 9,
-          style: flutter_pdf.PdfFontStyle.bold),
-      bounds: flutter_pdf.Rect.fromLTWH(
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 9,
+          style: dart_pdf .PdfFontStyle.bold),
+      bounds: dart_pdf .Rect.fromLTWH(
           totalPriceCellBounds!.left,
           result.bounds.bottom + 10,
           totalPriceCellBounds!.width,
@@ -175,15 +175,15 @@ void drawGrid(flutter_pdf.PdfPage page, flutter_pdf.PdfGrid grid,
 
 //Draw the invoice footer data.
 
-void drawFooter(flutter_pdf.PdfPage page, flutter_pdf.Size pageSize) {
-  final flutter_pdf.PdfPen linePen = flutter_pdf.PdfPen(
-      flutter_pdf.PdfColor(142, 170, 219, 255),
-      dashStyle: flutter_pdf.PdfDashStyle.custom);
+void drawFooter(dart_pdf .PdfPage page, dart_pdf .Size pageSize) {
+  final dart_pdf .PdfPen linePen = dart_pdf .PdfPen(
+      dart_pdf .PdfColor(142, 170, 219, 255),
+      dashStyle: dart_pdf .PdfDashStyle.custom);
 
   linePen.dashPattern = <double>[3, 3];
   //Draw line
-  page.graphics.drawLine(linePen, flutter_pdf.Offset(0, pageSize.height - 100),
-      flutter_pdf.Offset(pageSize.width, pageSize.height - 100));
+  page.graphics.drawLine(linePen, dart_pdf .Offset(0, pageSize.height - 100),
+      dart_pdf .Offset(pageSize.width, pageSize.height - 100));
 
   const String footerContent =
       // ignore: leading_newlines_in_multiline_strings
@@ -193,29 +193,29 @@ void drawFooter(flutter_pdf.PdfPage page, flutter_pdf.Size pageSize) {
   //Added 30 as a margin for the layout
 
   page.graphics.drawString(footerContent,
-      flutter_pdf.PdfStandardFont(flutter_pdf.PdfFontFamily.helvetica, 9),
-      format: flutter_pdf.PdfStringFormat(
-          alignment: flutter_pdf.PdfTextAlignment.right),
-      bounds: flutter_pdf.Rect.fromLTWH(
+      dart_pdf .PdfStandardFont(dart_pdf .PdfFontFamily.helvetica, 9),
+      format: dart_pdf .PdfStringFormat(
+          alignment: dart_pdf .PdfTextAlignment.right),
+      bounds: dart_pdf .Rect.fromLTWH(
           pageSize.width - 30, pageSize.height - 70, 0, 0));
 }
 
 //Create PDF grid and return
 
-flutter_pdf.PdfGrid getGrid() {
+dart_pdf .PdfGrid getGrid() {
   //Create a PDF grid
-  final flutter_pdf.PdfGrid grid = flutter_pdf.PdfGrid();
+  final dart_pdf .PdfGrid grid = dart_pdf .PdfGrid();
   //Secify the columns count to the grid.
   grid.columns.add(count: 5);
   //Create the header row of the grid.
-  final flutter_pdf.PdfGridRow headerRow = grid.headers.add(1)[0];
+  final dart_pdf .PdfGridRow headerRow = grid.headers.add(1)[0];
   //Set style
   headerRow.style.backgroundBrush =
-      flutter_pdf.PdfSolidBrush(flutter_pdf.PdfColor(68, 114, 196));
-  headerRow.style.textBrush = flutter_pdf.PdfBrushes.white;
+      dart_pdf .PdfSolidBrush(dart_pdf .PdfColor(68, 114, 196));
+  headerRow.style.textBrush = dart_pdf .PdfBrushes.white;
   headerRow.cells[0].value = 'Product Id';
   headerRow.cells[0].stringFormat.alignment =
-      flutter_pdf.PdfTextAlignment.center;
+      dart_pdf .PdfTextAlignment.center;
 
   headerRow.cells[1].value = 'Product Name';
   headerRow.cells[2].value = 'Price';
@@ -230,23 +230,23 @@ flutter_pdf.PdfGrid getGrid() {
   addProducts('HL-U509', 'Sports-100 Helmet,Black', 34.99, 1, 34.99, grid);
   //Apply the table built-in style
 
-  grid.applyBuiltInStyle(flutter_pdf.PdfGridBuiltInStyle.listTable4Accent5);
+  grid.applyBuiltInStyle(dart_pdf .PdfGridBuiltInStyle.listTable4Accent5);
 
   //Set gird columns width
   grid.columns[1].width = 200;
   for (int i = 0; i < headerRow.cells.count; i++) {
     headerRow.cells[i].style.cellPadding =
-        flutter_pdf.PdfPaddings(bottom: 5, left: 5, right: 5, top: 5);
+        dart_pdf .PdfPaddings(bottom: 5, left: 5, right: 5, top: 5);
   }
   for (int i = 0; i < grid.rows.count; i++) {
-    final flutter_pdf.PdfGridRow row = grid.rows[i];
+    final dart_pdf .PdfGridRow row = grid.rows[i];
     for (int j = 0; j < row.cells.count; j++) {
-      final flutter_pdf.PdfGridCell cell = row.cells[j];
+      final dart_pdf .PdfGridCell cell = row.cells[j];
       if (j == 0) {
-        cell.stringFormat.alignment = flutter_pdf.PdfTextAlignment.center;
+        cell.stringFormat.alignment = dart_pdf .PdfTextAlignment.center;
       }
       cell.style.cellPadding =
-          flutter_pdf.PdfPaddings(bottom: 5, left: 5, right: 5, top: 5);
+          dart_pdf .PdfPaddings(bottom: 5, left: 5, right: 5, top: 5);
     }
   }
   return grid;
@@ -254,8 +254,8 @@ flutter_pdf.PdfGrid getGrid() {
 
 //Create and row for the grid.
 void addProducts(String productId, String productName, double price,
-    int quantity, double total, flutter_pdf.PdfGrid grid) {
-  final flutter_pdf.PdfGridRow row = grid.rows.add();
+    int quantity, double total, dart_pdf .PdfGrid grid) {
+  final dart_pdf .PdfGridRow row = grid.rows.add();
 
   row.cells[0].value = productId;
   row.cells[1].value = productName;
@@ -266,7 +266,7 @@ void addProducts(String productId, String productName, double price,
 
 //Get the total amount.
 
-double getTotalAmount(flutter_pdf.PdfGrid grid) {
+double getTotalAmount(dart_pdf .PdfGrid grid) {
   double total = 0;
   for (int i = 0; i < grid.rows.count; i++) {
     final String value =

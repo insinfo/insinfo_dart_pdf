@@ -39,4 +39,18 @@ lib/generated_plugin_registrant.dart
 example/windows/
 .pdb
 
-Invoice.pdf
+example.pdf
+
+riodasostras_rj_gov_br_chained.crt
+riodasostras_rj_gov_br.csr
+riodasostras_rj_gov_br.key
+output.pfx
+riodasostras.rj.gov.br.pfx
+estampa1382141175514466498.png
+
+IsaqueNevesSantAna.pfx
+example_sign.pdf
+onlysign/
+example2/
+example_sign2.pdf
+pubspec.lock
