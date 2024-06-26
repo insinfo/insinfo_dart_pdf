@@ -2,12 +2,14 @@ import 'package:dart_pdf/src/flutter/ui.dart';
 
 import '../../interfaces/pdf_interface.dart';
 import '../actions/pdf_action.dart';
+import '../graphics/pdf_color.dart';
 import '../io/pdf_constants.dart';
 import '../io/pdf_cross_table.dart';
 import '../primitives/pdf_dictionary.dart';
 import '../primitives/pdf_name.dart';
 import 'enum.dart';
 import 'pdf_annotation.dart';
+import 'pdf_annotation_border.dart';
 
 /// Represents the base class for the link annotations.
 abstract class PdfLinkAnnotation extends PdfAnnotation implements IPdfWrapper {
@@ -90,17 +92,16 @@ abstract class PdfLinkAnnotation extends PdfAnnotation implements IPdfWrapper {
 /// [PdfLinkAnnotation] helper
 class PdfLinkAnnotationHelper extends PdfAnnotationHelper {
   /// internal constructor
-  PdfLinkAnnotationHelper(PdfLinkAnnotation linkAnnotation, Rect? bounds)
-      : super(linkAnnotation) {
+  PdfLinkAnnotationHelper(
+      PdfLinkAnnotation super.linkAnnotation, Rect? bounds) {
     initializeAnnotation(bounds: bounds);
     dictionary!.setProperty(PdfName(PdfDictionaryProperties.subtype),
         PdfName(PdfDictionaryProperties.link));
   }
 
   /// internal constructor
-  PdfLinkAnnotationHelper.load(PdfLinkAnnotation linkAnnotation,
-      PdfDictionary dictionary, PdfCrossTable crossTable)
-      : super(linkAnnotation) {
+  PdfLinkAnnotationHelper.load(PdfLinkAnnotation super.linkAnnotation,
+      PdfDictionary dictionary, PdfCrossTable crossTable) {
     initializeExistingAnnotation(dictionary, crossTable);
   }
 }
@@ -131,10 +132,10 @@ class PdfActionLinkAnnotationHelper extends PdfLinkAnnotationHelper {
 
   /// internal constructor
   PdfActionLinkAnnotationHelper.load(
-      PdfActionLinkAnnotation actionLinkAnnotation,
-      PdfDictionary dictionary,
-      PdfCrossTable crossTable)
-      : super.load(actionLinkAnnotation, dictionary, crossTable);
+      PdfActionLinkAnnotation super.actionLinkAnnotation,
+      super.dictionary,
+      super.crossTable)
+      : super.load();
 }
 
 /// Represents the annotation with associated action.
@@ -146,6 +147,24 @@ class PdfActionAnnotation extends PdfActionLinkAnnotation {
     _helper = PdfActionAnnotationHelper(this, bounds, action);
   }
   late PdfActionAnnotationHelper _helper;
+
+  /// Gets annotation's border properties like width, horizontal radius etc.
+  PdfAnnotationBorder get border {
+    return _helper.border;
+  }
+
+  /// Sets annotation's border properties like width, horizontal radius etc.
+  set border(PdfAnnotationBorder value) {
+    _helper.border = value;
+  }
+
+  /// Gets the annotation color.
+  PdfColor get color => _helper.color;
+
+  /// Sets the annotation color.
+  set color(PdfColor value) {
+    _helper.color = value;
+  }
 }
 
 /// [PdfActionAnnotation] helper

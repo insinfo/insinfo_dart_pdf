@@ -1,7 +1,5 @@
 import 'package:dart_pdf/src/flutter/ui.dart';
 
-
-
 import '../../drawing/drawing.dart';
 import '../../graphics/brushes/pdf_brush.dart';
 import '../../graphics/brushes/pdf_solid_brush.dart';

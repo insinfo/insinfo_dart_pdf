@@ -136,6 +136,28 @@ class DerAsciiString extends DerString {
     }
     return true;
   }
+
+  /// internal method
+  static DerAsciiString? getAsciiStringFromObj(dynamic obj) {
+    if (obj == null || obj is DerAsciiString) {
+      return obj;
+    }
+    throw Exception('Invalid entry');
+  }
+
+  /// internal method
+  static DerAsciiString? getAsciiString(Asn1Tag tag, bool isExplicit) {
+    final Asn1? asn1 = tag.getObject();
+    if (asn1 != null) {
+      if (isExplicit || asn1 is DerAsciiString) {
+        return getAsciiStringFromObj(asn1);
+      }
+    }
+    if (asn1 is Asn1Octet) {
+      return DerAsciiString.fromBytes(asn1.getOctets()!);
+    }
+    return null;
+  }
 }
 
 /// internal class
@@ -465,10 +487,6 @@ class DerNull extends Asn1Null {
   }
   //Fields
   /// internal field
-  @override
-  List<int>? bytes;
-
-  /// internal field
   static DerNull value = DerNull();
   //Implementation
   @override
@@ -506,12 +524,17 @@ class DerObjectID extends Asn1 {
     bytes = Asn1.clone(bytes);
   }
 
+  /// internal constructor
+  DerObjectID.fromBranch(DerObjectID id, String branchId) {
+    if (!isValidBranchID(branchId, 0)) {
+      throw ArgumentError.value(id, 'id', 'Invalid ID');
+    }
+    this.id = '${id.id!}.$branchId';
+  }
+
   /// internal field
   String? id;
 
-  /// internal field
-  @override
-  List<int>? bytes;
   // ignore: prefer_final_fields
   static List<DerObjectID?> _objects =
       List<DerObjectID?>.generate(1024, (int i) => null);
@@ -709,15 +732,20 @@ class DerObjectID extends Asn1 {
     _objects[first] = DerObjectID.fromBytes(bytes);
     return _objects[first];
   }
+
+  /// internal method
+  DerObjectID branch(String id) {
+    return DerObjectID.fromBranch(this, id);
+  }
 }
 
 /// internal class
 class DerOctet extends Asn1Octet {
   /// internal constructor
-  DerOctet(List<int> bytes) : super(bytes);
+  DerOctet(List<int> super.bytes);
 
   /// internal constructor
-  DerOctet.fromObject(Asn1Encode asn1) : super.fromObject(asn1);
+  DerOctet.fromObject(super.asn1) : super.fromObject();
   @override
   void encode(DerStream stream) {
     stream.writeEncoded(Asn1Tags.octetString, value);
@@ -919,8 +947,7 @@ class DerStream {
 /// internal class
 class DerTag extends Asn1Tag {
   /// internal constructor
-  DerTag(int? tagNumber, Asn1Encode? asn1, [bool? isExplicit])
-      : super(tagNumber, asn1) {
+  DerTag(super.tagNumber, super.asn1, [bool? isExplicit]) {
     if (isExplicit != null) {
       explicit = isExplicit;
     }
@@ -994,12 +1021,10 @@ class DerUtcTime extends Asn1 {
 /// internal class
 class DerCatalogue extends Asn1 {
   /// internal constructor
-  DerCatalogue(this.bytes);
-  //Fields
+  DerCatalogue([List<int>? bytes]) {
+    this.bytes = bytes;
+  }
 
-  /// internal field
-  @override
-  List<int>? bytes;
   //Implemnetation
   @override
   // ignore: avoid_renaming_method_parameters

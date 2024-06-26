@@ -35,7 +35,7 @@ class PdfCrossTable {
   PdfCrossTable([PdfDocument? document, List<int>? data]) {
     if (document != null) {
       this.document = document;
-      _objNumbers = Queue<PdfReference>();
+      objNumbers = Queue<PdfReference>();
       if (data != null) {
         _data = data;
         _initializeCrossTable();
@@ -53,6 +53,13 @@ class PdfCrossTable {
     _bForceNew = true;
     _isColorSpace = false;
   }
+
+  /// internal constructor
+  PdfCrossTable.fromFdf(List<int> docStream) {
+    _data = docStream;
+    crossTable = CrossTable.fromFdf(docStream, this);
+  }
+
   //Fields
   PdfDocument? _pdfDocument;
   int _count = 0;
@@ -62,8 +69,12 @@ class PdfCrossTable {
   PdfDictionary? _trailer;
   Map<int?, _RegisteredObject>? _objects = <int?, _RegisteredObject>{};
   List<int>? _data;
-  CrossTable? _crossTable;
-  late Queue<PdfReference> _objNumbers;
+
+  /// internal field
+  CrossTable? crossTable;
+
+  /// internal field
+  late Queue<PdfReference> objNumbers;
 
   /// internal field
   PdfDictionary? pdfDocumentCatalog;
@@ -77,6 +88,7 @@ class PdfCrossTable {
   Map<PdfReference, PdfReference>? _mappedReferences;
   List<PdfReference?>? _prevRef;
   late bool _isColorSpace;
+  bool _isOutlineOrDestination = false;
 
   //Properties
   /// internal property
@@ -89,27 +101,27 @@ class PdfCrossTable {
 
   /// internal property
   PdfEncryptor? get encryptor {
-    return _crossTable == null ? null : _crossTable!.encryptor;
+    return crossTable?.encryptor;
   }
 
   set encryptor(PdfEncryptor? value) {
     if (value != null) {
-      _crossTable!.encryptor = value.clone();
+      crossTable!.encryptor = value.clone();
     }
   }
 
   /// internal property
   PdfDictionary? get documentCatalog {
-    if (pdfDocumentCatalog == null && _crossTable != null) {
+    if (pdfDocumentCatalog == null && crossTable != null) {
       pdfDocumentCatalog =
-          dereference(_crossTable!.documentCatalog) as PdfDictionary?;
+          dereference(crossTable!.documentCatalog) as PdfDictionary?;
     }
     return pdfDocumentCatalog;
   }
 
   /// internal property
   PdfDictionary? get trailer {
-    _trailer ??= _crossTable == null ? PdfStream() : _crossTable!.trailer;
+    _trailer ??= crossTable == null ? PdfStream() : crossTable!.trailer;
     return _trailer;
   }
 
@@ -131,8 +143,8 @@ class PdfCrossTable {
     if (_count == 0) {
       IPdfPrimitive? obj;
       PdfNumber? tempCount;
-      if (_crossTable != null) {
-        obj = _crossTable!.trailer![PdfDictionaryProperties.size];
+      if (crossTable != null) {
+        obj = crossTable!.trailer![PdfDictionaryProperties.size];
       }
       if (obj != null) {
         tempCount = dereference(obj) as PdfNumber?;
@@ -174,7 +186,7 @@ class PdfCrossTable {
 
   //Implementation
   void _initializeCrossTable() {
-    _crossTable = CrossTable(_data, this);
+    crossTable = CrossTable(_data, this);
   }
 
   void _markTrailerReferences() {
@@ -223,7 +235,7 @@ class PdfCrossTable {
     _registerObject(PdfReference(0, -1), position: 0, isFreeType: true);
     final int? referencePosition = writer.position;
     final int prevXRef =
-        _crossTable == null ? 0 : _crossTable!.startCrossReference;
+        crossTable == null ? 0 : crossTable!.startCrossReference;
     if (_isCrossReferenceStream(writer.document)) {
       PdfReference? xRefReference;
       final Map<String, IPdfPrimitive> returnedValue = _prepareXRefStream(
@@ -267,7 +279,7 @@ class PdfCrossTable {
         position: 0, isFreeType: true);
     final int? referencePosition = writer.position;
     final int prevXRef =
-        _crossTable == null ? 0 : _crossTable!.startCrossReference;
+        crossTable == null ? 0 : crossTable!.startCrossReference;
     if (await _isCrossReferenceStreamAsync(writer.document)) {
       PdfReference? xRefReference;
       PdfStream? xRefStream;
@@ -615,8 +627,8 @@ class PdfCrossTable {
     }
     if (reference == null) {
       int objectNumber = nextObjectNumber;
-      if (_crossTable != null) {
-        while (_crossTable!.objects.containsKey(objectNumber)) {
+      if (crossTable != null) {
+        while (crossTable!.objects.containsKey(objectNumber)) {
           objectNumber = nextObjectNumber;
         }
       }
@@ -627,9 +639,9 @@ class PdfCrossTable {
         reference = PdfReference(nextObjectNumber, 0);
       } else {
         PdfNumber? trailerCount;
-        if (_crossTable != null) {
+        if (crossTable != null) {
           trailerCount =
-              _crossTable!.trailer![PdfDictionaryProperties.size] as PdfNumber?;
+              crossTable!.trailer![PdfDictionaryProperties.size] as PdfNumber?;
         }
         if (trailerCount != null && objectNumber == trailerCount.value) {
           reference = PdfReference(nextObjectNumber, 0);
@@ -743,8 +755,8 @@ class PdfCrossTable {
     }
     if (reference == null) {
       int objectNumber = nextObjectNumber;
-      if (_crossTable != null) {
-        while (_crossTable!.objects.containsKey(objectNumber)) {
+      if (crossTable != null) {
+        while (crossTable!.objects.containsKey(objectNumber)) {
           objectNumber = nextObjectNumber;
         }
       }
@@ -755,9 +767,9 @@ class PdfCrossTable {
         reference = PdfReference(nextObjectNumber, 0);
       } else {
         PdfNumber? trailerCount;
-        if (_crossTable != null) {
+        if (crossTable != null) {
           trailerCount =
-              _crossTable!.trailer![PdfDictionaryProperties.size] as PdfNumber?;
+              crossTable!.trailer![PdfDictionaryProperties.size] as PdfNumber?;
         }
         if (trailerCount != null && objectNumber == trailerCount.value) {
           reference = PdfReference(nextObjectNumber, 0);
@@ -1156,10 +1168,10 @@ class PdfCrossTable {
       result = pointer.object;
     } else if (pointer is PdfReference) {
       final PdfReference reference = pointer;
-      _objNumbers.addLast(pointer);
+      objNumbers.addLast(pointer);
       IPdfPrimitive? obj;
-      if (_crossTable != null) {
-        obj = _crossTable!.getObject(pointer);
+      if (crossTable != null) {
+        obj = crossTable!.getObject(pointer);
       } else {
         final int? index = items!.getObjectIndex(reference);
         if (index == 0) {
@@ -1199,7 +1211,7 @@ class PdfCrossTable {
       }
     }
     if (pointer is PdfReference) {
-      _objNumbers.removeLast();
+      objNumbers.removeLast();
     }
     return result;
   }
@@ -1243,8 +1255,8 @@ class PdfCrossTable {
   bool _isCrossReferenceStream(PdfDocument? document) {
     ArgumentError.notNull('document');
     bool result = false;
-    if (_crossTable != null) {
-      if (_crossTable!.trailer is PdfStream) {
+    if (crossTable != null) {
+      if (crossTable!.trailer is PdfStream) {
         result = true;
       }
     } else {
@@ -1257,8 +1269,8 @@ class PdfCrossTable {
   Future<bool> _isCrossReferenceStreamAsync(PdfDocument? document) async {
     ArgumentError.notNull('document');
     bool result = false;
-    if (_crossTable != null) {
-      if (_crossTable!.trailer is PdfStream) {
+    if (crossTable != null) {
+      if (crossTable!.trailer is PdfStream) {
         result = true;
       }
     } else {
@@ -1373,14 +1385,14 @@ class PdfCrossTable {
       }
     }
     //iw.Flush();
-    xRefStream.dataStream = ms;
+    xRefStream.data = ms;
     xRefStream[PdfDictionaryProperties.index] = sectionIndeces;
     xRefStream[PdfDictionaryProperties.size] = PdfNumber(this.count);
     xRefStream[PdfDictionaryProperties.prev] = PdfNumber(prevXRef);
     xRefStream[PdfDictionaryProperties.type] = PdfName('XRef');
     xRefStream[PdfDictionaryProperties.w] = PdfArray(paramsFormat);
-    if (_crossTable != null) {
-      final PdfDictionary trailer = _crossTable!.trailer!;
+    if (crossTable != null) {
+      final PdfDictionary trailer = crossTable!.trailer!;
       for (final PdfName? key in trailer.items!.keys) {
         final bool contains = xRefStream.containsKey(key);
         if (!contains &&
@@ -1439,14 +1451,14 @@ class PdfCrossTable {
       }
     }
     //iw.Flush();
-    xRefStream.dataStream = ms;
+    xRefStream.data = ms;
     xRefStream[PdfDictionaryProperties.index] = sectionIndeces;
     xRefStream[PdfDictionaryProperties.size] = PdfNumber(this.count);
     xRefStream[PdfDictionaryProperties.prev] = PdfNumber(prevXRef);
     xRefStream[PdfDictionaryProperties.type] = PdfName('XRef');
     xRefStream[PdfDictionaryProperties.w] = PdfArray(paramsFormat);
-    if (_crossTable != null) {
-      final PdfDictionary trailer = _crossTable!.trailer!;
+    if (crossTable != null) {
+      final PdfDictionary trailer = crossTable!.trailer!;
       for (final PdfName? key in trailer.items!.keys) {
         final bool contains = xRefStream.containsKey(key);
         if (!contains &&
@@ -1620,21 +1632,26 @@ class PdfCrossTable {
     if (obj != null) {
       if (obj is PdfDictionary || obj is PdfStream) {
         final PdfDictionary dic = obj as PdfDictionary;
+        _isOutlineOrDestination = _checkForOutlinesAndDestination(dic);
         if (!dic.decrypted!) {
           dic.items!.forEach((PdfName? key, IPdfPrimitive? element) {
             _decrypt(element);
           });
           if (obj is PdfStream) {
             final PdfStream stream = obj;
-            if (PdfDocumentHelper.getHelper(document!).isEncrypted &&
+            if (objNumbers.isNotEmpty) {
+              stream.crossTable = this;
+              stream.objNumber = objNumbers.last.objNum;
+            } else if (PdfDocumentHelper.getHelper(document!).isEncrypted &&
                 !stream.decrypted! &&
-                _objNumbers.isNotEmpty &&
+                objNumbers.isNotEmpty &&
                 encryptor != null &&
                 !encryptor!.encryptAttachmentOnly!) {
-              stream.decrypt(encryptor!, _objNumbers.last.objNum);
+              stream.decrypt(encryptor!, objNumbers.last.objNum);
             }
           }
         }
+        _isOutlineOrDestination = false;
       } else if (obj is PdfArray) {
         final PdfArray array = obj;
         for (final IPdfPrimitive? element in array.elements) {
@@ -1649,14 +1666,36 @@ class PdfCrossTable {
         _isColorSpace = false;
       } else if (obj is PdfString) {
         final PdfString str = obj;
-        if (!str.decrypted && (!str.isHex! || _isColorSpace)) {
+        if (!str.decrypted &&
+            (!str.isHex! || _isColorSpace || _isOutlineOrDestination)) {
           if (PdfDocumentHelper.getHelper(document!).isEncrypted &&
-              _objNumbers.isNotEmpty) {
-            obj.decrypt(encryptor!, _objNumbers.last.objNum);
+              objNumbers.isNotEmpty) {
+            obj.decrypt(encryptor!, objNumbers.last.objNum);
           }
         }
       }
     }
+  }
+
+  /// Checks the dictionary if it is an outline type.
+  bool _checkForOutlinesAndDestination(PdfDictionary dictionary) {
+    if (dictionary.containsKey(PdfDictionaryProperties.parent)) {
+      final IPdfPrimitive? outline =
+          PdfCrossTable.dereference(dictionary[PdfDictionaryProperties.parent]);
+      if (outline != null && outline is PdfDictionary) {
+        if (documentCatalog != null &&
+            documentCatalog!.containsKey(PdfDictionaryProperties.outlines)) {
+          final IPdfPrimitive? dict = PdfCrossTable.dereference(
+              documentCatalog![PdfDictionaryProperties.outlines]);
+          return dict != null && dict is PdfDictionary && dict == outline
+              ? (true)
+              : _checkForOutlinesAndDestination(outline);
+        }
+      }
+    } else if (dictionary.containsKey(PdfDictionaryProperties.limits)) {
+      return true;
+    }
+    return false;
   }
 }
 

@@ -313,6 +313,18 @@ class PdfMainObjectCollection {
     newObj.position = oldObjIndex;
   }
 
+  /// internal method
+  void remove(int index) {
+    if (mainObjectCollection != null &&
+        mainObjectCollection!.containsKey(index)) {
+      if (objectCollection != null &&
+          objectCollection!.contains(mainObjectCollection![index])) {
+        objectCollection!.remove(mainObjectCollection![index]);
+      }
+      mainObjectCollection!.remove(index);
+    }
+  }
+
   /// internal property
   void dispose() {
     if (mainObjectCollection != null) {

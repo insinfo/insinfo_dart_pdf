@@ -14,6 +14,7 @@ import 'cryptography/buffered_block_padding_base.dart';
 import 'cryptography/cipher_block_chaining_mode.dart';
 import 'cryptography/cipher_utils.dart';
 import 'cryptography/ipadding.dart';
+import 'cryptography/message_digest_utils.dart';
 import 'cryptography/pkcs1_encoding.dart';
 import 'cryptography/rsa_algorithm.dart';
 import 'cryptography/signature_utilities.dart';
@@ -435,6 +436,22 @@ class PdfPKCSCertificate {
   }
 
   /// internal method
+  Future<Map<String, String>> getContentTableAsync() async {
+    final Map<String, String> result = <String, String>{};
+    // ignore: avoid_function_literals_in_foreach_calls
+    _certificates.keys.forEach((String key) {
+      result[key] = 'cert';
+    });
+    // ignore: avoid_function_literals_in_foreach_calls
+    _keys.keys.forEach((String key) {
+      if (!result.containsKey(key)) {
+        result[key] = 'key';
+      }
+    });
+    return result;
+  }
+
+  /// internal method
   bool isKey(String key) {
     return _keys[key] != null;
   }
@@ -446,6 +463,33 @@ class PdfPKCSCertificate {
 
   /// internal method
   X509Certificates? getCertificate(String key) {
+    dynamic certificates = _certificates[key];
+    if (certificates != null && certificates is X509Certificates) {
+      return certificates;
+    } else {
+      String? id;
+      if (_localIdentifiers.containsKey(key)) {
+        id = _localIdentifiers[key];
+      }
+      if (id != null) {
+        if (_keyCertificates.containsKey(id)) {
+          certificates = _keyCertificates[id] is X509Certificates
+              ? _keyCertificates[id]
+              : null;
+        }
+      } else {
+        if (_keyCertificates.containsKey(key)) {
+          certificates = _keyCertificates[key] is X509Certificates
+              ? _keyCertificates[key]
+              : null;
+        }
+      }
+      return certificates as X509Certificates?;
+    }
+  }
+
+  /// internal method
+  Future<X509Certificates?> getCertificateAsync(String key) async {
     dynamic certificates = _certificates[key];
     if (certificates != null && certificates is X509Certificates) {
       return certificates;
@@ -534,6 +578,78 @@ class PdfPKCSCertificate {
           certificateList.length, (int i) => certificateList[i]);
     }
     return null;
+  }
+
+  /// internal method
+  Future<List<X509Certificates>?> getCertificateChainAsync(String key) async {
+    if (!isKey(key)) {
+      return null;
+    }
+    List<X509Certificates>? x509Certificates;
+    await getCertificateAsync(key).then((X509Certificates? certificates) {
+      if (certificates != null) {
+        final List<X509Certificates> certificateList = <X509Certificates>[];
+        bool isContinue = true;
+        while (certificates != null) {
+          final X509Certificate x509Certificate = certificates.certificate!;
+          X509Certificates? nextCertificate;
+          final Asn1Octet? x509Extension = x509Certificate
+              .getExtension(X509Extensions.authorityKeyIdentifier);
+          if (x509Extension != null) {
+            final _KeyIdentifier id = _KeyIdentifier.getKeyIdentifier(
+                Asn1Stream(PdfStreamReader(x509Extension.getOctets()))
+                    .readAsn1());
+            if (id.keyID != null) {
+              if (_chainCertificates
+                  .containsKey(_CertificateIdentifier(id: id.keyID))) {
+                nextCertificate =
+                    _chainCertificates[_CertificateIdentifier(id: id.keyID)];
+              }
+            }
+          }
+          if (nextCertificate == null) {
+            final X509Name? issuer = x509Certificate.c!.issuer;
+            final X509Name? subject = x509Certificate.c!.subject;
+            if (!(issuer == subject)) {
+              final List<_CertificateIdentifier> keys =
+                  _chainCertificates.keys.toList();
+              // ignore: avoid_function_literals_in_foreach_calls
+              keys.forEach((_CertificateIdentifier certId) {
+                X509Certificates? x509CertEntry;
+                if (_chainCertificates.containsKey(certId)) {
+                  x509CertEntry = _chainCertificates[certId];
+                }
+                final X509Certificate certificate = x509CertEntry!.certificate!;
+                if (certificate.c!.subject == issuer) {
+                  try {
+                    // x509Certificate.verify(certificate.getPublicKey());
+                    // nextCertificate = x509CertEntry;
+                    isContinue = false;
+                  } catch (e) {
+                    //
+                  }
+                }
+              });
+            }
+          }
+          if (isContinue) {
+            certificateList.add(certificates);
+            certificates =
+                nextCertificate != null && nextCertificate != certificates
+                    ? nextCertificate
+                    : null;
+          }
+        }
+        x509Certificates = List<X509Certificates>.generate(
+            certificateList.length, (int i) => certificateList[i]);
+      }
+    });
+    return x509Certificates;
+  }
+
+  /// internal method
+  List<X509Certificates> getChainCertificates() {
+    return _chainCertificates.values.toList();
   }
 }
 
@@ -735,10 +851,11 @@ class _PasswordUtility {
         }
       });
 
-      if (mechanism != null && mechanism!.startsWith('PBEwithMD2') ||
-          mechanism!.startsWith('PBEwithMD5') ||
-          mechanism!.startsWith('PBEwithSHA-1') ||
-          mechanism!.startsWith('PBEwithSHA-256')) {
+      if (mechanism != null &&
+          (mechanism!.startsWith('PBEwithMD2') ||
+              mechanism!.startsWith('PBEwithMD5') ||
+              mechanism!.startsWith('PBEwithSHA-1') ||
+              mechanism!.startsWith('PBEwithSHA-256'))) {
         if (mechanism!.endsWith('AES-CBC-BC') ||
             mechanism!.endsWith('AES-CBC-OPENSSL')) {
           result = _cipherUtils.getCipher('AES/CBC');
@@ -1642,8 +1759,7 @@ class _KeyIdentifier extends Asn1Encode {
   Asn1Octet? _keyIdentifier;
   DerInteger? _serialNumber;
   //Properties
-  List<int>? get keyID =>
-      _keyIdentifier == null ? null : _keyIdentifier!.getOctets();
+  List<int>? get keyID => _keyIdentifier?.getOctets();
   //Implementation
   static _KeyIdentifier getKeyIdentifier(dynamic obj) {
     _KeyIdentifier result;
@@ -3295,8 +3411,85 @@ class _SubjectKeyID extends Asn1Encode {
     return sha1.convert(publicKey.publicKey!.data!).bytes;
   }
 
+  /// internal method
+  static PublicKeyInformation createSubjectKeyID(CipherParameter publicKey) {
+    if (publicKey is RsaKeyParam) {
+      final PublicKeyInformation information = PublicKeyInformation(
+          Algorithms(PkcsObjectId.rsaEncryption, DerNull.value),
+          RsaPublicKey(publicKey.modulus, publicKey.exponent).getAsn1());
+      return information;
+    } else {
+      throw ArgumentError.value(publicKey, 'publicKey', 'Invalid Key');
+    }
+  }
+
   @override
   Asn1 getAsn1() {
     return DerOctet(_bytes!);
+  }
+}
+
+/// Internal class
+class CertificateIdentity {
+  /// Internal constructor
+  CertificateIdentity(String hashAlgorithm, X509Certificate issuerCert,
+      DerInteger serialNumber) {
+    final Algorithms algorithms =
+        Algorithms(DerObjectID(hashAlgorithm), DerNull.value);
+    try {
+      final String algorithm = algorithms.id!.id!;
+      final X509Name? issuerName = SingnedCertificate.getCertificate(
+              Asn1.fromByteArray(issuerCert.getTbsCertificate()!))!
+          .subject;
+      MessageDigestFinder utilities = MessageDigestFinder();
+      final List<int> issuerNameHash =
+          utilities.getDigest(algorithm, issuerName!.getEncoded()!);
+      final CipherParameter issuerKey = issuerCert.getPublicKey();
+      final PublicKeyInformation info =
+          _SubjectKeyID.createSubjectKeyID(issuerKey);
+      utilities = MessageDigestFinder();
+      final List<int> issuerKeyHash =
+          utilities.getDigest(algorithm, info.publicKey!.getBytes()!);
+      id = CertificateIdentityHelper(
+          hash: algorithms,
+          issuerName: DerOctet(issuerNameHash),
+          issuerKey: DerOctet(issuerKeyHash),
+          serialNumber: serialNumber);
+    } catch (e) {
+      throw Exception('Invalid certificate ID');
+    }
+  }
+
+  /// Internal field
+  CertificateIdentityHelper? id;
+
+  /// Internal constant
+  static const String sha1 = '1.3.14.3.2.26';
+}
+
+/// Internal class
+class CertificateIdentityHelper extends Asn1Encode {
+  /// Internal constructor
+  CertificateIdentityHelper(
+      {Algorithms? hash,
+      Asn1Octet? issuerName,
+      Asn1Octet? issuerKey,
+      DerInteger? serialNumber}) {
+    _hash = hash;
+    _issuerName = issuerName;
+    _issuerKey = issuerKey;
+    _serialNumber = serialNumber;
+  }
+
+  /// Internal field
+  Algorithms? _hash;
+  Asn1Octet? _issuerName;
+  Asn1Octet? _issuerKey;
+  DerInteger? _serialNumber;
+
+  @override
+  Asn1 getAsn1() {
+    return DerSequence(
+        array: <Asn1Encode>[_hash!, _issuerName!, _issuerKey!, _serialNumber!]);
   }
 }

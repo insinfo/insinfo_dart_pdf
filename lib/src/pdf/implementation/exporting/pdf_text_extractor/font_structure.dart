@@ -61,7 +61,7 @@ class FontStructure {
       }
     }
     _fontStyle = <PdfFontStyle>[PdfFontStyle.regular];
-    defaultGlyphWidth = 0;
+    defaultGlyphWidth = isCid ? 1000 : 0;
     _containsCmap = true;
     differenceEncoding = <int, String>{};
   }
@@ -253,10 +253,12 @@ class FontStructure {
 
   /// internal property
   Map<int, int>? get fontGlyphWidths {
-    if (fontEncoding == 'Identity-H' || fontEncoding == 'Identity#2DH') {
-      _getGlyphWidths();
-    } else {
-      _getGlyphWidthsNonIdH();
+    if (_fontGlyphWidth == null) {
+      if (fontEncoding == 'Identity-H' || fontEncoding == 'Identity#2DH') {
+        _getGlyphWidths();
+      } else {
+        _getGlyphWidthsNonIdH();
+      }
     }
     return _fontGlyphWidth;
   }
@@ -972,7 +974,10 @@ class FontStructure {
 
   /// internal method
   PdfFont? createStandardFont(double size) {
-    if (_standardFontName != '') {
+    if (_standardFontName != null && _standardFontName != '') {
+      if (_standardFontName!.contains('#')) {
+        _standardFontName = decodeHexFontName(_standardFontName!);
+      }
       final PdfFontFamily fontFamily = _getFontFamily(_standardFontName!);
       final List<PdfFontStyle> styles = _getFontStyle(_standardFontName!);
       if (styles.contains(PdfFontStyle.bold) &&
@@ -2493,6 +2498,7 @@ class FontStructure {
     String encodedText = textToDecode;
     this.isSameFont = isSameFont;
     bool hasEscapeChar = false;
+    bool isHex = false;
     switch (encodedText[0]) {
       case '(':
         {
@@ -2546,7 +2552,7 @@ class FontStructure {
           }
           encodedText = encodedText.substring(1, encodedText.length - 1);
           while (encodedText.isNotEmpty) {
-            bool isHex = false;
+            isHex = false;
             int textStart = encodedText.indexOf('(');
             int textEnd = encodedText.indexOf(')');
             final int textHexStart = encodedText.indexOf('<');
@@ -2593,6 +2599,7 @@ class FontStructure {
           final String hexEncodedText =
               encodedText.substring(1, encodedText.length - 1);
           decodedText = getHexaDecimalString(hexEncodedText, charcodes);
+          isHex = true;
         }
         break;
       default:
@@ -2604,7 +2611,7 @@ class FontStructure {
         (fontEncoding == 'Identity-H' && containsCmap)) {
       isMappingDone = true;
       if (characterMapTable.isNotEmpty) {
-        decodedText = mapCharactersFromTable(decodedText);
+        decodedText = mapCharactersFromTable(decodedText, isHex);
       } else if (differencesDictionary.isNotEmpty) {
         decodedText = mapDifferences(decodedText);
       } else if (fontEncoding != '') {
@@ -2898,7 +2905,7 @@ class FontStructure {
                 (fontEncoding == 'Identity-H' && containsCmap)) {
               isMappingDone = true;
               if (characterMapTable.isNotEmpty) {
-                listElement = mapCharactersFromTable(listElement);
+                listElement = mapCharactersFromTable(listElement, isHex);
               } else if (differencesDictionary.isNotEmpty) {
                 listElement = mapDifferences(listElement);
               } else if (fontEncoding != '') {
@@ -4204,8 +4211,9 @@ class FontStructure {
             decodedtext = encodedText;
             final int charPosition = reverseMapTable![decodedtext]!.toInt();
             if (differenceTable.isNotEmpty &&
-                differenceTable.containsKey(charPosition))
+                differenceTable.containsKey(charPosition)) {
               zapfPostScript = differenceTable[charPosition]!;
+            }
           } else {
             decodedtext = '\u2708';
             zapfPostScript = 'a118';
@@ -4773,7 +4781,7 @@ class FontStructure {
 
   /// Takes in the decoded text and maps it with its
   /// corresponding entry in the CharacterMapTable
-  String mapCharactersFromTable(String decodedText) {
+  String mapCharactersFromTable(String decodedText, [bool isHex = false]) {
     String finalText = '';
     bool skip = false;
     for (int i = 0; i < decodedText.length; i++) {
@@ -4799,7 +4807,8 @@ class FontStructure {
         finalText += mappingString;
         skip = false;
       } else if (!characterMapTable.containsKey(character.codeUnitAt(0)) &&
-          !skip) {
+          !skip &&
+          !isHex) {
         final List<int> bytes = encodeBigEndian(character);
         if (bytes[0] != 92) {
           if (characterMapTable.containsKey(bytes[0])) {
@@ -4903,5 +4912,81 @@ class FontStructure {
       }
     }
     return isNonPrintable;
+  }
+
+  /// Disposes the instance.
+  void dispose() {
+    _differencesDictionary = null;
+    if (_characterMapTable != null && _characterMapTable!.isNotEmpty) {
+      _characterMapTable!.clear();
+    }
+    _characterMapTable = null;
+    if (_reverseMapTable != null && _reverseMapTable!.isNotEmpty) {
+      _reverseMapTable!.clear();
+    }
+    _reverseMapTable = null;
+    if (reverseDictMapping.isNotEmpty) {
+      reverseDictMapping.clear();
+    }
+    if (cidToGidTable != null && cidToGidTable!.isNotEmpty) {
+      cidToGidTable!.clear();
+    }
+    cidToGidTable = null;
+    if (_differencesDictionary != null && _differencesDictionary!.isNotEmpty) {
+      _differencesDictionary!.clear();
+    }
+    _differencesDictionary = null;
+    if (_fontGlyphWidth != null && _fontGlyphWidth!.isNotEmpty) {
+      _fontGlyphWidth!.clear();
+    }
+    _fontGlyphWidth = null;
+    if (tempMapTable.isNotEmpty) {
+      tempMapTable.clear();
+    }
+    if (_octDecMapTable != null && _octDecMapTable!.isNotEmpty) {
+      _octDecMapTable!.clear();
+    }
+    _octDecMapTable = null;
+    if (_cidToGidReverseMapTable != null &&
+        _cidToGidReverseMapTable!.isNotEmpty) {
+      _cidToGidReverseMapTable!.clear();
+    }
+    _cidToGidReverseMapTable = null;
+    if (differenceTable.isNotEmpty) {
+      differenceTable.clear();
+    }
+    if (differenceEncoding != null && differenceEncoding!.isNotEmpty) {
+      differenceEncoding!.clear();
+    }
+    differenceEncoding = null;
+    if (type3FontCharProcsDict.isNotEmpty) {
+      type3FontCharProcsDict.clear();
+    }
+    if (tempStringList.isNotEmpty) {
+      tempStringList.clear();
+    }
+    if (_unicodeCharMapTable != null && _unicodeCharMapTable!.isNotEmpty) {
+      _unicodeCharMapTable!.clear();
+    }
+    _unicodeCharMapTable = null;
+    if (_macEncodeTable != null && _macEncodeTable!.isNotEmpty) {
+      _macEncodeTable!.clear();
+    }
+    _macEncodeTable = null;
+    if (_winansiMapTable.isNotEmpty) {
+      _winansiMapTable.clear();
+    }
+    if (_windows1252MapTable.isNotEmpty) {
+      _windows1252MapTable.clear();
+    }
+    if (_macRomanMapTable.isNotEmpty) {
+      _macRomanMapTable.clear();
+    }
+    if (standardCJKFontNames.isNotEmpty) {
+      standardCJKFontNames.clear();
+    }
+    if (standardFontNames.isNotEmpty) {
+      standardFontNames.clear();
+    }
   }
 }

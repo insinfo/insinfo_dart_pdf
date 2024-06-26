@@ -4,20 +4,18 @@ import '../io/pdf_constants.dart';
 import '../primitives/pdf_array.dart';
 import '../primitives/pdf_dictionary.dart';
 
-/// The insinfo.Pdf.Interactive namespace contains classes used to create interactive elements.
+/// The Pdf.Interactive namespace contains classes used to create interactive elements.
 class WidgetAppearance implements IPdfWrapper {
   /// internal Constructor
   WidgetAppearance() : super() {
     dictionary!.setProperty(
         PdfDictionaryProperties.bc, PdfColorHelper.toArray(_borderColor));
-    dictionary!.setProperty(
-        PdfDictionaryProperties.bg, PdfColorHelper.toArray(_backColor));
   }
 
   /// internal field
   PdfDictionary? dictionary = PdfDictionary();
   PdfColor _borderColor = PdfColor(0, 0, 0);
-  PdfColor _backColor = PdfColor(255, 255, 255);
+  PdfColor _backColor = PdfColor.empty;
   String? _normalCaption = '';
 
   //Overrides

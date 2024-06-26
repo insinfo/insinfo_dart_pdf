@@ -115,8 +115,8 @@ class PdfForm implements IPdfWrapper {
   /// Specifies whether to set the default appearance for the form or not.
   void setDefaultAppearance(bool value) {
     _helper.needAppearances = value;
-    _helper.setAppearanceDictionary = true;
-    _helper._isDefaultAppearance = true;
+    _helper.setAppearanceDictionary = !value;
+    _helper._isDefaultAppearance = value;
   }
 
   /// Flatten all the fields available in the form.
@@ -164,7 +164,7 @@ class PdfForm implements IPdfWrapper {
 
   /// Imports XFDF Data from the given data.
   void _importDataXFDF(List<int> bytes) {
-    final String data = String.fromCharCodes(bytes);
+    final String data = utf8.decode(bytes);
     final XmlDocument xmlDoc = XmlDocument.parse(data);
     PdfField formField;
     for (final XmlNode node in xmlDoc.rootElement.firstElementChild!.children) {
@@ -172,9 +172,25 @@ class PdfForm implements IPdfWrapper {
         final String fieldName = node.attributes.first.value;
         final int index = PdfFormFieldCollectionHelper.getHelper(fields)
             .getFieldIndex(fieldName);
-        formField = fields[index];
-        final String fieldInnerValue = node.firstElementChild!.innerText;
-        PdfFieldHelper.getHelper(formField).importFieldValue(fieldInnerValue);
+        if (index >= 0 && index < fields.count) {
+          formField = fields[index];
+          String? fieldInnerValue;
+          final List<String> fieldInnerValues = <String>[];
+          if (node.childElements.length > 1) {
+            for (int i = 0; i < node.childElements.length; i++) {
+              fieldInnerValues.add(node.childElements.elementAt(i).innerText);
+            }
+          } else {
+            fieldInnerValue = node.firstElementChild!.innerText;
+          }
+          if (fieldInnerValues.isNotEmpty) {
+            PdfFieldHelper.getHelper(formField)
+                .importFieldValue(fieldInnerValues);
+          } else if (fieldInnerValue != null) {
+            PdfFieldHelper.getHelper(formField)
+                .importFieldValue(fieldInnerValue);
+          }
+        }
       }
     }
   }
@@ -640,8 +656,8 @@ class PdfForm implements IPdfWrapper {
         }
       }
       if (fieldKey != null && fieldValue != null) {
-        table[_decodeXMLConversion(fieldKey)] =
-            _decodeXMLConversion(fieldValue);
+        table[PdfFormHelper.decodeXMLConversion(fieldKey)] =
+            PdfFormHelper.decodeXMLConversion(fieldValue);
         fieldKey = fieldValue = null;
       }
       token = reader.getNextJsonToken();
@@ -675,7 +691,7 @@ class PdfForm implements IPdfWrapper {
       if (helper.isLoadedField && field.canExport) {
         final IPdfPrimitive? name = PdfFieldHelper.getValue(helper.dictionary!,
             helper.crossTable, PdfDictionaryProperties.ft, true);
-        if (name != null && name is PdfName)
+        if (name != null && name is PdfName) {
           switch (name.name) {
             case 'Tx':
               final IPdfPrimitive? textField = PdfFieldHelper.getValue(
@@ -730,6 +746,7 @@ class PdfForm implements IPdfWrapper {
               }
               break;
           }
+        }
       }
     }
     bytes.addAll(utf8.encode('{'));
@@ -758,30 +775,9 @@ class PdfForm implements IPdfWrapper {
         : value;
   }
 
-  String _decodeXMLConversion(String value) {
-    String newString = value;
-    while (newString.contains('_x')) {
-      final int index = newString.indexOf('_x');
-      final String tempString = newString.substring(index);
-      if (tempString.length >= 7 && tempString[6] == '_') {
-        newString = newString.replaceRange(index, index + 2, '--');
-        final int? charCode =
-            int.tryParse(value.substring(index + 2, index + 6), radix: 16);
-        if (charCode != null && charCode >= 0) {
-          value = value.replaceRange(
-              index, index + 7, String.fromCharCode(charCode));
-          newString = newString.replaceRange(index, index + 7, '-');
-        }
-      } else {
-        break;
-      }
-    }
-    return value;
-  }
-
   /// Imports XML Data from the given data.
   void _importDataXml(List<int> bytes, bool continueImportOnError) {
-    final String data = String.fromCharCodes(bytes);
+    final String data = utf8.decode(bytes);
     final XmlDocument document = XmlDocument.parse(data);
     if (document.rootElement.name.local != 'Fields') {
       ArgumentError.value('The XML form data stream is not valid');
@@ -863,7 +859,7 @@ class PdfFormHelper {
   bool? needAppearances = false;
 
   /// internal field
-  bool setAppearanceDictionary = true;
+  bool setAppearanceDictionary = false;
 
   /// internal field
   final List<String?> fieldNames = <String?>[];
@@ -893,7 +889,7 @@ class PdfFormHelper {
 
   /// internal field
   bool flatten = false;
-  bool _isDefaultAppearance = true;
+  bool _isDefaultAppearance = false;
   PdfFormFieldCollection? _fields;
 
   /// internal property
@@ -954,9 +950,10 @@ class PdfFormHelper {
         if (!_isDefaultAppearance) {
           needAppearances = false;
         }
-        if (dictionary!.containsKey(PdfDictionaryProperties.needAppearances))
+        if (dictionary!.containsKey(PdfDictionaryProperties.needAppearances)) {
           dictionary!.setBoolean(
               PdfDictionaryProperties.needAppearances, needAppearances);
+        }
       }
       while (i < form.fields.count) {
         final PdfField field = form.fields[i];
@@ -966,6 +963,16 @@ class PdfFormHelper {
         final PdfFieldHelper helper = PdfFieldHelper.getHelper(field);
         if (helper.isLoadedField) {
           final PdfDictionary dic = helper.dictionary!;
+          bool isSigned = false;
+          if (field is PdfSignatureField) {
+            if (dic.containsKey(PdfDictionaryProperties.v)) {
+              final IPdfPrimitive? value =
+                  PdfCrossTable.dereference(dic[PdfDictionaryProperties.v]);
+              if (value != null) {
+                isSigned = true;
+              }
+            }
+          }
           bool isNeedAppearance = false;
           if (!dic.containsKey(PdfDictionaryProperties.ap) &&
               _isDefaultAppearance &&
@@ -1000,7 +1007,9 @@ class PdfFormHelper {
               crossTable!.items!.objectCollection!.removeAt(index!);
             }
             --i;
-          } else if (helper.changed || isNeedAppearance) {
+          } else if (helper.changed ||
+              isNeedAppearance ||
+              (setAppearanceDictionary && !isSigned)) {
             helper.beginSave();
           }
         } else {
@@ -1014,9 +1023,13 @@ class PdfFormHelper {
         }
         ++i;
       }
-      if (setAppearanceDictionary) {
+      if (_isDefaultAppearance) {
         dictionary!.setBoolean(
-            PdfDictionaryProperties.needAppearances, needAppearances);
+            PdfDictionaryProperties.needAppearances, _isDefaultAppearance);
+      } else if (!_isDefaultAppearance &&
+          dictionary!.containsKey(PdfDictionaryProperties.needAppearances)) {
+        dictionary!.setBoolean(
+            PdfDictionaryProperties.needAppearances, _isDefaultAppearance);
       }
       dictionary!.remove('XFA');
     }
@@ -1170,12 +1183,6 @@ class PdfFormHelper {
                     }
                   }
                 }
-                // ignore: unnecessary_null_comparison
-                if (annots != null && annots.contains(holder)) {
-                  annots.remove(holder);
-                  annots.changed = true;
-                  page.setProperty(PdfDictionaryProperties.annots, annots);
-                }
               }
             }
           } else if (isLoaded) {
@@ -1310,9 +1317,10 @@ class PdfFormHelper {
 
   /// internal method
   //Removes field and kids annotation from dictionaries.
-  void removeFromDictionaries(PdfField field) {
+  void removeFromDictionaries(PdfField field,
+      [bool removeFieldFromAcroForm = false]) {
     final PdfFieldHelper helper = PdfFieldHelper.getHelper(field);
-    if (_fields != null && _fields!.count > 0) {
+    if ((_fields != null && _fields!.count > 0) || removeFieldFromAcroForm) {
       final PdfName fieldsDict = PdfName(PdfDictionaryProperties.fields);
       final PdfArray fields =
           crossTable!.getObject(dictionary![fieldsDict])! as PdfArray;
@@ -1365,6 +1373,7 @@ class PdfFormHelper {
                 kids[k]! as PdfReferenceHolder;
             if (kidsReference.object == helper.dictionary) {
               kids.remove(kidsReference);
+              dic.modify();
               break;
             }
           }
@@ -1372,10 +1381,32 @@ class PdfFormHelper {
       }
       dictionary!.setProperty(fieldsDict, fields);
     }
-    if (helper.isLoadedField) {
+    if (helper.isLoadedField && !removeFieldFromAcroForm) {
       deleteFromPages(field);
       deleteAnnotation(field);
     }
+  }
+
+  /// internal method
+  static String decodeXMLConversion(String value) {
+    String newString = value;
+    while (newString.contains('_x')) {
+      final int index = newString.indexOf('_x');
+      final String tempString = newString.substring(index);
+      if (tempString.length >= 7 && tempString[6] == '_') {
+        newString = newString.replaceRange(index, index + 2, '--');
+        final int? charCode =
+            int.tryParse(value.substring(index + 2, index + 6), radix: 16);
+        if (charCode != null && charCode >= 0) {
+          value = value.replaceRange(
+              index, index + 7, String.fromCharCode(charCode));
+          newString = newString.replaceRange(index, index + 7, '-');
+        }
+      } else {
+        break;
+      }
+    }
+    return value;
   }
 }
 

@@ -1,6 +1,4 @@
-/// The Flutter PDF is a library written natively in Dart for
-/// creating, reading, editing, and securing PDF files in Android, iOS,
-/// and web platforms.
+
 library pdf;
 
 export 'src/flutter/ui.dart';
@@ -23,7 +21,12 @@ export 'src/pdf/implementation/annotations/enum.dart'
         PdfLineEndingStyle,
         PdfSubmitFormFlags,
         SubmitDataFormat,
-        HttpMethod;
+        HttpMethod,
+        PdfTextMarkupAnnotationType,
+        PdfPopupIcon,
+        PdfAnnotationFlags,
+        PdfAnnotationDataFormat,
+        PdfAnnotationExportType;
 export 'src/pdf/implementation/annotations/pdf_action_annotation.dart'
     show PdfLinkAnnotation, PdfActionLinkAnnotation, PdfActionAnnotation;
 export 'src/pdf/implementation/annotations/pdf_annotation.dart'
@@ -42,8 +45,12 @@ export 'src/pdf/implementation/annotations/pdf_line_annotation.dart'
     show PdfLineAnnotation;
 export 'src/pdf/implementation/annotations/pdf_polygon_annotation.dart'
     show PdfPolygonAnnotation;
+export 'src/pdf/implementation/annotations/pdf_popup_annotation.dart'
+    show PdfPopupAnnotation;
 export 'src/pdf/implementation/annotations/pdf_rectangle_annotation.dart'
     show PdfRectangleAnnotation;
+export 'src/pdf/implementation/annotations/pdf_text_markup_annotation.dart'
+    show PdfTextMarkupAnnotation;
 export 'src/pdf/implementation/annotations/pdf_text_web_link.dart'
     show PdfTextWebLink;
 export 'src/pdf/implementation/annotations/pdf_uri_annotation.dart'
@@ -223,7 +230,9 @@ export 'src/pdf/implementation/security/digital_signature/pdf_certificate.dart'
     show PdfCertificate;
 export 'src/pdf/implementation/security/digital_signature/pdf_external_signer.dart';
 export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
-    show PdfSignature;
+    show PdfSignature, RevocationType;
+export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'
+    show TimestampServer;
 export 'src/pdf/implementation/security/enum.dart';
 export 'src/pdf/implementation/security/pdf_security.dart'
     show PdfPermissions, PdfSecurity;

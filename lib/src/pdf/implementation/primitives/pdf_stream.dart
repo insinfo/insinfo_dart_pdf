@@ -23,13 +23,13 @@ class PdfStream extends PdfDictionary {
   /// internal constructor
   PdfStream([PdfDictionary? dictionary, List<int>? data]) {
     if (dictionary == null && data == null) {
-      dataStream = <int>[];
+      this.data = <int>[];
       _compress = true;
     } else {
       ArgumentError.checkNotNull(data, 'data');
       ArgumentError.checkNotNull(dictionary, 'dictionary');
       _compress = false;
-      dataStream = <int>[];
+      this.data = <int>[];
       dataStream!.addAll(data!);
       copyDictionary(dictionary);
       this[PdfDictionaryProperties.length] = PdfNumber(dataStream!.length);
@@ -47,16 +47,15 @@ class PdfStream extends PdfDictionary {
 
   //Fields
   /// internal field
-  List<int>? dataStream;
+  List<int>? data;
   bool? _compress;
   PdfStream? _clonedObject;
 
   /// internal field
-  @override
-  bool? isChanged;
+  late bool blockEncryption;
 
   /// internal field
-  late bool blockEncryption;
+  int? objNumber;
 
   //Properties
   /// internal property
@@ -69,20 +68,36 @@ class PdfStream extends PdfDictionary {
     _modify();
   }
 
+  /// internal property
+  List<int>? get dataStream {
+    if (!decrypted! &&
+        crossTable != null &&
+        crossTable!.encryptor != null &&
+        objNumber != null &&
+        objNumber! > -1) {
+      decrypt(crossTable!.encryptor!, objNumber);
+    }
+    return data;
+  }
+
   //Implementations
   void _modify() {
     isChanged = true;
   }
 
   List<int>? _compressContent(PdfDocument? document) {
-    final List<int>? data = dataStream;
+    final List<int>? data = (crossTable != null &&
+            crossTable!.encryptor != null &&
+            crossTable!.encryptor!.encryptAttachmentOnly!)
+        ? this.data
+        : dataStream;
     if (compress! && document!.compressionLevel != PdfCompressionLevel.none) {
       final List<int> outputStream = <int>[];
       final CompressedStreamWriter compressedWriter = CompressedStreamWriter(
           outputStream, false, document.compressionLevel, false);
       compressedWriter.write(data!, 0, data.length, false);
       compressedWriter.close();
-      _addFilter(PdfDictionaryProperties.flateDecode);
+      addFilter(PdfDictionaryProperties.flateDecode);
       compress = false;
       return outputStream;
     } else {
@@ -91,7 +106,11 @@ class PdfStream extends PdfDictionary {
   }
 
   List<int>? _compressStream() {
-    final List<int>? streamData = dataStream;
+    final List<int>? streamData = (crossTable != null &&
+            crossTable!.encryptor != null &&
+            crossTable!.encryptor!.encryptAttachmentOnly!)
+        ? data
+        : dataStream;
     final List<int> outputStream = <int>[];
     if (streamData != null && streamData.isNotEmpty) {
       CompressedStreamWriter(
@@ -101,8 +120,8 @@ class PdfStream extends PdfDictionary {
       if (outputStream.isNotEmpty) {
         clearStream();
         compress = false;
-        dataStream = outputStream;
-        _addFilter(PdfDictionaryProperties.flateDecode);
+        data = outputStream;
+        addFilter(PdfDictionaryProperties.flateDecode);
       }
     }
     return dataStream;
@@ -120,9 +139,9 @@ class PdfStream extends PdfDictionary {
       if (primitive is PdfName) {
         final PdfName name = primitive;
         if (name.name == 'ASCIIHexDecode') {
-          dataStream = _decode(dataStream);
+          data = _decode(dataStream);
         } else {
-          dataStream = _decompressData(dataStream!, name.name!);
+          data = _decompressData(dataStream!, name.name!);
         }
         _modify();
       } else if (primitive is PdfArray) {
@@ -133,9 +152,9 @@ class PdfStream extends PdfDictionary {
             filterName = pdfFilter.name;
           }
           if (filterName == 'ASCIIHexDecode') {
-            dataStream = _decode(dataStream);
+            data = _decode(dataStream);
           } else {
-            dataStream = _decompressData(dataStream!, filterName!);
+            data = _decompressData(dataStream!, filterName!);
           }
           _modify();
         }
@@ -267,7 +286,8 @@ class PdfStream extends PdfDictionary {
     return data;
   }
 
-  void _addFilter(String filterName) {
+  /// Internal method.
+  void addFilter(String filterName) {
     IPdfPrimitive? filter = this[PdfDictionaryProperties.filter];
     if (filter is PdfReferenceHolder) {
       filter = filter.referenceObject;
@@ -307,7 +327,7 @@ class PdfStream extends PdfDictionary {
       if ((pdfObject as List<int>).isEmpty) {
         throw ArgumentError.value(pdfObject, 'value cannot be empty');
       }
-      dataStream!.addAll(pdfObject);
+      data!.addAll(pdfObject);
       _modify();
     } else {
       throw ArgumentError.value(
@@ -368,7 +388,7 @@ class PdfStream extends PdfDictionary {
             }
             attachmentEncrypted = true;
             data = _encryptContent(data, writer);
-            _addFilter(PdfDictionaryProperties.crypt);
+            addFilter(PdfDictionaryProperties.crypt);
           }
           if (!containsKey(PdfDictionaryProperties.decodeParms)) {
             final PdfArray decode = PdfArray();
@@ -410,7 +430,7 @@ class PdfStream extends PdfDictionary {
                       data = _compressStream();
                     }
                     data = _encryptContent(data, writer);
-                    _addFilter(PdfDictionaryProperties.crypt);
+                    addFilter(PdfDictionaryProperties.crypt);
                   }
                 }
               }
@@ -421,7 +441,7 @@ class PdfStream extends PdfDictionary {
             data = _compressStream();
           }
           data = _encryptContent(data, writer);
-          _addFilter(PdfDictionaryProperties.crypt);
+          addFilter(PdfDictionaryProperties.crypt);
           if (!containsKey(PdfDictionaryProperties.decodeParms)) {
             final PdfArray decode = PdfArray();
             final PdfDictionary decodeparms = PdfDictionary();
@@ -469,7 +489,7 @@ class PdfStream extends PdfDictionary {
   void dispose() {
     if (dataStream != null && dataStream!.isNotEmpty) {
       dataStream!.clear();
-      dataStream = null;
+      data = null;
     }
   }
 
@@ -487,15 +507,11 @@ class PdfStream extends PdfDictionary {
     return newStream;
   }
 
-  @override
-  bool? decrypted;
-
   /// internal method
   void decrypt(PdfEncryptor encryptor, int? currentObjectNumber) {
     if (!decrypted!) {
       decrypted = true;
-      dataStream =
-          encryptor.encryptData(currentObjectNumber, dataStream!, false);
+      data = encryptor.encryptData(currentObjectNumber, dataStream!, false);
       _modify();
     }
   }

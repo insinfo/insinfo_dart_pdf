@@ -100,19 +100,22 @@ class PdfComboBoxField extends PdfListField {
   }
 
   /// Gets or sets the selected index in the list.
-  int get selectedIndex => _helper.selectedIndexes[0];
+  int get selectedIndex =>
+      _helper.selectedIndexes.isEmpty ? -1 : _helper.selectedIndexes[0];
   set selectedIndex(int value) {
     _helper.selectedIndexes = <int>[value];
   }
 
   /// Gets or sets the selected value in the list.
-  String get selectedValue => _helper.selectedValues[0];
+  String get selectedValue =>
+      _helper.selectedValues.isEmpty ? '' : _helper.selectedValues[0];
   set selectedValue(String value) {
     _helper.selectedValues = <String>[value];
   }
 
   /// Gets the selected item in the list.
-  PdfListFieldItem? get selectedItem => _helper.selectedItems[0];
+  PdfListFieldItem? get selectedItem =>
+      _helper.selectedItems.count > 0 ? _helper.selectedItems[0] : null;
 }
 
 /// [PdfComboBoxField] helper
