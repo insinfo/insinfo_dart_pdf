@@ -1,6 +1,6 @@
-# Flutter PDF library
+# PDF library
 
-Flutter PDF is a feature-rich and high-performance non-UI PDF library written natively in Dart. It allows you to add robust PDF functionalities to Flutter applications.
+ feature-rich and high-performance non-UI PDF library written natively in Dart. It allows you to add robust PDF functionalities to Flutter applications.
 
 
 ## Overview
