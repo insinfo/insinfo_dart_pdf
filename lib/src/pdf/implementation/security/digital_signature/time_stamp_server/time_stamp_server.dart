@@ -24,7 +24,7 @@ import '../x509/ocsp_utils.dart';
 ///         reason: 'I am author of this document.',
 ///         //Create a new PDF time stamp server
 ///         timestampServer:
-///             TimestampServer(Uri.parse('http://site.com'))));
+///             TimestampServer(Uri.parse('http://insinfo.digistamp.com'))));
 /// //Add a signature field to the form
 /// document.form.fields.add(field);
 /// //Save and dispose the PDF document
@@ -51,7 +51,7 @@ class TimestampServer {
   ///         reason: 'I am author of this document.',
   ///         //Create a new PDF time stamp server
   ///         timestampServer:
-  ///             TimestampServer(Uri.parse('http://site.com'))));
+  ///             TimestampServer(Uri.parse('http://insinfo.digistamp.com'))));
   /// //Add a signature field to the form
   /// document.form.fields.add(field);
   /// //Save and dispose the PDF document
@@ -77,7 +77,7 @@ class TimestampServer {
   /// ```dart
   /// //Create a new PDF time stamp server
   /// TimestampServer server =
-  ///     TimestampServer(Uri.parse('http://site.com'));
+  ///     TimestampServer(Uri.parse('http://insinfo.digistamp.com'));
   /// //Check whether the time stamp server is valid
   /// bool isValid = await server.isValid;
   /// ```
@@ -92,14 +92,17 @@ class TimestampServer {
       input.add(base64.decode('VABlAHMAdAAgAGQAYQB0AGEA')); //Test unicode data
       input.close();
       final List<int> hash = output.events.single.bytes as List<int>;
-      final List<int> asnEncodedTimestampRequest =
-          TimeStampRequestCreator().getAsnEncodedTimestampRequest(hash);
-      final List<int>? timeStampResponse = await fetchData(uri, 'POST',
-          contentType: 'application/timestamp-query',
-          userName: userName,
-          password: password,
-          data: asnEncodedTimestampRequest,
-          timeOutDuration: timeOut);
+      final List<int> asnEncodedTimestampRequest = TimeStampRequestCreator()
+          .getAsnEncodedTimestampRequest(hash);
+      final List<int>? timeStampResponse = await fetchData(
+        uri,
+        'POST',
+        contentType: 'application/timestamp-query',
+        userName: userName,
+        password: password,
+        data: asnEncodedTimestampRequest,
+        timeOutDuration: timeOut,
+      );
       if (timeStampResponse != null && timeStampResponse.length > 2) {
         if (timeStampResponse[0] == 0x30 && timeStampResponse[1] == 0x82) {
           isValid = true;

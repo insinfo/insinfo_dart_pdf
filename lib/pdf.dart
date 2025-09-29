@@ -1,8 +1,9 @@
-
+/// The Insinfo Flutter PDF is a library written natively in Dart for
+/// creating, reading, editing, and securing PDF files in Android, iOS,
+/// and web platforms.
 library pdf;
 
 export 'src/flutter/ui.dart';
-
 export 'src/pdf/implementation/actions/pdf_action.dart' show PdfAction;
 export 'src/pdf/implementation/actions/pdf_annotation_action.dart'
     show PdfAnnotationActions;
