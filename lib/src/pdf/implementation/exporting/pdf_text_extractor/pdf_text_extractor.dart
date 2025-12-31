@@ -110,9 +110,11 @@ class PdfTextExtractor {
     int? startPageIndex,
     int? endPageIndex,
     bool? layoutText,
+    bool filterNullCharacters = false,
   }) {
     _isLayout = layoutText ?? false;
-    return _extractText(startPageIndex, endPageIndex);
+    final text = _extractText(startPageIndex, endPageIndex);
+    return filterNullCharacters ? text.replaceAll('\u0000', '') : text;
   }
 
   /// Extract [TextLine] from an existing PDF document
