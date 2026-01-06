@@ -81,7 +81,12 @@ class PdfSignatureDictionary implements IPdfWrapper {
   int? _firstRangeLength;
   int? _secondRangeIndex;
   int? _startPositionByteRange;
-  final int _estimatedSize = 8192;
+
+
+
+
+  // TODO isaque alterou de 8192 para 128KB
+  final int _estimatedSize = 131072; // PATCHED: Increased from 8192
   PdfCertificate? _cert;
   late List<int> _range;
   List<int>? _stream;
