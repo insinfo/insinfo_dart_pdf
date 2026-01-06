@@ -200,10 +200,9 @@ class X509Certificate extends X509ExtensionBase {
     try {
       final Asn1Octet? str = getExtension(DerObjectID('2.5.29.15'));
       if (str != null) {
-        final DerBitString bits =
-            DerBitString.getDetBitString(
-              Asn1Stream(PdfStreamReader(str.getOctets())).readAsn1(),
-            )!;
+        final DerBitString bits = DerBitString.getDetBitString(
+          Asn1Stream(PdfStreamReader(str.getOctets())).readAsn1(),
+        )!;
         final List<int> bytes = bits.getBytes()!;
         final int length = (bytes.length * 8) - bits.extra!;
         _keyUsage = List<bool>.generate(
@@ -217,11 +216,8 @@ class X509Certificate extends X509ExtensionBase {
         _keyUsage = null;
       }
     } catch (e) {
-      throw ArgumentError.value(
-        e,
-        'ArgumentError',
-        'cannot construct KeyUsage',
-      );
+      _keyUsage = null;
+      // Ignore KeyUsage error and continue
     }
   }
   //Fields
@@ -392,11 +388,9 @@ class SingnedCertificate extends Asn1Encode {
     _publicKeyInformation = PublicKeyInformation.getPublicKeyInformation(
       sequence[seqStart + 6],
     );
-    for (
-      int extras = sequence.count - (seqStart + 6) - 1;
-      extras > 0;
-      extras--
-    ) {
+    for (int extras = sequence.count - (seqStart + 6) - 1;
+        extras > 0;
+        extras--) {
       final Asn1Tag extra = sequence[seqStart + 6 + extras]! as Asn1Tag;
       switch (extra.tagNumber) {
         case 1:
@@ -638,9 +632,9 @@ class X509CertificateParser {
         final dynamic obj = _sData![_sDataObjectCount!];
         _sDataObjectCount = _sDataObjectCount! + 1;
         if (obj is Asn1Sequence) {
-          return createX509Certificate(
-            X509CertificateStructure.getInstance(obj),
-          );
+          final X509CertificateStructure? struct =
+              X509CertificateStructure.getInstance(obj);
+          return struct != null ? createX509Certificate(struct) : null;
         }
       }
     }
@@ -671,7 +665,9 @@ class X509CertificateParser {
         }
       }
     }
-    return createX509Certificate(X509CertificateStructure.getInstance(seq));
+    final X509CertificateStructure? struct =
+        X509CertificateStructure.getInstance(seq);
+    return struct != null ? createX509Certificate(struct) : null;
   }
 
   List<X509Certificate?>? _getCertificateChain() {

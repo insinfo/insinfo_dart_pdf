@@ -185,9 +185,13 @@ class PdfSignature {
       final X509CertificateParser parser = X509CertificateParser();
       _helper.externalChain = <X509Certificate?>[];
       _externalRootCert!.toList().forEach(
-        (List<int> certRawData) => _helper.externalChain!.add(
-          parser.readCertificate(PdfStreamReader(certRawData)),
-        ),
+        (List<int> certRawData) {
+          final X509Certificate? cert =
+              parser.readCertificate(PdfStreamReader(certRawData));
+          if (cert != null) {
+            _helper.externalChain!.add(cert);
+          }
+        },
       );
     }
   }
@@ -225,10 +229,9 @@ class PdfSignature {
         x509CertificateList.add(certificate);
       }
     } else {
-      final List<X509Certificate?>? certChain =
-          timestampServer != null
-              ? await _helper.getTimestampCertificateChain()
-              : _helper.getCertificateChain();
+      final List<X509Certificate?>? certChain = timestampServer != null
+          ? await _helper.getTimestampCertificateChain()
+          : _helper.getCertificateChain();
       if (certChain != null) {
         for (final X509Certificate? certificate in certChain) {
           if (certificate != null) {
@@ -302,8 +305,8 @@ class PdfSignatureHelper {
       page,
     ).dictionary!.containsKey(PdfDictionaryProperties.annots)) {
       final IPdfPrimitive? annotationElements = PdfCrossTable.dereference(
-        PdfPageHelper.getHelper(page).dictionary![PdfDictionaryProperties
-            .annots],
+        PdfPageHelper.getHelper(page)
+            .dictionary![PdfDictionaryProperties.annots],
       );
       IPdfPrimitive? lastElement;
       if (annotationElements != null &&
@@ -339,16 +342,15 @@ class PdfSignatureHelper {
   void catalogBeginSave(Object sender, SavePdfPrimitiveArgs? ars) {
     if (certificated) {
       IPdfPrimitive? permission = PdfCrossTable.dereference(
-        PdfDocumentHelper.getHelper(document!).catalog[PdfDictionaryProperties
-            .perms],
+        PdfDocumentHelper.getHelper(document!)
+            .catalog[PdfDictionaryProperties.perms],
       );
       if (permission == null) {
         permission = PdfDictionary();
-        (permission as PdfDictionary)[PdfDictionaryProperties
-            .docMDP] = PdfReferenceHolder(signatureDictionary);
-        PdfDocumentHelper.getHelper(document!).catalog[PdfDictionaryProperties
-                .perms] =
-            permission;
+        (permission as PdfDictionary)[PdfDictionaryProperties.docMDP] =
+            PdfReferenceHolder(signatureDictionary);
+        PdfDocumentHelper.getHelper(document!)
+            .catalog[PdfDictionaryProperties.perms] = permission;
       } else if (permission is PdfDictionary &&
           !permission.containsKey(PdfDictionaryProperties.docMDP)) {
         permission.setProperty(
@@ -648,8 +650,9 @@ class PdfSignatureHelper {
         PdfDictionaryProperties.certs,
       )] = PdfReferenceHolder(cetrsArray);
     }
-    PdfDocumentHelper.getHelper(document!).catalog[PdfDictionaryProperties
-        .dss] = PdfReferenceHolder(dssDictionary);
+    PdfDocumentHelper.getHelper(document!)
+            .catalog[PdfDictionaryProperties.dss] =
+        PdfReferenceHolder(dssDictionary);
     dssDictionary.modify();
     return true;
   }
@@ -707,10 +710,9 @@ class PdfSignatureHelper {
       if (i == 8 || i == 12 || i == 16 || i == 20) {
         buffer.write('-');
       }
-      final int digit =
-          i == 12
-              ? 4 // Specifies the version (4) for UUID v4
-              : (i == 16 ? (random.nextInt(4) + 8) : random.nextInt(16));
+      final int digit = i == 12
+          ? 4 // Specifies the version (4) for UUID v4
+          : (i == 16 ? (random.nextInt(4) + 8) : random.nextInt(16));
       buffer.write(digit.toRadixString(16));
     }
     return buffer.toString();
@@ -736,8 +738,8 @@ class PdfSignatureHelper {
               final List<int>? sigByte = contents.data;
               if (sigByte != null) {
                 final X509CertificateParser parser = X509CertificateParser();
-                final List<X509Certificate?>? certificateChain = parser
-                    .getCertificateChain(PdfStreamReader(sigByte));
+                final List<X509Certificate?>? certificateChain =
+                    parser.getCertificateChain(PdfStreamReader(sigByte));
                 if (certificateChain != null) {
                   return certificateChain;
                 }
@@ -761,8 +763,8 @@ class PdfSignatureHelper {
       input.add(base64.decode('VABlAHMAdAAgAGQAYQB0AGEA')); //Test unicode data
       input.close();
       final List<int> hash = output.events.single.bytes as List<int>;
-      final List<int> asnEncodedTimestampRequest = TimeStampRequestCreator()
-          .getAsnEncodedTimestampRequest(hash);
+      final List<int> asnEncodedTimestampRequest =
+          TimeStampRequestCreator().getAsnEncodedTimestampRequest(hash);
       final List<int>? timeStampResponse = await fetchData(
         base.timestampServer!.uri,
         'POST',
@@ -791,8 +793,8 @@ class PdfSignatureHelper {
         }
         if (encoded != null) {
           final X509CertificateParser parser = X509CertificateParser();
-          final List<X509Certificate?>? certificateChain = parser
-              .getCertificateChain(PdfStreamReader(encoded));
+          final List<X509Certificate?>? certificateChain =
+              parser.getCertificateChain(PdfStreamReader(encoded));
           if (certificateChain != null) {
             return certificateChain;
           }

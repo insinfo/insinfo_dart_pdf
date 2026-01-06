@@ -640,5 +640,221 @@ File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
+## Gov.br external signature (server-side)
+
+This library now supports a robust external signing flow compatible with the Gov.br API.
+The flow has two phases: prepare the PDF and compute the ByteRange hash, then inject the
+PKCS#7 returned by the signing service.
+
+### 1) Prepare PDF and hash (server-side)
+
+Use `PdfExternalSigning.preparePdf` to add the signature field, reserve space, and compute
+the Base64 hash to send to Gov.br. You can provide a custom visual appearance using
+`drawAppearance`.
+
+```dart
+final prepared = await PdfExternalSigning.preparePdf(
+  inputBytes: pdfBytes,
+  pageNumber: 1,
+  bounds: Rect.fromLTWH(100, 120, 220, 60),
+  fieldName: 'GovBr_Signature',
+  signature: PdfSignature()
+    ..documentPermissions = [PdfCertificationFlags.allowFormFill]
+    ..contactInfo = 'Gov.br - Assinatura Digital'
+    ..reason = 'Assinatura eletrônica via Gov.br'
+    ..digestAlgorithm = DigestAlgorithm.sha256,
+  drawAppearance: (graphics, bounds) {
+    graphics.drawString(
+      'Assinado via Gov.br',
+      PdfStandardFont(PdfFontFamily.helvetica, 9),
+      bounds: bounds,
+    );
+  },
+);
+
+final String hashBase64 = prepared.hashBase64;
+final Uint8List preparedPdfBytes = prepared.preparedPdfBytes;
+```
+
+### 2) Call Gov.br and inject the PKCS#7
+
+Use `GovBrSignatureApi` to fetch the certificate and to sign the hash, then embed the
+PKCS#7 bytes into the prepared PDF.
+
+```dart
+final api = GovBrSignatureApi();
+final certPem = await api.getPublicCertificatePem(accessToken);
+
+final pkcs7 = await api.signHashPkcs7(
+  accessToken: accessToken,
+  hashBase64: hashBase64,
+);
+
+final signedPdf = PdfExternalSigning.embedSignature(
+  preparedPdfBytes: preparedPdfBytes,
+  pkcs7Bytes: pkcs7,
+);
+```
+
+### 3) OAuth (Gov.br login)
+
+`GovBrOAuthClient` provides helpers to build the authorization URL and exchange the token
+using the Gov.br CAS endpoints. Use it in your backend controller to drive the OAuth flow.
+
+```dart
+final oauth = GovBrOAuthClient();
+final authorizeUri = oauth.buildAuthorizationUri({
+  'client_id': clientId,
+  'redirect_uri': redirectUri,
+  'response_type': 'code',
+  'scope': 'sign',
+  'code_challenge': codeChallenge,
+  'code_challenge_method': 'S256',
+  'state': state,
+});
+
+final token = await oauth.exchangeToken(body: {
+  'grant_type': 'authorization_code',
+  'client_id': clientId,
+  'redirect_uri': redirectUri,
+  'code': code,
+  'code_verifier': codeVerifier,
+});
+```
+
+### Integration with your current controller
+
+Map your current flow to the new helpers:
+
+- `start`: call `PdfExternalSigning.preparePdf` and send `hashBase64` to Gov.br.
+- `assinar`: receive `pkcs7` bytes from Gov.br and call `PdfExternalSigning.embedSignature`.
+- Keep your existing DocMDP and visual layout logic; you can replace your custom placeholder
+  logic with `drawAppearance` if desired.
+
+### Demo script
+
+This repo includes a demo that generates a certificate chain, signs a PDF with OpenSSL,
+installs the certs in Windows, and opens the PDF in Foxit:
+
+```bash
+dart run scripts/govbr_pdf_sign_demo.dart
+```
+
+You can set `FOXIT_PATH` to point to a custom Foxit location.
+
+### Internal parser flags
+
+When you need to avoid regex scanning, enable the internal parser flags:
+
+```dart
+PdfExternalSigning.useInternalByteRangeParser = true;
+PdfExternalSigning.useInternalContentsParser = true;
+```
+
+## External signature without helpers (low-level)
+
+If you prefer not to use `PdfExternalSigning`, you can implement the same flow with
+low-level APIs. The steps are:
+
+1) Load the PDF and add a `PdfSignatureField`.
+2) Attach a `PdfSignature` with `addExternalSigner` (placeholder).
+3) Save the PDF to create `/ByteRange` and `/Contents`.
+4) Extract the ByteRange, compute the Base64 SHA-256 hash, send to Gov.br.
+5) Inject the returned PKCS#7 into `/Contents`.
+
+Minimal example:
+
+```dart
+class _PlaceholderSigner extends IPdfExternalSigner {
+  @override
+  Future<SignerResult?> sign(List<int> message) async {
+    return SignerResult(Uint8List(0));
+  }
+}
+
+Future<Uint8List> preparePdfLowLevel(
+  Uint8List inputBytes,
+  Rect bounds,
+) async {
+  final doc = PdfDocument(inputBytes: inputBytes);
+  final page = doc.pages[0];
+
+  final sig = PdfSignature()
+    ..documentPermissions = [PdfCertificationFlags.allowFormFill]
+    ..contactInfo = 'Gov.br - Assinatura Digital'
+    ..reason = 'Assinatura eletronica via Gov.br'
+    ..digestAlgorithm = DigestAlgorithm.sha256;
+
+  sig.addExternalSigner(_PlaceholderSigner(), <List<int>>[]);
+
+  final field = PdfSignatureField(
+    page,
+    'GovBr_Signature',
+    bounds: bounds,
+    borderWidth: 0,
+    borderStyle: PdfBorderStyle.solid,
+    signature: sig,
+  );
+  doc.form.fields.add(field);
+
+  final bytes = Uint8List.fromList(await doc.save());
+  doc.dispose();
+  return bytes;
+}
+
+List<int> extractByteRangeLowLevel(Uint8List pdfBytes) {
+  final s = latin1.decode(pdfBytes, allowInvalid: true);
+  final m = RegExp(
+    r'/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]',
+  ).allMatches(s);
+  if (m.isEmpty) throw Exception('ByteRange not found');
+  final match = m.last;
+  return [
+    int.parse(match.group(1)!),
+    int.parse(match.group(2)!),
+    int.parse(match.group(3)!),
+    int.parse(match.group(4)!),
+  ];
+}
+
+Uint8List embedPkcs7LowLevel(Uint8List pdfBytes, List<int> pkcs7Bytes) {
+  final s = latin1.decode(pdfBytes, allowInvalid: true);
+  final sigPos = s.lastIndexOf('/Type /Sig');
+  if (sigPos == -1) throw Exception('No /Type /Sig');
+  final dictStart = s.lastIndexOf('<<', sigPos);
+  final dictEnd = s.indexOf('>>', sigPos);
+  if (dictStart == -1 || dictEnd == -1) {
+    throw Exception('Signature dict bounds not found');
+  }
+  final contentsPos = s.indexOf('/Contents', dictStart);
+  if (contentsPos == -1 || contentsPos > dictEnd) {
+    throw Exception('No /Contents in signature dict');
+  }
+  final lt = s.indexOf('<', contentsPos);
+  final gt = s.indexOf('>', lt + 1);
+  if (lt == -1 || gt == -1 || gt <= lt) {
+    throw Exception('Contents hex not found');
+  }
+  final start = lt + 1;
+  final end = gt;
+  final available = end - start;
+  String hex = pkcs7Bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  hex = hex.toUpperCase();
+  if (hex.length.isOdd) hex = '0$hex';
+  if (hex.length > available) {
+    throw Exception('PKCS#7 larger than placeholder');
+  }
+  final out = Uint8List.fromList(pdfBytes);
+  final sigBytes = ascii.encode(hex);
+  out.setRange(start, start + sigBytes.length, sigBytes);
+  for (int i = start + sigBytes.length; i < end; i++) {
+    out[i] = 0x30;
+  }
+  return out;
+}
+```
+
+This low-level flow mirrors the helper behavior but keeps full control in your app.
+
 
 

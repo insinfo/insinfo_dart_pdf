@@ -229,6 +229,12 @@ export 'src/pdf/implementation/pdf_document/pdf_file_structure.dart'
     show PdfFileStructure;
 export 'src/pdf/implementation/security/digital_signature/pdf_certificate.dart'
     show PdfCertificate;
+export 'src/pdf/implementation/security/digital_signature/external_pdf_signature.dart'
+    show PdfExternalSigning, PdfExternalSigningResult;
+export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
+    show GovBrSignatureApi;
+export 'src/pdf/implementation/security/digital_signature/govbr_oauth.dart'
+    show GovBrOAuthClient;
 export 'src/pdf/implementation/security/digital_signature/pdf_external_signer.dart';
 export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
     show PdfSignature, RevocationType;
