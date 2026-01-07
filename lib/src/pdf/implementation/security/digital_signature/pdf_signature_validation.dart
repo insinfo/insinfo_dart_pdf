@@ -276,6 +276,7 @@ class PdfSignatureValidation {
 
     bool sigValid = false;
     CipherParameter? publicKey = cms.signerPublicKey;
+    _DerCertificate? matchedSignerCert;
     if (publicKey == null && userCertificatePem != null) {
       try {
         publicKey = _publicKeyFromPemCertificate(userCertificatePem);
@@ -286,9 +287,19 @@ class PdfSignatureValidation {
 
     if (publicKey != null && cms.signature != null) {
       try {
-        final String signMode =
-                _signModeFromSignatureAlgorithmOid(cms.signatureAlgorithmOid) ??
-            'SHA-256withRSA';
+        String? signMode =
+            _signModeFromSignatureAlgorithmOid(cms.signatureAlgorithmOid);
+        // Some CMS producers encode signatureAlgorithm as rsaEncryption and
+        // specify the hash in digestAlgorithm.
+        if (signMode == null && cms.signatureAlgorithmOid == '1.2.840.113549.1.1.1') {
+          signMode = switch (cms.digestAlgorithmOid) {
+            '1.3.14.3.2.26' => 'SHA-1withRSA',
+            '2.16.840.1.101.3.4.2.2' => 'SHA-384withRSA',
+            '2.16.840.1.101.3.4.2.3' => 'SHA-512withRSA',
+            '2.16.840.1.101.3.4.2.1' || _ => 'SHA-256withRSA',
+          };
+        }
+        signMode ??= 'SHA-256withRSA';
         final SignerUtilities util = SignerUtilities();
 
         final List<Uint8List> dataCandidates = <Uint8List>[];
@@ -329,18 +340,84 @@ class PdfSignatureValidation {
             break;
           }
         }
+
+        // If we couldn't validate with the SID-matched key (or we couldn't
+        // identify the signer key at all), try all embedded certificates.
+        // This is a safe fallback because only the true signer cert will
+        // validate the signature bytes.
+        if (!matched && cms.certs.isNotEmpty && cms.signature != null) {
+          for (final _DerCertificate c in cms.certs) {
+            final X509Certificate? x = c.cert;
+            if (x == null) continue;
+
+            CipherParameter candidateKey;
+            try {
+              candidateKey = x.getPublicKey();
+            } catch (_) {
+              continue;
+            }
+
+            for (int i = 0; i < dataCandidates.length; i++) {
+              final Uint8List data = dataCandidates[i];
+              if (data.isEmpty) continue;
+              final ISigner signer = util.getSigner(signMode);
+              signer.initialize(false, candidateKey);
+              signer.blockUpdate(data, 0, data.length);
+              if (signer.validateSignature(cms.signature!)) {
+                sigValid = true;
+                matchedSignerCert = c;
+                matched = true;
+                break;
+              }
+            }
+
+            if (matched) {
+              publicKey = candidateKey;
+              break;
+            }
+          }
+        }
         
         if (!matched) {
-           // Debug: Print failure reason details?
-           // print('Signature verification failed for all ${dataCandidates.length} candidate buffers.');
+           final int certParsedCount = cms.certs.where((c) => c.cert != null).length;
+           print(
+             'CMS signature verification failed: signMode=$signMode '
+             'sigAlgOid=${cms.signatureAlgorithmOid} '
+             'digestAlgOid=${cms.digestAlgorithmOid} '
+             'signedAttrsDer=${cms.signedAttrsDer?.length ?? 0} '
+             'signedAttrsTagged=${cms.signedAttrsTaggedDer?.length ?? 0} '
+             'dataCandidates=${dataCandidates.length} '
+             'certs=${cms.certs.length} parsedCerts=$certParsedCount '
+             'sidSerial=${cms.signerSerial != null}',
+           );
         }
       } catch (e) {
         sigValid = false;
-        // print('Signature verification threw: $e');
+        print('CMS signature verification threw: $e');
       }
     }
 
-    final List<String> certsPem = _pemCertificatesOrdered(cms);
+    if (publicKey == null) {
+      final int certParsedCount = cms.certs.where((c) => c.cert != null).length;
+      print(
+        'CMS signer public key missing: '
+        'certs=${cms.certs.length} parsedCerts=$certParsedCount '
+        'sidSerial=${cms.signerSerial != null} sidSki=${cms.signerSki != null}',
+      );
+    }
+
+    final List<String> certsPem;
+    if (matchedSignerCert != null) {
+      final List<_DerCertificate> ordered = <_DerCertificate>[matchedSignerCert];
+      for (final c in cms.certs) {
+        if (!identical(c, matchedSignerCert)) ordered.add(c);
+      }
+      certsPem = ordered
+          .map((c) => _derToPemCertificate(c.der))
+          .toList(growable: false);
+    } else {
+      certsPem = _pemCertificatesOrdered(cms);
+    }
     return PdfSignatureValidationResult(
       signatureName: signatureName,
       cmsSignatureValid: sigValid,
@@ -655,6 +732,93 @@ class PdfSignatureValidation {
     }
   }
 
+  List<_DerCertificate> _extractCertificatesRawFromCms(Uint8List cmsBytes) {
+    try {
+      int o = 0;
+
+      // ContentInfo ::= SEQUENCE { contentType, [0] EXPLICIT signedData }
+      final _DerTlv contentInfo = _readDerTlv(cmsBytes, o);
+      if (contentInfo.tag != 0x30) return const <_DerCertificate>[];
+      o += contentInfo.headerLen;
+
+      // contentType OID
+      o += _readDerTlv(cmsBytes, o).totalLen;
+
+      // [0] EXPLICIT signedData
+      final _DerTlv signedDataExplicit = _readDerTlv(cmsBytes, o);
+      if (signedDataExplicit.tag != 0xA0) return const <_DerCertificate>[];
+      o += signedDataExplicit.headerLen;
+
+      // SignedData SEQUENCE
+      final _DerTlv signedDataSeq = _readDerTlv(cmsBytes, o);
+      if (signedDataSeq.tag != 0x30) return const <_DerCertificate>[];
+      final int signedDataStart = o;
+      final int signedDataContentStart = signedDataStart + signedDataSeq.headerLen;
+      final int signedDataEnd = signedDataStart + signedDataSeq.totalLen;
+
+      // Walk SignedData children
+      int p = signedDataContentStart;
+      p += _readDerTlv(cmsBytes, p).totalLen; // version
+      p += _readDerTlv(cmsBytes, p).totalLen; // digestAlgorithms
+      p += _readDerTlv(cmsBytes, p).totalLen; // encapContentInfo
+
+      // optional certs [0] IMPLICIT
+      if (p < signedDataEnd && cmsBytes[p] == 0xA0) {
+        final _DerTlv certsTlv = _readDerTlv(cmsBytes, p);
+        int certsContentStart = p + certsTlv.headerLen;
+        int certsContentEnd = p + certsTlv.totalLen;
+
+        // Some producers may encode this as EXPLICIT (content starts with SET 0x31).
+        // CMS specifies IMPLICIT, so handle both defensively.
+        if (certsContentStart < certsContentEnd && cmsBytes[certsContentStart] == 0x31) {
+          final _DerTlv innerSet = _readDerTlv(cmsBytes, certsContentStart);
+          certsContentStart = certsContentStart + innerSet.headerLen;
+          certsContentEnd = (certsContentStart - innerSet.headerLen) + innerSet.totalLen;
+        }
+
+        final List<_DerCertificate> out = <_DerCertificate>[];
+        int cpos = certsContentStart;
+        while (cpos < certsContentEnd) {
+          final _DerTlv tlv = _readDerTlv(cmsBytes, cpos);
+          final int next = cpos + tlv.totalLen;
+          if (next > certsContentEnd) break;
+
+          // CertificateChoices.certificate is an X.509 Certificate SEQUENCE.
+          if (tlv.tag == 0x30) {
+            final Uint8List der = cmsBytes.sublist(cpos, next);
+            X509Certificate? cert;
+            try {
+              final Asn1? parsed = Asn1Stream(PdfStreamReader(der)).readAsn1();
+              if (parsed is Asn1Sequence) {
+                final X509CertificateStructure? s =
+                    X509CertificateStructure.getInstance(parsed);
+                // For CMS signature validation we primarily need the signer's public key.
+                // Some producers/parsers can yield structures missing outer wrapper fields
+                // (signatureAlgorithm/signature). Keep certs when the public key is usable.
+                if (s != null && s.subjectPublicKeyInfo != null) {
+                  cert = X509Certificate(s);
+                }
+              }
+            } catch (_) {
+              cert = null;
+            }
+
+            // Always keep DER bytes; ordering/matching uses parsed fields when available.
+            out.add(_DerCertificate(der: der, cert: cert));
+          }
+
+          cpos = next;
+        }
+
+        return out;
+      }
+
+      return const <_DerCertificate>[];
+    } catch (_) {
+      return const <_DerCertificate>[];
+    }
+  }
+
   _CmsParsed _parseCmsDetachedSignedData(Uint8List cmsBytes) {
     final Asn1Stream asn1 = Asn1Stream(PdfStreamReader(cmsBytes));
     final Asn1? contentInfoObj = asn1.readAsn1();
@@ -682,6 +846,7 @@ class PdfSignatureValidation {
     idx++; // digestAlgorithms
     idx++; // encapContentInfo
 
+    // optional certs [0]
     Asn1Tag? certsTag;
     if (signedDataObj.count > idx) {
       final Asn1? maybeTag = signedDataObj[idx]?.getAsn1();
@@ -795,7 +960,13 @@ class PdfSignatureValidation {
       }
     }
 
-    final List<_DerCertificate> certs = _extractCertificates(certsTag);
+    // Extract certificates.
+    // Prefer raw slicing (preserves original bytes) when CMS is DER-like.
+    // Fall back to ASN.1 object extraction for BER/indefinite-length encodings.
+    List<_DerCertificate> certs = _extractCertificatesRawFromCms(cmsBytes);
+    if (certs.isEmpty && certsTag != null) {
+      certs = _extractCertificatesFromSignedDataTag(certsTag);
+    }
 
     CipherParameter? signerKey;
     if (certs.isNotEmpty) {
@@ -829,6 +1000,44 @@ class PdfSignatureValidation {
       policyOid: policyOid,
       signingTime: signingTime,
     );
+  }
+
+  List<_DerCertificate> _extractCertificatesFromSignedDataTag(Asn1Tag certsTag) {
+    try {
+      // SignedData.certificates is [0] IMPLICIT SET OF CertificateChoices.
+      // Use Asn1Set.getAsn1Set(tag,false) to correctly handle IMPLICIT tagging
+      // and BER/indefinite-length forms.
+      final Asn1Set? certsSet = Asn1Set.getAsn1Set(certsTag, false);
+      if (certsSet == null || certsSet.objects.isEmpty) {
+        return const <_DerCertificate>[];
+      }
+
+      final List<_DerCertificate> out = <_DerCertificate>[];
+      for (final Asn1Encode? enc in certsSet.objects) {
+        final Asn1? item = enc?.getAsn1();
+        if (item is! Asn1Sequence) continue;
+        final List<int>? derList = item.getDerEncoded();
+        if (derList == null || derList.isEmpty) continue;
+        final Uint8List der = Uint8List.fromList(derList);
+
+        X509Certificate? cert;
+        try {
+          final X509CertificateStructure? s =
+              X509CertificateStructure.getInstance(item);
+          if (s != null && s.subjectPublicKeyInfo != null) {
+            cert = X509Certificate(s);
+          }
+        } catch (_) {
+          cert = null;
+        }
+
+        out.add(_DerCertificate(der: der, cert: cert));
+      }
+
+      return out;
+    } catch (_) {
+      return const <_DerCertificate>[];
+    }
   }
 
   (BigInt?, Uint8List?, Uint8List?) _extractIssuerAndSerial(Asn1 sid) {
@@ -939,66 +1148,6 @@ class PdfSignatureValidation {
     return null;
   }
 
-  List<_DerCertificate> _extractCertificates(Asn1Tag? certsTag) {
-    if (certsTag == null) return const <_DerCertificate>[];
-    final Asn1? certsObj = certsTag.getObject();
-    if (certsObj is! Asn1Set && certsObj is! Asn1Sequence) {
-      return const <_DerCertificate>[];
-    }
-
-    final List<_DerCertificate> certs = <_DerCertificate>[];
-    final int count = (certsObj is Asn1Set)
-        ? certsObj.objects.length
-        : (certsObj as Asn1Sequence).count;
-    for (int i = 0; i < count; i++) {
-      final Asn1Encode? elEnc = (certsObj is Asn1Set)
-          ? certsObj[i]
-          : (certsObj as Asn1Sequence)[i]?.getAsn1() as Asn1Encode?;
-      final Asn1? elAsn1 = elEnc?.getAsn1();
-      if (elAsn1 is! Asn1Sequence) continue;
-
-      final Uint8List der = Uint8List.fromList(elAsn1.getDerEncoded()!);
-      X509Certificate? cert;
-      try {
-        final Asn1? parsed = Asn1Stream(PdfStreamReader(der)).readAsn1();
-        if (parsed is Asn1Sequence) {
-          try {
-            final X509CertificateStructure? s =
-                X509CertificateStructure.getInstance(parsed);
-            if (s != null) {
-              cert = X509Certificate(s);
-            }
-          } catch (_) {
-            // Fallback: If parsed is TBSCertificate (missing wrapper), wrap it.
-            // This happens if the parser unwraps the outer Certificate sequence or if it's stored weirdly.
-            // We create a dummy wrapper [TBS, Alg, Sig] to satisfy X509CertificateStructure.
-            final Asn1Sequence wrapped = Asn1Sequence();
-            wrapped.objects!.add(parsed);
-            
-            // Dummy AlgorithmIdentifier (rsaEncryption)
-            final Asn1Sequence alg = Asn1Sequence();
-            alg.objects!.add(DerObjectID('1.2.840.113549.1.1.1')); 
-            wrapped.objects!.add(alg);
-            
-            // Dummy SignatureValue (BitString)
-            wrapped.objects!.add(DerBitString(Uint8List(0), 0));
-            
-            try {
-              final X509CertificateStructure s = X509CertificateStructure(wrapped);
-              cert = X509Certificate(s);
-            } catch (e) {
-               // ignore, genuinely invalid
-            }
-          }
-        }
-      } catch (_) {
-        cert = null;
-      }
-      certs.add(_DerCertificate(der: der, cert: cert));
-    }
-    return certs;
-  }
-
   _DerCertificate? _findSignerCertificate(
     List<_DerCertificate> certs,
     BigInt? sidSerial,
@@ -1010,19 +1159,21 @@ class PdfSignatureValidation {
       for (final _DerCertificate c in certs) {
         final X509Certificate? x = c.cert;
         if (x == null) continue;
-        
-        // Extract Ski
+
         final Asn1Octet? skiExt = x.getExtension(DerObjectID('2.5.29.14'));
         if (skiExt != null) {
-           // Extension value is OCTET STRING wrapping the keyIdentifier (OCTET STRING).
-           // So skiExt contains encoding of OCTET STRING.
-           try {
-             final Asn1? inner = Asn1Stream(PdfStreamReader(skiExt.getOctets())).readAsn1();
-             if (inner is DerOctet) {
-                final Uint8List keyId = Uint8List.fromList(inner.getOctets() ?? []);
-                if (_constantTimeEquals(keyId, sidSki)) return c;
-             }
-           } catch (_) {}
+          // Extension value is OCTET STRING wrapping the keyIdentifier (OCTET STRING).
+          try {
+            final Asn1? inner =
+                Asn1Stream(PdfStreamReader(skiExt.getOctets())).readAsn1();
+            if (inner is DerOctet) {
+              final Uint8List keyId =
+                  Uint8List.fromList(inner.getOctets() ?? []);
+              if (_constantTimeEquals(keyId, sidSki)) return c;
+            }
+          } catch (_) {
+            // ignore
+          }
         }
       }
     }

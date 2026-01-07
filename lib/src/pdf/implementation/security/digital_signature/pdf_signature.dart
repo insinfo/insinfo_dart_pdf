@@ -65,6 +65,43 @@ class PdfSignature {
     );
   }
 
+  /// Configura esta assinatura como **certificação DocMDP** (Perms/DocMDP),
+  /// para uso **somente na primeira assinatura** do documento.
+  ///
+  /// Retorna `true` quando a configuração foi aplicada.
+  /// Retorna `false` quando o documento já possui assinaturas (não é permitido
+  /// criar uma nova certificação DocMDP após já existir assinatura).
+  ///
+  /// [permissionP] segue a semântica do DocMDP em PDF:
+  /// - 1: proibir alterações
+  /// - 2: permitir preenchimento de formulários
+  /// - 3: permitir comentários/anotações
+  bool configureDocMdpForFirstSignature(
+    PdfDocument document, {
+    int permissionP = 2,
+  }) {
+    if (document.hasSignatures) {
+      return false;
+    }
+
+    switch (permissionP) {
+      case 1:
+        documentPermissions = <PdfCertificationFlags>[PdfCertificationFlags.forbidChanges];
+        break;
+      case 2:
+        documentPermissions = <PdfCertificationFlags>[PdfCertificationFlags.allowFormFill];
+        break;
+      case 3:
+        documentPermissions = <PdfCertificationFlags>[PdfCertificationFlags.allowComments];
+        break;
+      default:
+        throw RangeError.range(permissionP, 1, 3, 'permissionP');
+    }
+
+    PdfSignatureHelper.getHelper(this).certificated = true;
+    return true;
+  }
+
   //Fields
   late PdfSignatureHelper _helper;
   List<List<int>>? _externalRootCert;
@@ -345,6 +382,11 @@ class PdfSignatureHelper {
   /// internal method
   void catalogBeginSave(Object sender, SavePdfPrimitiveArgs? ars) {
     if (certificated) {
+      // DocMDP só pode ser aplicado como assinatura de certificação.
+      // Se o documento já possui assinaturas, não devemos tentar setar Perms/DocMDP.
+      if (document != null && document!.hasSignatures) {
+        return;
+      }
       IPdfPrimitive? permission = PdfCrossTable.dereference(
         PdfDocumentHelper.getHelper(document!)
             .catalog[PdfDictionaryProperties.perms],

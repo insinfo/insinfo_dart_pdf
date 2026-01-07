@@ -24,6 +24,8 @@ import 'x509/x509_certificates.dart';
 import 'x509/x509_crl.dart';
 import 'x509/x509_utils.dart';
 import '../../../../security/chain/icp_brasil_provider.dart';
+import '../../../../security/chain/iti_provider.dart';
+import '../../../../security/chain/serpro_provider.dart';
 
 class PdfLtvInfo {
   const PdfLtvInfo({
@@ -109,6 +111,7 @@ class PdfSignatureValidationItem {
     required this.contentsEnd,
     required this.validation,
     required this.chainTrusted,
+    this.chainErrors,
     required this.docMdp,
     required this.ltv,
     required this.revocationStatus,
@@ -134,6 +137,11 @@ class PdfSignatureValidationItem {
   /// Null when no trusted roots are provided.
   final bool? chainTrusted;
 
+  /// When [chainTrusted] is false, this may contain error codes describing why.
+  ///
+  /// Null when chain trust was not evaluated.
+  final List<String>? chainErrors;
+
   final PdfDocMdpInfo docMdp;
   final PdfLtvInfo ltv;
   
@@ -154,6 +162,7 @@ class PdfSignatureValidationItem {
         'certs_pem': validation.certsPem.length, // Avoid dumping all certs in map
         'policy_oid': validation.policyOid,
         'chain_trusted': chainTrusted,
+        'chain_errors': chainErrors,
         'doc_mdp': docMdp.toMap(),
         'ltv': ltv.toMap(),
         'revocation_status': revocationStatus.toMap(),
@@ -203,27 +212,46 @@ class PdfSignatureValidator {
       final List<PdfSignatureValidationItem> out = <PdfSignatureValidationItem>[];
 
       final List<String> effectiveRoots = <String>[];
+      final List<String> extraCandidatesPem = <String>[];
       if (trustedRootsPem != null) {
         effectiveRoots.addAll(trustedRootsPem);
       }
       if (useEmbeddedIcpBrasil) {
-         final icpProvider = IcpBrasilProvider();
-         // We need PEMs here but the provider returns DERs in standard interface
-         // However, internally we know we have the store in format.
-         // Let's rely on the public interface or import the store directly?
-         // Ideally imports the list directly if we want sync access for 'icpBrasilTrustStore'
-         // But since I refactored it out, I should probably import the generated file here too 
-         // OR update the provider to be useful here.
-         // For now, I'll temporarily import the generated file to keep this working
-         // But wait, I can't import 'generated' easily if it's far away.
-         // Let's just fix the import at the top to point to the new location of the provider, 
-         // and we can fetch the roots. 
-         // But wait, validateAllSignatures is async, so we can await.
-         
-         final rootsDer = await icpProvider.getTrustedRoots();
-          for (final der in rootsDer) {
-             effectiveRoots.add(X509Utils.derToPem(der));
+        // Trust anchors embutidos (roots) para ICP-Brasil / ITI / Serpro.
+        final IcpBrasilProvider icpProvider = IcpBrasilProvider();
+        final ItiProvider itiProvider = ItiProvider();
+        final SerproProvider serproProvider = SerproProvider();
+
+        final List<Uint8List> icpRootsDer = await icpProvider.getTrustedRoots();
+        final List<Uint8List> itiRootsDer = await itiProvider.getTrustedRoots();
+        final List<Uint8List> serproRootsDer = await serproProvider.getTrustedRoots();
+
+        bool isSelfSigned(X509Certificate cert) {
+          final String? subject = cert.c?.subject?.toString();
+          final String? issuer = cert.c?.issuer?.toString();
+          if (subject == null || issuer == null || subject != issuer) {
+            return false;
           }
+          try {
+            cert.verify(cert.getPublicKey());
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        for (final Uint8List der in <Uint8List>[...icpRootsDer, ...itiRootsDer, ...serproRootsDer]) {
+          final String pem = X509Utils.derToPem(der);
+          extraCandidatesPem.add(pem);
+          try {
+            final X509Certificate cert = X509Utils.parsePemCertificate(pem);
+            if (isSelfSigned(cert)) {
+              effectiveRoots.add(pem);
+            }
+          } catch (_) {
+            // ignore invalid embedded certs
+          }
+        }
       }
 
       // Prepare CRLs
@@ -250,11 +278,16 @@ class PdfSignatureValidator {
         );
 
         bool? chainTrusted;
+        List<String>? chainErrors;
         if (effectiveRoots.isNotEmpty) {
-          chainTrusted = X509Utils.verifyChainPem(
+          final X509ChainValidationResult chainResult = X509Utils.verifyChainPem(
             chainPem: res.certsPem,
             trustedRootsPem: effectiveRoots,
-          ).trusted;
+            extraCandidatesPem: extraCandidatesPem,
+            validationTime: res.signingTime,
+          );
+          chainTrusted = chainResult.trusted;
+          chainErrors = chainResult.errors;
         }
 
         // Revocation Check
@@ -338,6 +371,7 @@ class PdfSignatureValidator {
             contentsEnd: cEnd,
             validation: res,
             chainTrusted: chainTrusted,
+            chainErrors: chainErrors,
             docMdp: docMdp,
             ltv: ltv,
             revocationStatus: revStatus,

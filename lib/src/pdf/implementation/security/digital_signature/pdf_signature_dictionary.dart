@@ -1163,6 +1163,9 @@ class SignerUtilities {
     _algms[PkcsObjectId.sha384WithRsaEncryption.id] = 'SHA-384withRSA';
     _algms['SHA-384WITHRSA'] = 'SHA-384withRSA';
     _algms['SHA-512WITHRSA'] = 'SHA-512withRSA';
+    _algms['SHA512WITHRSAENCRYPTION'] = 'SHA-512withRSA';
+    _algms['SHA-512WITHRSAENCRYPTION'] = 'SHA-512withRSA';
+    _algms[PkcsObjectId.sha512WithRsaEncryption.id] = 'SHA-512withRSA';
     _algms['SHA384WITHRSAANDMGF1'] = 'SHA-384withRSAandMGF1';
     _algms['SHA-384WITHRSAANDMGF1'] = 'SHA-384withRSAandMGF1';
     _algms['SHA384WITHRSA/PSS'] = 'SHA-384withRSAandMGF1';

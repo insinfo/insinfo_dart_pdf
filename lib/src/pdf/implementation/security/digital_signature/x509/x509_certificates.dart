@@ -1,3 +1,8 @@
+import 'dart:typed_data';
+
+import 'package:asn1lib/asn1lib.dart' as asn1;
+import 'package:pointycastle/export.dart' as pc;
+
 import '../../../io/stream_reader.dart';
 import '../asn1/asn1.dart';
 import '../asn1/asn1_stream.dart';
@@ -263,6 +268,31 @@ class X509Certificate extends X509ExtensionBase {
       final RsaPublicKey pubKey =
           RsaPublicKey.getPublicKey(keyInfo.getPublicKey())!;
       result = RsaKeyParam(false, pubKey.modulus, pubKey.publicExponent);
+    } else if (algOid.id == '1.2.840.10045.2.1') {
+      // id-ecPublicKey
+      final Asn1Encode? params = algID.parameters;
+      final DerObjectID? curveOid = params is DerObjectID ? params : null;
+      if (curveOid?.id == null) {
+        throw ArgumentError.value(
+          keyInfo,
+          'keyInfo',
+          'Unsupported EC public key parameters (expected named curve OID)',
+        );
+      }
+
+      final String domainName = _ecDomainNameForOid(curveOid!.id!);
+      final pc.ECDomainParameters domain = pc.ECDomainParameters(domainName);
+
+      final List<int>? qEncoded = keyInfo.publicKey?.getBytes();
+      if (qEncoded == null || qEncoded.isEmpty) {
+        throw ArgumentError.value(keyInfo, 'keyInfo', 'Missing EC public key bytes');
+      }
+      final pc.ECPoint? q = domain.curve.decodePoint(Uint8List.fromList(qEncoded));
+      if (q == null) {
+        throw ArgumentError.value(keyInfo, 'keyInfo', 'Could not decode EC public key point');
+      }
+
+      result = _EcPublicKeyParam(pc.ECPublicKey(q, domain));
     } else {
       throw ArgumentError.value(
         keyInfo,
@@ -276,13 +306,253 @@ class X509Certificate extends X509ExtensionBase {
   /// internal method
   void verify(CipherParameter key) {
     if (c != null) {
-      final String sigName = c!.signatureAlgorithm!.id!.id!;
+      final String sigOid = c!.signatureAlgorithm!.id!.id!;
+
+      // RSASSA-PSS (RFC 4055) is commonly used by modern CAs.
+      // The existing SignerUtilities only supports RSA PKCS#1 v1.5.
+      if (sigOid == '1.2.840.113549.1.1.10') {
+        _verifyRsassaPss(key);
+        return;
+      }
+
+      // ECDSA-with-SHA{1,2} (X9.62).
+      if (_isEcdsaSignatureOid(sigOid)) {
+        _verifyEcdsa(sigOid, key);
+        return;
+      }
+
       final SignerUtilities util = SignerUtilities();
-      final ISigner signature = util.getSigner(sigName);
+      final ISigner signature = util.getSigner(sigOid);
       checkSignature(key, signature);
     }
   }
 
+  static bool _isEcdsaSignatureOid(String oid) {
+    return oid == '1.2.840.10045.4.1' ||
+        oid == '1.2.840.10045.4.3.1' ||
+        oid == '1.2.840.10045.4.3.2' ||
+        oid == '1.2.840.10045.4.3.3' ||
+        oid == '1.2.840.10045.4.3.4';
+  }
+
+  static pc.Digest _pcDigestForEcdsaSignatureOid(String oid) {
+    switch (oid) {
+      case '1.2.840.10045.4.1':
+        return pc.SHA1Digest();
+      case '1.2.840.10045.4.3.1':
+        return pc.SHA224Digest();
+      case '1.2.840.10045.4.3.2':
+        return pc.SHA256Digest();
+      case '1.2.840.10045.4.3.3':
+        return pc.SHA384Digest();
+      case '1.2.840.10045.4.3.4':
+        return pc.SHA512Digest();
+    }
+    throw ArgumentError.value(oid, 'oid', 'Unsupported ECDSA signature OID');
+  }
+
+  static String _ecDomainNameForOid(String oid) {
+    switch (oid) {
+      // prime256v1 == secp256r1
+      case '1.2.840.10045.3.1.7':
+        return 'prime256v1';
+      case '1.3.132.0.10':
+        return 'secp256k1';
+      case '1.3.132.0.34':
+        return 'secp384r1';
+      case '1.3.132.0.35':
+        return 'secp521r1';
+    }
+    throw ArgumentError.value(oid, 'oid', 'Unsupported named curve OID');
+  }
+
+  void _verifyEcdsa(String sigOid, CipherParameter publicKey) {
+    if (publicKey is! _EcPublicKeyParam) {
+      throw ArgumentError.value(publicKey, 'publicKey', 'ECDSA requires an EC public key');
+    }
+
+    if (!isAlgIDEqual(c!.signatureAlgorithm!, c!.tbsCertificate!.signature!)) {
+      throw Exception('signature algorithm in TBS cert not same as outer cert');
+    }
+
+    final List<int>? tbs = getTbsCertificate();
+    final List<int>? sigBytes = getSignature();
+    if (tbs == null || sigBytes == null) {
+      throw Exception('Missing certificate data for signature verification');
+    }
+
+    // Signature value is DER SEQUENCE { r INTEGER, s INTEGER }
+    final asn1.ASN1Object parsed =
+        asn1.ASN1Parser(Uint8List.fromList(sigBytes)).nextObject();
+    if (parsed is! asn1.ASN1Sequence || parsed.elements.length < 2) {
+      throw Exception('Invalid ECDSA signature encoding');
+    }
+    final asn1.ASN1Object rObj = parsed.elements[0];
+    final asn1.ASN1Object sObj = parsed.elements[1];
+    if (rObj is! asn1.ASN1Integer || sObj is! asn1.ASN1Integer) {
+      throw Exception('Invalid ECDSA signature integers');
+    }
+
+    final pc.Digest digest = _pcDigestForEcdsaSignatureOid(sigOid);
+    final pc.ECDSASigner signer = pc.ECDSASigner(digest);
+    signer.init(
+      false,
+      pc.PublicKeyParameter<pc.ECPublicKey>(publicKey.publicKey),
+    );
+
+    final bool ok = signer.verifySignature(
+      Uint8List.fromList(tbs),
+      pc.ECSignature(rObj.valueAsBigInteger, sObj.valueAsBigInteger),
+    );
+    if (!ok) {
+      throw Exception('Public key presented not for certificate signature');
+    }
+  }
+
+  void _verifyRsassaPss(CipherParameter publicKey) {
+    if (publicKey is! RsaKeyParam) {
+      throw ArgumentError.value(
+        publicKey,
+        'publicKey',
+        'RSASSA-PSS requires an RSA public key',
+      );
+    }
+
+    if (!isAlgIDEqual(c!.signatureAlgorithm!, c!.tbsCertificate!.signature!)) {
+      throw Exception('signature algorithm in TBS cert not same as outer cert');
+    }
+
+    final List<int>? tbs = getTbsCertificate();
+    final List<int>? sigBytes = getSignature();
+    if (tbs == null || sigBytes == null) {
+      throw Exception('Missing certificate data for signature verification');
+    }
+
+    final ({String hashOid, String mgfHashOid, int saltLength}) pss =
+        _parseRsassaPssParamsBestEffort(c!.signatureAlgorithm!.parameters);
+    final pc.Digest hashDigest = _pcDigestForOid(pss.hashOid);
+    final pc.Digest mgfDigest = _pcDigestForOid(pss.mgfHashOid);
+
+    final pc.SecureRandom random = pc.FortunaRandom()
+      ..seed(pc.KeyParameter(Uint8List(32)));
+    final pc.PSSSigner signer = pc.PSSSigner(
+      pc.RSAEngine(),
+      hashDigest,
+      mgfDigest,
+    );
+    signer.init(
+      false,
+      pc.ParametersWithSaltConfiguration(
+        pc.PublicKeyParameter<pc.RSAPublicKey>(
+          pc.RSAPublicKey(publicKey.modulus!, publicKey.exponent!),
+        ),
+        random,
+        pss.saltLength,
+      ),
+    );
+
+    final bool ok = signer.verifySignature(
+      Uint8List.fromList(tbs),
+      pc.PSSSignature(Uint8List.fromList(sigBytes)),
+    );
+    if (!ok) {
+      throw Exception('Public key presented not for certificate signature');
+    }
+  }
+
+  static pc.Digest _pcDigestForOid(String oid) {
+    switch (oid) {
+      case '1.3.14.3.2.26':
+        return pc.SHA1Digest();
+      case '2.16.840.1.101.3.4.2.4':
+        return pc.SHA224Digest();
+      case '2.16.840.1.101.3.4.2.1':
+        return pc.SHA256Digest();
+      case '2.16.840.1.101.3.4.2.2':
+        return pc.SHA384Digest();
+      case '2.16.840.1.101.3.4.2.3':
+        return pc.SHA512Digest();
+    }
+
+    throw ArgumentError.value(oid, 'oid', 'Unsupported digest OID');
+  }
+
+  static ({String hashOid, String mgfHashOid, int saltLength})
+      _parseRsassaPssParamsBestEffort(Asn1Encode? params) {
+    // Defaults per RFC 4055.
+    String hashOid = '1.3.14.3.2.26'; // sha1
+    String mgfHashOid = '1.3.14.3.2.26'; // sha1
+    int saltLen = 20;
+
+    try {
+      final List<int>? der = params?.getDerEncoded();
+      if (der == null || der.isEmpty) {
+        return (hashOid: hashOid, mgfHashOid: mgfHashOid, saltLength: saltLen);
+      }
+
+      final asn1.ASN1Object top =
+          asn1.ASN1Parser(Uint8List.fromList(der)).nextObject();
+      if (top is! asn1.ASN1Sequence) {
+        return (hashOid: hashOid, mgfHashOid: mgfHashOid, saltLength: saltLen);
+      }
+
+      for (final asn1.ASN1Object element in top.elements) {
+        // Context-specific explicit tags: 0xA0..0xA3
+        final int tagNo = element.tag & 0x1f;
+        final asn1.ASN1Object inner =
+            asn1.ASN1Parser(element.valueBytes()).nextObject();
+
+        // [0] hashAlgorithm AlgorithmIdentifier
+        if (tagNo == 0) {
+          final String? oid = _tryParseAlgorithmIdentifierOid(inner);
+          if (oid != null) hashOid = oid;
+          continue;
+        }
+
+        // [1] maskGenAlgorithm AlgorithmIdentifier (expected mgf1 with hash params)
+        if (tagNo == 1) {
+          final String? mgf = _tryParseMgf1HashOid(inner);
+          if (mgf != null) {
+            mgfHashOid = mgf;
+          }
+          continue;
+        }
+
+        // [2] saltLength INTEGER
+        if (tagNo == 2 && inner is asn1.ASN1Integer) {
+          saltLen = inner.intValue;
+          continue;
+        }
+      }
+    } catch (_) {
+      // Widely used modern fallback when params parsing fails.
+      hashOid = '2.16.840.1.101.3.4.2.1'; // sha256
+      mgfHashOid = hashOid;
+      saltLen = 32;
+    }
+
+    return (hashOid: hashOid, mgfHashOid: mgfHashOid, saltLength: saltLen);
+  }
+
+  static String? _tryParseAlgorithmIdentifierOid(asn1.ASN1Object obj) {
+    if (obj is! asn1.ASN1Sequence) return null;
+    if (obj.elements.isEmpty) return null;
+    final asn1.ASN1Object first = obj.elements.first;
+    if (first is asn1.ASN1ObjectIdentifier) {
+      return first.identifier;
+    }
+    return null;
+  }
+
+  static String? _tryParseMgf1HashOid(asn1.ASN1Object obj) {
+    // mgf1 AlgorithmIdentifier: { oid = 1.2.840.113549.1.1.8, params = AlgorithmIdentifier }
+    if (obj is! asn1.ASN1Sequence) return null;
+    if (obj.elements.length < 2) return null;
+    final asn1.ASN1Object oidObj = obj.elements[0];
+    if (oidObj is! asn1.ASN1ObjectIdentifier) return null;
+    if (oidObj.identifier != '1.2.840.113549.1.1.8') return null;
+    return _tryParseAlgorithmIdentifierOid(obj.elements[1]);
+  }
   /// internal method
   void checkSignature(CipherParameter publicKey, ISigner signature) {
     if (!isAlgIDEqual(c!.signatureAlgorithm!, c!.tbsCertificate!.signature!)) {
@@ -313,11 +583,22 @@ class X509Certificate extends X509ExtensionBase {
   }
 }
 
+class _EcPublicKeyParam extends CipherParameter {
+  _EcPublicKeyParam(this.publicKey) : super(false);
+
+  final pc.ECPublicKey publicKey;
+}
+
 /// internal class
 class X509CertificateStructure extends Asn1Encode {
   /// internal constructor
   X509CertificateStructure(Asn1Sequence seq) {
-    if (seq.count > 0 && (seq[0] is DerTag || seq[0] is Asn1Tag)) {
+    final bool looksLikeOuterCertificate =
+        seq.count >= 3 && (seq[2] is DerBitString) && Algorithms.getAlgorithms(seq[1]) != null;
+
+    if (!looksLikeOuterCertificate &&
+        seq.count > 0 &&
+        (seq[0] is DerTag || seq[0] is Asn1Tag)) {
       // Handle case where seq is the TBSCertificate itself (missing outer Certificate wrapper)
       _tbsCert = SingnedCertificate(seq);
       _sigAlgID = null;

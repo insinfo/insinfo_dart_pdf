@@ -42,24 +42,6 @@ void main() {
     for (var sig in report.signatures) {
       // Signature checks
       expect(sig.validation.cmsSignatureValid, isTrue, reason: 'Signature ${sig.fieldName} invalid');
-      
-      // Chain validation check
-      if (sig.chainTrusted == false || sig.chainTrusted == null) {
-          print('    Chain Validation Failed for ${sig.fieldName}: Strict check false');
-          // Fallback logic for test stability
-          final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
-          final String issuer = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
-          
-          bool linkedToRoot = false;
-          if (issuer.contains('gov-br') || issuer.contains('icp-brasil') || issuer.contains('serpro')) {
-              linkedToRoot = true;
-          }
-          
-         expect(linkedToRoot, isTrue, reason: 'Signer not linked to Gov.br/ICP-Brasil hierarchy (Name check)');
-         print('    -> Fallback: Name hierarchy check passed for ${sig.fieldName}');
-      } else {
-         // Trusted
-      }
 
       // Get the signer specific certificate (first in the list usually)
       expect(sig.validation.certsPem, isNotEmpty);
@@ -70,6 +52,12 @@ void main() {
       
       print('Signer: $subjectStr');
       print('Issuer: $issuerStr');
+
+      // Chain validation (cripto) deve funcionar com truststore embutido.
+      if (sig.chainTrusted != true) {
+        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+      }
+      expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
 
       if (subjectStr.contains('leonardo')) {
         foundLeonardo = true;
@@ -108,17 +96,6 @@ void main() {
 
     for (var sig in report.signatures) {
       expect(sig.validation.cmsSignatureValid, isTrue);
-      
-      if (sig.chainTrusted == false || sig.chainTrusted == null) {
-          // Fallback logic
-          final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
-          final String issuer = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
-          bool linked = issuer.contains('gov-br') || issuer.contains('icp-brasil') || issuer.contains('serpro');
-          expect(linked, isTrue, reason: 'Signer not linked (Name check fallback)');
-           print('    -> Fallback: Name hierarchy check passed for ${sig.fieldName}');
-      } else {
-          // Trusted
-      }
 
       final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
       final String subjectStr = signerCert.c!.subject!.getString(false, symbols).toLowerCase();
@@ -126,6 +103,11 @@ void main() {
       
       print('Signer: $subjectStr');
       print('Issuer: $issuerStr');
+
+      if (sig.chainTrusted != true) {
+        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+      }
+      expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
 
       if (subjectStr.contains('leonardo')) {
         foundLeonardo = true;
@@ -164,23 +146,20 @@ void main() {
     for (var sig in report.signatures) {
       expect(sig.validation.cmsSignatureValid, isTrue);
       print('Validating ${sig.fieldName} in ${file.path}');
-      
-      // The library now performs chain validation internally
-      if (sig.chainTrusted == false || sig.chainTrusted == null) {
-           print('    Chain Trusted: false (Strict)');
-           // Fallback for current test environment
-           // We might still fail strict validation if some intermediates are missing
-           // But user asked to use library features.
-      } else {
-           print('    Chain Trusted: true');
+
+      // Print signer DN to help diagnose missing issuer.
+      if (sig.validation.certsPem.isNotEmpty) {
+        final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
+        final String subjectStr = signerCert.c!.subject!.getString(false, symbols).toLowerCase();
+        final String issuerStr = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
+        print('Signer: $subjectStr');
+        print('Issuer: $issuerStr');
       }
-      
-      // For now, assert that we at least tried 
-      // If the user says it's 100% valid, we expect chainTrusted to be true.
-      // But if my trust store is incomplete (missing intermediates), it might fail.
-      // I will print the result but maybe loosen the expect if it fails, 
-      // or assume the library update fixes it if I had the right roots.
-      // Given the previous failure, I will print diagnostics.
+
+      if (sig.chainTrusted != true) {
+        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+      }
+      expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
     }
   });
 
@@ -202,6 +181,9 @@ void main() {
     for (var sig in report.signatures) {
       expect(sig.validation.cmsSignatureValid, isTrue);
       print('Validating ${sig.fieldName}: Chain Trusted = ${sig.chainTrusted}');
+      if (sig.chainTrusted != true) {
+        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+      }
     }
   });
 }
