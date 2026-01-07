@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_signature_validator.dart';
-import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_signature_validation.dart';
 import 'package:dart_pdf/src/security/chain/icp_brasil_provider.dart';
 import 'package:dart_pdf/src/security/chain/iti_provider.dart';
 import 'package:dart_pdf/src/security/chain/serpro_provider.dart';

@@ -660,6 +660,9 @@ class PdfDocument {
           }
         }
       }
+      if (hasSignatures) {
+        fileStructure.incrementalUpdate = true;
+      }
       if (fileStructure.incrementalUpdate &&
           (_helper._security == null ||
               (_helper._security != null &&

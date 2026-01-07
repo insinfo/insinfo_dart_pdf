@@ -224,7 +224,10 @@ class PdfCrossTable {
 
   /// internal method
   void save(PdfWriter writer) {
-    if (!document!.fileStructure.incrementalUpdate) {
+    // A primeira revisão do PDF precisa sempre conter o header (%PDF-...).
+    // Em updates incrementais de documentos carregados, o stream antigo já foi copiado
+    // para o writer, então `writer.length` não será 0.
+    if (writer.length == 0 || !document!.fileStructure.incrementalUpdate) {
       _saveHead(writer);
     }
     _objects!.clear();
@@ -272,7 +275,10 @@ class PdfCrossTable {
 
   /// internal method
   Future<void> saveAsync(PdfWriter writer) async {
-    if (!document!.fileStructure.incrementalUpdate) {
+    // A primeira revisão do PDF precisa sempre conter o header (%PDF-...).
+    // Em updates incrementais de documentos carregados, o stream antigo já foi copiado
+    // para o writer, então `writer.length` não será 0.
+    if (writer.length == 0 || !document!.fileStructure.incrementalUpdate) {
       await _saveHeadAsync(writer);
     }
     _objects!.clear();

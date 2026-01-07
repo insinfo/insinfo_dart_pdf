@@ -36,6 +36,13 @@ class PdfLtvManager {
     List<X509Certificate>? trustedRoots,
     bool addVri = true,
   }) async {
+      // LTV precisa ser aplicado via atualização incremental (append-only)
+      // quando o documento já está assinado.
+      if (PdfDocumentHelper.getHelper(document).isLoadedDocument &&
+            document.hasSignatures) {
+         document.fileStructure.incrementalUpdate = true;
+      }
+
     final PdfSignatureValidator validator = PdfSignatureValidator();
     // We use the validator to extract signatures and their certificates
     final PdfSignatureValidationReport report = await validator.validateAllSignatures(
@@ -118,6 +125,9 @@ class PdfLtvManager {
 
     // Update Global DSS
     _updateDss(catalog, allCrls, allOcsps, allCerts);
+
+      // Garanta que o catálogo seja persistido no save incremental.
+      catalog.modify();
   }
   
   void _addVri(
@@ -262,6 +272,8 @@ class PdfLtvManager {
     if (ocsps.isNotEmpty) {
        _mergeArray(dss, PdfDictionaryProperties.ocsps, ocsps);
     }
+
+    dss.modify();
   }
 
   void _addToDssVri(PdfDictionary catalog, String key, PdfDictionary vriDict) {
@@ -282,6 +294,10 @@ class PdfLtvManager {
        }
        
        vri[PdfName(key)] = PdfReferenceHolder(vriDict);
+
+         vriDict.modify();
+         vri.modify();
+         dss.modify();
   }
 
   void _mergeArray(PdfDictionary dict, String key, List<List<int>> newItems) {
@@ -302,6 +318,9 @@ class PdfLtvManager {
       for(final item in newItems) {
          _addToArrayAsStream(arr, item);
       }
+
+      arr.changed = true;
+      dict.modify();
   }
 
   void _addToArrayAsStream(PdfArray arr, List<int> bytes) {

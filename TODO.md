@@ -72,7 +72,7 @@ Isso viabiliza PAdES‑B‑T.
 [x] Implementar geração de DSS para PDF:
 [x] Embutir OCSP/CRL + certificados na estrutura /DSS.
 [x] Gerar Dicionários VRI (Validation Related Info) hashing assinatura.
-[ ] Atualização incremental (append) pós‑assinatura.
+[x] Atualização incremental (append) pós‑assinatura.
 Isso viabiliza PAdES‑B‑LT/LTA.
 7) DocMDP helpers
 
@@ -80,8 +80,8 @@ Expor função explícita para configurar DocMDP P=2 na primeira assinatura.
 Expor função para detectar se PDF já tem assinatura (para decidir P=2).
 8) Incremental update control
 
-Forçar incremental update quando houver assinatura existente.
-Expor API para “append-only signature update”.
+[x] Forçar incremental update quando houver assinatura existente.
+[ ] Expor API explícita para “append-only signature update” (opcional, hoje o comportamento já é automático).
 9) Testes e exemplos
 
 Scripts no scripts/:
@@ -127,6 +127,20 @@ O resultado do teste em Dart demonstra que a biblioteca agora:
 *   Verifica criptograficamente a assinatura digital em relação ao hash do documento.
 
 A biblioteca agora é resiliente a ataques comuns de assinatura de PDF e valida corretamente assinaturas compatíveis com PAdES usando signatários modernos (OpenSSL).
+
+### Atualização incremental / LTV (append-only) + correções estruturais
+
+Foram implementadas correções e ajustes para garantir que PDFs gerados e modificados sigam o fluxo correto de salvamento incremental (append-only), necessário para PAdES-LT/LTA.
+
+*   Correção crítica na escrita de PDFs: o header `%PDF-` agora é sempre escrito na primeira revisão (mesmo quando `incrementalUpdate=true`). Antes disso, PDFs novos podiam começar diretamente com `1 0 obj`, quebrando o carregamento/validação.
+*   Correção no parser de entrada (CrossTable): a busca do header `%PDF-` foi reescrita para uma varredura byte-a-byte (robusta e sem erros de sublist), e o fluxo agora lança exceção corretamente quando o arquivo não é um PDF válido.
+*   LTV Manager (`PdfLtvManager.enableLtv`): agora força `incrementalUpdate=true` quando o documento já tem assinaturas e marca DSS/VRI/Catálogo como modificados, garantindo persistência correta no save incremental.
+*   `PdfDocument.saveSync`: passou a forçar `incrementalUpdate=true` quando `hasSignatures==true` (paridade com `save()` async).
+
+Verificação:
+
+*   `dart analyze`: sem issues.
+*   Testes: `external_signature_test.dart`, `pdf_signature_validator_test.dart`, `ltv_integration_test.dart` passando.
 
 
 Several providers offer free, trusted timestamp APIs that follow the industry-standard RFC 3161 protocol. These services work by timestamping a hash of your data (the data itself is not sent), providing cryptographic proof of the data's existence and integrity at a specific point in time. 

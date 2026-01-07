@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
-import 'package:asn1lib/asn1lib.dart';
 import 'dart:convert';
 
 /// A reader for BouncyCastle KeyStore (BKS) files (Version 2).
@@ -101,8 +100,8 @@ class BksReader {
       // My loop logic:
       // We already read 'type'. Check if it is > 0.
       
-      final alias = _readString();
-      final date = _readLongDate(); // Date
+      _readString();
+      _readLongDate(); // Date
       final chainLen = _readInt();
       
       if (chainLen > 0) {

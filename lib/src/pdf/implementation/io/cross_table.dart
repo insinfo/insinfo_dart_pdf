@@ -20,9 +20,13 @@ class CrossTable {
   /// internal constructor
   CrossTable(List<int>? data, PdfCrossTable crossTable) {
     if (data == null || data.isEmpty) {
-      ArgumentError.value(data, 'PDF data', 'PDF data cannot be null or empty');
+      throw ArgumentError.value(
+        data,
+        'PDF data',
+        'PDF data cannot be null or empty',
+      );
     }
-    _data = data!;
+    _data = data;
     _crossTable = crossTable;
     _initialize();
   }
@@ -118,9 +122,10 @@ class CrossTable {
     _allTables = <int, List<ObjectInformation>>{};
     final int startingOffset = _checkJunk();
     if (startingOffset < 0) {
-      ArgumentError.value(
+      throw ArgumentError.value(
         startingOffset,
-        'Could not find valid signature (%PDF-)',
+        'startingOffset',
+        'Could not find valid PDF header (%PDF-)',
       );
     }
     objects = <int, ObjectInformation>{};
@@ -515,18 +520,27 @@ class CrossTable {
   }
 
   int _checkJunk() {
-    int position = 0;
-    int index = 0;
-    do {
-      final int length =
-          _data.length - position < 1024 ? (_data.length - position) : 1024;
-      final String header = String.fromCharCodes(
-        _data.sublist(position, length),
-      );
-      index = header.indexOf('%PDF-');
-      position += length;
-    } while (index < 0 && position != _data.length);
-    return index;
+    // Busca byte-a-byte para evitar problemas de encoding e de fronteira de chunk.
+    // Sequência ASCII: %PDF-
+    const int b0 = 0x25; // %
+    const int b1 = 0x50; // P
+    const int b2 = 0x44; // D
+    const int b3 = 0x46; // F
+    const int b4 = 0x2D; // -
+
+    if (_data.length < 5) {
+      return -1;
+    }
+    for (int i = 0; i <= _data.length - 5; i++) {
+      if (_data[i] == b0 &&
+          _data[i + 1] == b1 &&
+          _data[i + 2] == b2 &&
+          _data[i + 3] == b3 &&
+          _data[i + 4] == b4) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /// internal method

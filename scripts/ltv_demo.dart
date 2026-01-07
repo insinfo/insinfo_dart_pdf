@@ -24,6 +24,9 @@ Future<void> main() async {
   // For demonstration, we'll try to load a known pfx if available, else just print usage.
   
   print('This script demonstrates the LTV API usage.');
+  print('Input PDF: $inputFile');
+  print('Signed PDF (expected): $signedFile');
+  print('Output with LTV (expected): $ltvFile');
   print('To run actual LTV generation, you need a valid signed PDF with a certificate that has CRL/OCSP points.');
   
   // Example Code Structure:
