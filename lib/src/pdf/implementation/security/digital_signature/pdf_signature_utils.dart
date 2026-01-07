@@ -5,6 +5,7 @@ import '../../io/pdf_lexer.dart';
 import '../../io/pdf_reader.dart';
 import '../../pdf_document/pdf_document.dart';
 import '../../primitives/pdf_reference.dart';
+import 'dart:typed_data';
 
 /// Holds the file offsets and values for ByteRange and Contents.
 class PdfSignatureOffsets {
@@ -154,6 +155,61 @@ class PdfSignatureUtils {
     }
     
     return null;
+  }
+
+  /// Extrai o blob CMS/PKCS#7 (DER) do `/Contents` usando os offsets já resolvidos.
+  ///
+  /// - Decodifica o `hex string` (`<...>`) em bytes.
+  /// - Ignora whitespace dentro do hex.
+  /// - Remove padding `0x00` à direita (comum em `/Contents`).
+  static Uint8List extractPkcs7FromOffsets({
+    required List<int> pdfBytes,
+    required PdfSignatureOffsets offsets,
+  }) {
+    if (offsets.contentsOffsets.length != 2) {
+      throw ArgumentError('Offsets de /Contents inválidos.');
+    }
+
+    final int start = offsets.contentsOffsets[0];
+    final int end = offsets.contentsOffsets[1];
+    if (start < 0 || end > pdfBytes.length || end <= start + 2) {
+      throw ArgumentError('Range de /Contents fora do arquivo.');
+    }
+    // Esperado: '<' ... '>'
+    final int lt = pdfBytes[start];
+    final int gt = pdfBytes[end - 1];
+    if (lt != 60 || gt != 62) {
+      throw ArgumentError('Offsets de /Contents não apontam para <...>.');
+    }
+
+    final List<int> hexBytes = pdfBytes.sublist(start + 1, end - 1);
+    final List<int> compact = <int>[];
+    for (final int b in hexBytes) {
+      if (!_isWhitespace(b)) compact.add(b);
+    }
+
+    // PDF permite número ímpar de nibbles: último nibble assume 0.
+    final int outLen = (compact.length + 1) ~/ 2;
+    final Uint8List out = Uint8List(outLen);
+    int oi = 0;
+    for (int i = 0; i < compact.length; i += 2) {
+      final int hi = _hexNibble(compact[i]);
+      final int lo = (i + 1 < compact.length) ? _hexNibble(compact[i + 1]) : 0;
+      out[oi++] = (hi << 4) | lo;
+    }
+
+    int trimmed = out.length;
+    while (trimmed > 0 && out[trimmed - 1] == 0x00) {
+      trimmed--;
+    }
+    return trimmed == out.length ? out : Uint8List.sublistView(out, 0, trimmed);
+  }
+
+  static int _hexNibble(int c) {
+    if (c >= 48 && c <= 57) return c - 48; // 0-9
+    if (c >= 65 && c <= 70) return c - 55; // A-F
+    if (c >= 97 && c <= 102) return c - 87; // a-f
+    throw ArgumentError('Caractere inválido em hex string: ${String.fromCharCode(c)}');
   }
   
   static int _scanForwardFor(List<int> bytes, int start, int char) {

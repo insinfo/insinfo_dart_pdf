@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
@@ -31,6 +32,7 @@ import 'cryptography/rsa_algorithm.dart';
 import 'kms/timestamp_client.dart';
 
 import 'cryptography/signature_utilities.dart';
+import 'pdf_crypto_utils.dart';
 import 'pdf_certificate.dart';
 import 'pdf_external_signer.dart';
 import 'pdf_signature.dart';
@@ -1769,6 +1771,228 @@ class _DigitalIdentifiers {
   static const String contentType = '1.2.840.113549.1.9.3';
   static const String messageDigest = '1.2.840.113549.1.9.4';
   static const String aaSigningCertificateV2 = '1.2.840.113549.1.9.16.2.47';
+}
+
+/// Utilitário público para gerar um CMS/PKCS#7 (SignedData) **detached**.
+///
+/// Este é o equivalente “puro CMS” do fluxo interno usado ao assinar PDFs:
+/// ele cria os `signedAttrs` (contentType + messageDigest), assina com RSA
+/// e devolve o blob DER do CMS (ContentInfo/SignedData).
+///
+/// Observação: este helper não calcula o digest do documento. O parâmetro
+/// [contentDigest] deve ser o digest *já calculado* (ex.: SHA-256) do conteúdo
+/// que você quer carimbar/assinar.
+class PdfCmsSigner {
+  const PdfCmsSigner._();
+
+  /// Gera um CMS detached **RSA + SHA-256** diretamente de PEM.
+  ///
+  /// Entradas:
+  /// - [contentDigest]: digest já calculado (ex.: SHA-256 do conteúdo alvo).
+  /// - [privateKeyPem]: `BEGIN RSA PRIVATE KEY` (PKCS#1) ou `BEGIN PRIVATE KEY` (PKCS#8).
+  /// - [certificatePem]: `BEGIN CERTIFICATE` do signatário.
+  /// - [chainPem]: cadeia/intermediários adicionais (cada item pode conter 1+ certs).
+  static Uint8List signDetachedSha256RsaFromPem({
+    required Uint8List contentDigest,
+    required String privateKeyPem,
+    required String certificatePem,
+    List<String> chainPem = const <String>[],
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    final RsaPrivateKeyParam privateKey =
+        PdfCryptoUtils.rsaPrivateKeyFromPem(privateKeyPem);
+    final Uint8List certificateDer =
+        PdfCryptoUtils.certificateDerFromPem(certificatePem);
+    final List<Uint8List> chainDer =
+        PdfCryptoUtils.certificateChainDerFromPem(chainPem);
+
+    return signDetachedSha256Rsa(
+      contentDigest: contentDigest,
+      certificateDer: certificateDer,
+      privateKey: privateKey,
+      extraCertsDer: chainDer,
+      cryptographicStandard: cryptographicStandard,
+      timeStampToken: timeStampToken,
+    );
+  }
+
+  /// Conveniência: extrai chave/cert/chain de um [PdfCertificate] (PFX) e gera
+  /// um CMS detached **RSA + SHA-256**.
+  static Uint8List signDetachedSha256RsaFromCertificate({
+    required Uint8List contentDigest,
+    required PdfCertificate certificate,
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    // Reusa a mesma heurística do pipeline de assinatura do PDF:
+    // seleciona o primeiro alias com chave privada.
+    final List<String> keys = PdfCertificateHelper.getPkcsCertificate(
+      certificate,
+    ).getContentTable().keys.toList();
+    String certificateAlias = '';
+    bool isContinue = true;
+    // ignore: avoid_function_literals_in_foreach_calls
+    keys.toList().forEach((String key) {
+      if (isContinue &&
+          PdfCertificateHelper.getPkcsCertificate(certificate).isKey(key) &&
+          PdfCertificateHelper.getPkcsCertificate(
+            certificate,
+          ).getKey(key)!.key!.isPrivate!) {
+        certificateAlias = key;
+        isContinue = false;
+      }
+    });
+    if (certificateAlias.isEmpty) {
+      throw StateError('Nenhuma chave privada encontrada no PFX.');
+    }
+
+    final KeyEntry pk = PdfCertificateHelper.getPkcsCertificate(
+      certificate,
+    ).getKey(certificateAlias)!;
+    final CipherParameter? rawKey = pk.key;
+    if (rawKey is! RsaPrivateKeyParam) {
+      throw StateError('Chave privada no PFX não é RSA (RsaPrivateKeyParam).');
+    }
+
+    final X509Certificates? leaf = PdfCertificateHelper.getPkcsCertificate(
+      certificate,
+    ).getCertificate(certificateAlias);
+    final List<int>? leafDer = leaf?.certificate?.c?.getDerEncoded();
+    if (leafDer == null || leafDer.isEmpty) {
+      throw StateError('Falha ao obter certificado DER do signatário no PFX.');
+    }
+
+    final List<X509Certificates>? chain = PdfCertificateHelper.getPkcsCertificate(
+      certificate,
+    ).getCertificateChain(certificateAlias);
+    final List<Uint8List> extraCerts = <Uint8List>[];
+    if (chain != null) {
+      for (final X509Certificates c in chain) {
+        final List<int>? der = c.certificate?.c?.getDerEncoded();
+        if (der != null && der.isNotEmpty) {
+          // Evita duplicar o leaf.
+          if (!_listEquals(der, leafDer)) {
+            extraCerts.add(Uint8List.fromList(der));
+          }
+        }
+      }
+    }
+
+    return signDetachedSha256Rsa(
+      contentDigest: contentDigest,
+      certificateDer: Uint8List.fromList(leafDer),
+      privateKey: rawKey,
+      extraCertsDer: extraCerts,
+      cryptographicStandard: cryptographicStandard,
+      timeStampToken: timeStampToken,
+    );
+  }
+
+  /// Gera um CMS detached **RSA + SHA-256**.
+  ///
+  /// - [contentDigest] é o digest que irá para o atributo `messageDigest`.
+  /// - [certificateDer] é o certificado do signatário em DER.
+  /// - [privateKey] é a chave privada RSA no formato interno do `dart_pdf`.
+  /// - [extraCertsDer] são certificados adicionais (intermediários) em DER.
+  /// - [timeStampToken] (opcional) embute o RFC3161 token como unsigned attribute.
+  static Uint8List signDetachedSha256Rsa({
+    required Uint8List contentDigest,
+    required Uint8List certificateDer,
+    required RsaPrivateKeyParam privateKey,
+    List<Uint8List> extraCertsDer = const <Uint8List>[],
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    return signDetachedRsa(
+      contentDigest: contentDigest,
+      certificateDer: certificateDer,
+      privateKey: privateKey,
+      extraCertsDer: extraCertsDer,
+      hashAlgorithm: MessageDigestAlgorithms.secureHash256,
+      cryptographicStandard: cryptographicStandard,
+      timeStampToken: timeStampToken,
+    );
+  }
+
+  /// Gera um CMS detached RSA para o [hashAlgorithm] informado.
+  ///
+  /// [hashAlgorithm] segue a convenção interna (ex.: `SHA-256`, `SHA-1`, `SHA-384`, `SHA-512`).
+  static Uint8List signDetachedRsa({
+    required Uint8List contentDigest,
+    required Uint8List certificateDer,
+    required RsaPrivateKeyParam privateKey,
+    List<Uint8List> extraCertsDer = const <Uint8List>[],
+    required String hashAlgorithm,
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    final X509CertificateParser parser = X509CertificateParser();
+    final X509Certificate? signerCert = parser.readCertificate(
+      PdfStreamReader(certificateDer),
+    );
+    if (signerCert == null) {
+      throw ArgumentError.value(
+        certificateDer,
+        'certificateDer',
+        'Falha ao parsear certificado DER do signatário.',
+      );
+    }
+
+    final List<X509Certificate?> chain = <X509Certificate?>[signerCert];
+    for (final Uint8List der in extraCertsDer) {
+      final X509Certificate? c = parser.readCertificate(PdfStreamReader(der));
+      if (c != null) chain.add(c);
+    }
+
+    // Monta atributos assinados (SET OF) e assina os bytes DER do SET.
+    final _PdfCmsSigner cms = _PdfCmsSigner(null, chain, hashAlgorithm, false);
+    final DerSet attrs = cms.getSequenceDataSet(
+      contentDigest,
+      null,
+      null,
+      cryptographicStandard,
+    );
+    final List<int>? attrsDer = attrs.getEncoded(Asn1.der);
+    if (attrsDer == null || attrsDer.isEmpty) {
+      throw StateError('Falha ao codificar signedAttrs para DER.');
+    }
+
+    final _SignaturePrivateKey keySigner = _SignaturePrivateKey(
+      hashAlgorithm,
+      privateKey,
+    );
+    final List<int>? signature = keySigner.sign(attrsDer);
+    if (signature == null || signature.isEmpty) {
+      throw StateError('Falha ao assinar signedAttrs (RSA).');
+    }
+
+    cms.setSignedData(signature, null, keySigner.getEncryptionAlgorithm());
+
+    final List<int>? cmsDer = cms.sign(
+      contentDigest,
+      null,
+      timeStampToken,
+      null,
+      null,
+      cryptographicStandard,
+      hashAlgorithm,
+    );
+
+    if (cmsDer == null || cmsDer.isEmpty) {
+      throw StateError('Falha ao gerar CMS SignedData.');
+    }
+
+    return Uint8List.fromList(cmsDer);
+  }
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 class _RandomArray implements IRandom {

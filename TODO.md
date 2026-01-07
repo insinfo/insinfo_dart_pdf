@@ -261,7 +261,7 @@ Isso é um dos maiores gaps para PAdES‑T/PAdES‑LT “forte”.
 Engine de política muito mais completa (ETSI Signature Policy + ICP‑Brasil LPA)
 
 Em policy-engine há parsing ASN.1 de SignatureValidationPolicy/constraints/mandated attributes (ex.: algoritmos permitidos, regras de atributos assinados/unsigned, janela de signing, etc.).
-Seu Dart hoje valida policy principalmente por OID + digest vs LPA e mantém heurísticas quando faltam dados. Portar “tudo” é grande importante, (ex.: enforcement de AlgorithmConstraints, MandatedUnsignedAttr para exigir timestamps/revocation refs quando a policy manda) aumenta muito a robustez “jurídica forte”.
+ hoje valida policy principalmente por OID + digest vs LPA e mantém heurísticas quando faltam dados. Portar “tudo” é importante, (ex.: enforcement de AlgorithmConstraints, MandatedUnsignedAttr para exigir timestamps/revocation refs quando a policy manda) aumenta muito a robustez “jurídica forte”.
 
 Checklist de conformidade PAdES baseada em PKCS#7/CAdES checker
 
@@ -277,3 +277,7 @@ Só faz sentido se você quiser assinar/validar XML e PKCS#7 fora de PDF.
 
 Integrações Java de keystore/smartcard/PKCS#11
 Tipicamente moram em core/cryptography no ecossistema Java e não “traduzem” bem para Dart sem ffi nativos.
+
+Próximo passo (precisa de confirmação sua)
+
+A “policy-engine ETSI completa” ainda é o gap #2. Antes de eu aplicar enforcement (ex.: “policy X exige timestamp”), você quer que eu trate ausência/invalidade de timestamp como erro (falha) ou apenas warning para policies ICP‑Brasil/Gov.br?

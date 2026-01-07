@@ -55,7 +55,7 @@ class PdfSignatureValidationResult {
 
   /// Hash bytes from SignaturePolicyId.sigPolicyHash (when present).
   final Uint8List? policyHashValue;
-  
+
   /// The signing time extracted from the signed attributes (id-signingTime), if present.
   final DateTime? signingTime;
 
@@ -77,6 +77,25 @@ class PdfSignatureValidationResult {
   });
 }
 
+/// Result of validating a CMS SignedData object (signature only).
+///
+/// This is used for objects like RFC3161 TimeStampToken (which is itself CMS).
+class CmsSignedDataValidationResult {
+  CmsSignedDataValidationResult({
+    required this.cmsSignatureValid,
+    required this.certsPem,
+    this.signingTime,
+    this.digestAlgorithmOid,
+    this.signatureAlgorithmOid,
+  });
+
+  final bool cmsSignatureValid;
+  final List<String> certsPem;
+  final DateTime? signingTime;
+  final String? digestAlgorithmOid;
+  final String? signatureAlgorithmOid;
+}
+
 class _PdfParsedSignature {
   _PdfParsedSignature({
     required this.fieldName,
@@ -90,7 +109,8 @@ class _PdfParsedSignature {
   final Uint8List pkcs7Der;
   final PdfReference? signatureRef;
 
-  int get signedRevisionLength => byteRange.length == 4 ? byteRange[2] + byteRange[3] : -1;
+  int get signedRevisionLength =>
+      byteRange.length == 4 ? byteRange[2] + byteRange[3] : -1;
 }
 
 class _CmsParsed {
@@ -164,6 +184,136 @@ class _SignedAttrsRaw {
 /// This validates *integrity* (ByteRange digest) and the CMS signature (RSA).
 /// It does **not** validate trust chains, revocation (OCSP/CRL), or LTV.
 class PdfSignatureValidation {
+  /// Validates a CMS SignedData signature (no PDF/ByteRange checks).
+  ///
+  /// This verifies the CMS signature over `signedAttrs` and returns the embedded
+  /// certificates ordered as `[signer, ...chain]` when possible.
+  CmsSignedDataValidationResult validateCmsSignedData(Uint8List cmsBytes) {
+    final Uint8List trimmed = _trimDerByLength(cmsBytes);
+
+    final _CmsParsed cms;
+    try {
+      cms = _parseCmsDetachedSignedData(trimmed);
+    } catch (_) {
+      return CmsSignedDataValidationResult(
+        cmsSignatureValid: false,
+        certsPem: const <String>[],
+      );
+    }
+
+    bool sigValid = false;
+    CipherParameter? publicKey = cms.signerPublicKey;
+    _DerCertificate? matchedSignerCert;
+
+    if (publicKey != null && cms.signature != null) {
+      try {
+        String? signMode =
+            _signModeFromSignatureAlgorithmOid(cms.signatureAlgorithmOid);
+        if (signMode == null &&
+            cms.signatureAlgorithmOid == '1.2.840.113549.1.1.1') {
+          signMode = switch (cms.digestAlgorithmOid) {
+            '1.3.14.3.2.26' => 'SHA-1withRSA',
+            '2.16.840.1.101.3.4.2.2' => 'SHA-384withRSA',
+            '2.16.840.1.101.3.4.2.3' => 'SHA-512withRSA',
+            '2.16.840.1.101.3.4.2.1' || _ => 'SHA-256withRSA',
+          };
+        }
+        signMode ??= 'SHA-256withRSA';
+        final SignerUtilities util = SignerUtilities();
+
+        final List<Uint8List> dataCandidates = <Uint8List>[];
+        if (cms.signedAttrsDer != null) {
+          dataCandidates.add(cms.signedAttrsDer!);
+        } else if (cms.signedAttrsTaggedDer != null) {
+          dataCandidates.add(cms.signedAttrsTaggedDer!);
+        }
+
+        if (cms.signedAttrsTaggedDer != null) {
+          final Uint8List tagged = cms.signedAttrsTaggedDer!;
+          if (tagged.isNotEmpty && tagged[0] == 0xA0) {
+            final Uint8List swapped = Uint8List.fromList(tagged);
+            swapped[0] = 0x31;
+            dataCandidates.add(swapped);
+
+            final int headerLen = _derHeaderLength(tagged);
+            if (headerLen > 0 &&
+                headerLen < tagged.length &&
+                tagged[headerLen] == 0x31) {
+              dataCandidates.add(tagged.sublist(headerLen));
+            }
+          }
+        }
+
+        bool matched = false;
+        for (final Uint8List data in dataCandidates) {
+          if (data.isEmpty) continue;
+          final ISigner signer = util.getSigner(signMode);
+          signer.initialize(false, publicKey);
+          signer.blockUpdate(data, 0, data.length);
+          if (signer.validateSignature(cms.signature!)) {
+            sigValid = true;
+            matched = true;
+            break;
+          }
+        }
+
+        if (!matched && cms.certs.isNotEmpty && cms.signature != null) {
+          for (final _DerCertificate c in cms.certs) {
+            final X509Certificate? x = c.cert;
+            if (x == null) continue;
+            CipherParameter candidateKey;
+            try {
+              candidateKey = x.getPublicKey();
+            } catch (_) {
+              continue;
+            }
+            for (final Uint8List data in dataCandidates) {
+              if (data.isEmpty) continue;
+              final ISigner signer = util.getSigner(signMode);
+              signer.initialize(false, candidateKey);
+              signer.blockUpdate(data, 0, data.length);
+              if (signer.validateSignature(cms.signature!)) {
+                sigValid = true;
+                matchedSignerCert = c;
+                matched = true;
+                break;
+              }
+            }
+            if (matched) {
+              publicKey = candidateKey;
+              break;
+            }
+          }
+        }
+      } catch (_) {
+        sigValid = false;
+      }
+    }
+
+    final List<String> certsPem;
+    if (matchedSignerCert != null) {
+      final List<_DerCertificate> ordered = <_DerCertificate>[
+        matchedSignerCert
+      ];
+      for (final c in cms.certs) {
+        if (!identical(c, matchedSignerCert)) ordered.add(c);
+      }
+      certsPem = ordered
+          .map((c) => _derToPemCertificate(c.der))
+          .toList(growable: false);
+    } else {
+      certsPem = _pemCertificatesOrdered(cms);
+    }
+
+    return CmsSignedDataValidationResult(
+      cmsSignatureValid: sigValid,
+      certsPem: certsPem,
+      signingTime: cms.signingTime,
+      digestAlgorithmOid: cms.digestAlgorithmOid,
+      signatureAlgorithmOid: cms.signatureAlgorithmOid,
+    );
+  }
+
   /// Validates the last signature dictionary in the PDF.
   ///
   /// If the CMS does not embed certificates, you may pass [userCertificatePem]
@@ -172,7 +322,8 @@ class PdfSignatureValidation {
     Uint8List pdfBytes, {
     String? userCertificatePem,
   }) {
-    final List<_PdfParsedSignature> sigs = _extractSignaturesUsingParser(pdfBytes);
+    final List<_PdfParsedSignature> sigs =
+        _extractSignaturesUsingParser(pdfBytes);
     if (sigs.isEmpty) {
       return PdfSignatureValidationResult(
         cmsSignatureValid: false,
@@ -183,7 +334,8 @@ class PdfSignatureValidation {
       );
     }
 
-    sigs.sort((a, b) => a.signedRevisionLength.compareTo(b.signedRevisionLength));
+    sigs.sort(
+        (a, b) => a.signedRevisionLength.compareTo(b.signedRevisionLength));
     final _PdfParsedSignature last = sigs.last;
 
     return validateDetachedSignature(
@@ -203,14 +355,17 @@ class PdfSignatureValidation {
     Uint8List pdfBytes, {
     String? userCertificatePem,
   }) {
-    final List<_PdfParsedSignature> sigs = _extractSignaturesUsingParser(pdfBytes);
+    final List<_PdfParsedSignature> sigs =
+        _extractSignaturesUsingParser(pdfBytes);
     if (sigs.isEmpty) {
       return <PdfSignatureValidationResult>[];
     }
 
-    sigs.sort((a, b) => a.signedRevisionLength.compareTo(b.signedRevisionLength));
+    sigs.sort(
+        (a, b) => a.signedRevisionLength.compareTo(b.signedRevisionLength));
 
-    final List<PdfSignatureValidationResult> results = <PdfSignatureValidationResult>[];
+    final List<PdfSignatureValidationResult> results =
+        <PdfSignatureValidationResult>[];
     for (final _PdfParsedSignature sig in sigs) {
       results.add(
         validateDetachedSignature(
@@ -278,8 +433,10 @@ class PdfSignatureValidation {
       );
     }
 
-    final crypto.Hash hash = _hashFromDigestAlgorithmOid(cms.digestAlgorithmOid);
-    final Uint8List actualDigest = Uint8List.fromList(hash.convert(signedPortion).bytes);
+    final crypto.Hash hash =
+        _hashFromDigestAlgorithmOid(cms.digestAlgorithmOid);
+    final Uint8List actualDigest =
+        Uint8List.fromList(hash.convert(signedPortion).bytes);
 
     final bool digestMatches = _constantTimeEquals(
       actualDigest,
@@ -303,7 +460,8 @@ class PdfSignatureValidation {
             _signModeFromSignatureAlgorithmOid(cms.signatureAlgorithmOid);
         // Some CMS producers encode signatureAlgorithm as rsaEncryption and
         // specify the hash in digestAlgorithm.
-        if (signMode == null && cms.signatureAlgorithmOid == '1.2.840.113549.1.1.1') {
+        if (signMode == null &&
+            cms.signatureAlgorithmOid == '1.2.840.113549.1.1.1') {
           signMode = switch (cms.digestAlgorithmOid) {
             '1.3.14.3.2.26' => 'SHA-1withRSA',
             '2.16.840.1.101.3.4.2.2' => 'SHA-384withRSA',
@@ -321,7 +479,7 @@ class PdfSignatureValidation {
           // If we couldn't extract raw DER clean, try the tagged version if available
           dataCandidates.add(cms.signedAttrsTaggedDer!);
         }
-        
+
         if (cms.signedAttrsTaggedDer != null) {
           // For IMPLICIT tagging, OpenSSL commonly signs the bytes of the
           // tagged value after replacing the tag with SET (0x31).
@@ -332,7 +490,9 @@ class PdfSignatureValidation {
             dataCandidates.add(swapped);
 
             final int headerLen = _derHeaderLength(tagged);
-            if (headerLen > 0 && headerLen < tagged.length && tagged[headerLen] == 0x31) {
+            if (headerLen > 0 &&
+                headerLen < tagged.length &&
+                tagged[headerLen] == 0x31) {
               // EXPLICIT tagging: inner SET is present.
               dataCandidates.add(tagged.sublist(headerLen));
             }
@@ -389,19 +549,20 @@ class PdfSignatureValidation {
             }
           }
         }
-        
+
         if (!matched) {
-           final int certParsedCount = cms.certs.where((c) => c.cert != null).length;
-           print(
-             'CMS signature verification failed: signMode=$signMode '
-             'sigAlgOid=${cms.signatureAlgorithmOid} '
-             'digestAlgOid=${cms.digestAlgorithmOid} '
-             'signedAttrsDer=${cms.signedAttrsDer?.length ?? 0} '
-             'signedAttrsTagged=${cms.signedAttrsTaggedDer?.length ?? 0} '
-             'dataCandidates=${dataCandidates.length} '
-             'certs=${cms.certs.length} parsedCerts=$certParsedCount '
-             'sidSerial=${cms.signerSerial != null}',
-           );
+          final int certParsedCount =
+              cms.certs.where((c) => c.cert != null).length;
+          print(
+            'CMS signature verification failed: signMode=$signMode '
+            'sigAlgOid=${cms.signatureAlgorithmOid} '
+            'digestAlgOid=${cms.digestAlgorithmOid} '
+            'signedAttrsDer=${cms.signedAttrsDer?.length ?? 0} '
+            'signedAttrsTagged=${cms.signedAttrsTaggedDer?.length ?? 0} '
+            'dataCandidates=${dataCandidates.length} '
+            'certs=${cms.certs.length} parsedCerts=$certParsedCount '
+            'sidSerial=${cms.signerSerial != null}',
+          );
         }
       } catch (e) {
         sigValid = false;
@@ -420,7 +581,9 @@ class PdfSignatureValidation {
 
     final List<String> certsPem;
     if (matchedSignerCert != null) {
-      final List<_DerCertificate> ordered = <_DerCertificate>[matchedSignerCert];
+      final List<_DerCertificate> ordered = <_DerCertificate>[
+        matchedSignerCert
+      ];
       for (final c in cms.certs) {
         if (!identical(c, matchedSignerCert)) ordered.add(c);
       }
@@ -454,11 +617,15 @@ class PdfSignatureValidation {
         if (field is! PdfSignatureField) continue;
         if (!field.isSigned) continue;
 
-        final PdfSignatureFieldHelper helper = PdfSignatureFieldHelper.getHelper(field);
+        final PdfSignatureFieldHelper helper =
+            PdfSignatureFieldHelper.getHelper(field);
         final PdfDictionary fieldDict = helper.dictionary!;
-        final PdfDictionary widget = helper.getWidgetAnnotation(fieldDict, helper.crossTable);
-        final IPdfPrimitive? vHolder = widget[PdfDictionaryProperties.v] ?? fieldDict[PdfDictionaryProperties.v];
-        final PdfReferenceHolder? sigRefHolder = vHolder is PdfReferenceHolder ? vHolder : null;
+        final PdfDictionary widget =
+            helper.getWidgetAnnotation(fieldDict, helper.crossTable);
+        final IPdfPrimitive? vHolder = widget[PdfDictionaryProperties.v] ??
+            fieldDict[PdfDictionaryProperties.v];
+        final PdfReferenceHolder? sigRefHolder =
+            vHolder is PdfReferenceHolder ? vHolder : null;
         final IPdfPrimitive? sigPrimitive = PdfCrossTable.dereference(vHolder);
         if (sigPrimitive is! PdfDictionary) continue;
         final PdfDictionary sigDict = sigPrimitive;
@@ -494,7 +661,8 @@ class PdfSignatureValidation {
     }
     final List<int> values = <int>[];
     for (int i = 0; i < 4; i++) {
-      final PdfNumber? number = PdfCrossTable.dereference(rangePrim[i]) as PdfNumber?;
+      final PdfNumber? number =
+          PdfCrossTable.dereference(rangePrim[i]) as PdfNumber?;
       if (number == null || number.value == null) {
         return null;
       }
@@ -551,7 +719,7 @@ class PdfSignatureValidation {
     if (bytes[0] != 0x30) return bytes; // not a SEQUENCE
 
     final int firstLen = bytes[1];
-    
+
     // Handle Indefinite Length (BER)
     if (firstLen == 0x80) {
       return bytes;
@@ -767,7 +935,8 @@ class PdfSignatureValidation {
       final _DerTlv signedDataSeq = _readDerTlv(cmsBytes, o);
       if (signedDataSeq.tag != 0x30) return const <_DerCertificate>[];
       final int signedDataStart = o;
-      final int signedDataContentStart = signedDataStart + signedDataSeq.headerLen;
+      final int signedDataContentStart =
+          signedDataStart + signedDataSeq.headerLen;
       final int signedDataEnd = signedDataStart + signedDataSeq.totalLen;
 
       // Walk SignedData children
@@ -784,10 +953,12 @@ class PdfSignatureValidation {
 
         // Some producers may encode this as EXPLICIT (content starts with SET 0x31).
         // CMS specifies IMPLICIT, so handle both defensively.
-        if (certsContentStart < certsContentEnd && cmsBytes[certsContentStart] == 0x31) {
+        if (certsContentStart < certsContentEnd &&
+            cmsBytes[certsContentStart] == 0x31) {
           final _DerTlv innerSet = _readDerTlv(cmsBytes, certsContentStart);
           certsContentStart = certsContentStart + innerSet.headerLen;
-          certsContentEnd = (certsContentStart - innerSet.headerLen) + innerSet.totalLen;
+          certsContentEnd =
+              (certsContentStart - innerSet.headerLen) + innerSet.totalLen;
         }
 
         final List<_DerCertificate> out = <_DerCertificate>[];
@@ -907,7 +1078,7 @@ class PdfSignatureValidation {
     }
 
     if (signedAttrsTag == null) {
-       print('WARNING: signedAttrsTag [0] not found in SignerInfo!');
+      print('WARNING: signedAttrsTag [0] not found in SignerInfo!');
     }
 
     final Asn1Sequence sigAlg = signerInfo[siIdx++]!.getAsn1()! as Asn1Sequence;
@@ -939,15 +1110,15 @@ class PdfSignatureValidation {
             messageDigest = _extractMessageDigestFromSignedAttrs(attrsParsed);
             policyOid = _extractPolicyOidFromSignedAttrs(attrsParsed);
             final ({String? algorithmOid, Uint8List? value}) polHash =
-              _extractPolicyHashFromSignedAttrs(attrsParsed);
+                _extractPolicyHashFromSignedAttrs(attrsParsed);
             policyHashAlgorithmOid = polHash.algorithmOid;
             policyHashValue = polHash.value;
             signingTime = _extractSigningTimeFromSignedAttrs(attrsParsed);
             // print('EXTRACTED FROM RAW -> MD: ${messageDigest != null}, OID: $policyOid');
           } else {
-             print('RAW content is not Asn1Set (is ${attrsParsed.runtimeType})');
-             // invalid raw, force fallback?
-             signedAttrsDer = null; 
+            print('RAW content is not Asn1Set (is ${attrsParsed.runtimeType})');
+            // invalid raw, force fallback?
+            signedAttrsDer = null;
           }
         } catch (e) {
           print('Error parsing RAW signed attributes: $e');
@@ -1028,7 +1199,8 @@ class PdfSignatureValidation {
     );
   }
 
-  List<_DerCertificate> _extractCertificatesFromSignedDataTag(Asn1Tag certsTag) {
+  List<_DerCertificate> _extractCertificatesFromSignedDataTag(
+      Asn1Tag certsTag) {
     try {
       // SignedData.certificates is [0] IMPLICIT SET OF CertificateChoices.
       // Use Asn1Set.getAsn1Set(tag,false) to correctly handle IMPLICIT tagging
@@ -1089,7 +1261,8 @@ class PdfSignatureValidation {
       // But SKI is usually primitive.
       // We might need to access the raw octets if Asn1Tag has them.
     }
-    print('DEBUG: _extractIssuerAndSerial failed to extract. sid=${sid.runtimeType}');
+    print(
+        'DEBUG: _extractIssuerAndSerial failed to extract. sid=${sid.runtimeType}');
     return (null, null, null);
   }
 
@@ -1215,21 +1388,24 @@ class PdfSignatureValidation {
   }
 
   DateTime? _extractSigningTimeFromSignedAttrs(Asn1Set signedAttrs) {
-     for (int i = 0; i < signedAttrs.objects.length; i++) {
-        final Asn1Encode? itemEnc = signedAttrs[i];
-        final Asn1? itemAsn1 = itemEnc?.getAsn1();
-        if (itemAsn1 is! Asn1Sequence || itemAsn1.count < 2) continue;
+    for (int i = 0; i < signedAttrs.objects.length; i++) {
+      final Asn1Encode? itemEnc = signedAttrs[i];
+      final Asn1? itemAsn1 = itemEnc?.getAsn1();
+      if (itemAsn1 is! Asn1Sequence || itemAsn1.count < 2) continue;
 
-        final DerObjectID? oidObj = itemAsn1[0]?.getAsn1() as DerObjectID?;
-        if (oidObj?.id == '1.2.840.113549.1.9.5') { // id-signingTime
-             final Asn1? valuesAsn1 = itemAsn1[1]?.getAsn1();
-             final Asn1Set? values = valuesAsn1 is Asn1Set ? valuesAsn1 : Asn1Set.getAsn1Set(valuesAsn1, false);
-             if (values != null && values.objects.isNotEmpty) {
-                 final Asn1Encode? timeEnc = values[0];
-                 final X509Time? time = X509Time.getTime(timeEnc);
-                 return time?.toDateTime();
-             }
+      final DerObjectID? oidObj = itemAsn1[0]?.getAsn1() as DerObjectID?;
+      if (oidObj?.id == '1.2.840.113549.1.9.5') {
+        // id-signingTime
+        final Asn1? valuesAsn1 = itemAsn1[1]?.getAsn1();
+        final Asn1Set? values = valuesAsn1 is Asn1Set
+            ? valuesAsn1
+            : Asn1Set.getAsn1Set(valuesAsn1, false);
+        if (values != null && values.objects.isNotEmpty) {
+          final Asn1Encode? timeEnc = values[0];
+          final X509Time? time = X509Time.getTime(timeEnc);
+          return time?.toDateTime();
         }
+      }
     }
     return null;
   }

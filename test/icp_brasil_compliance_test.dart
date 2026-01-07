@@ -14,7 +14,8 @@ String derToPem(Uint8List der) {
   final buffer = StringBuffer();
   buffer.writeln('-----BEGIN CERTIFICATE-----');
   for (int i = 0; i < base64Cert.length; i += 64) {
-    buffer.writeln(base64Cert.substring(i, (i + 64 < base64Cert.length) ? i + 64 : base64Cert.length));
+    buffer.writeln(base64Cert.substring(
+        i, (i + 64 < base64Cert.length) ? i + 64 : base64Cert.length));
   }
   buffer.writeln('-----END CERTIFICATE-----');
   return buffer.toString();
@@ -31,7 +32,8 @@ void main() {
 
       for (var c in await icp.getTrustedRoots()) trustedRoots.add(derToPem(c));
       for (var c in await iti.getTrustedRoots()) trustedRoots.add(derToPem(c));
-      for (var c in await serpro.getTrustedRoots()) trustedRoots.add(derToPem(c));
+      for (var c in await serpro.getTrustedRoots())
+        trustedRoots.add(derToPem(c));
 
       if (_verbose) {
         // ignore: avoid_print
@@ -39,18 +41,21 @@ void main() {
       }
     });
 
-    test('Validate Gov.br signed PDF (sample_govbr_signature_assinado.pdf)', () async {
+    test('Validate Gov.br signed PDF (sample_govbr_signature_assinado.pdf)',
+        () async {
       final File file = File('test/assets/sample_govbr_signature_assinado.pdf');
       final List<int> bytes = file.readAsBytesSync();
 
       final PdfSignatureValidator validator = PdfSignatureValidator();
-      final PdfSignatureValidationReport report = await validator.validateAllSignatures(
+      final PdfSignatureValidationReport report =
+          await validator.validateAllSignatures(
         Uint8List.fromList(bytes),
         fetchCrls: true,
         trustedRootsPem: trustedRoots,
       );
 
-      expect(report.signatures.isNotEmpty, isTrue, reason: 'Gov.br file should have at least one signature');
+      expect(report.signatures.isNotEmpty, isTrue,
+          reason: 'Gov.br file should have at least one signature');
 
       for (final PdfSignatureValidationItem sig in report.signatures) {
         if (_verbose) {
@@ -72,10 +77,16 @@ void main() {
         }
 
         // 1. Signature must be cryptographically valid
-        expect(sig.validation.cmsSignatureValid, isTrue, reason: 'CMS signature must be valid');
-        
+        expect(sig.validation.cmsSignatureValid, isTrue,
+            reason: 'CMS signature must be valid');
+
         // 2. Document must be intact (hash matches)
-        expect(sig.validation.documentIntact, isTrue, reason: 'Document must not be modified');
+        expect(sig.validation.documentIntact, isTrue,
+            reason: 'Document must not be modified');
+
+        // 2b. Timestamp status must be present in report (even if absent in PDF)
+        expect(sig.timestampStatus, isNotNull);
+        expect(sig.timestampStatus!.present, isA<bool>());
 
         // 3. Gov.br uses OID 2.16.76.1.7.1... (ICP-Brasil)
         // Some legacy or specific Gov.br signatures might NOT have the PolicyOID attribute.
@@ -90,15 +101,22 @@ void main() {
           }
         }
       }
-    }, skip: File('test/assets/sample_govbr_signature_assinado.pdf').existsSync() ? false : 'Missing test asset: test/assets/sample_govbr_signature_assinado.pdf');
+    },
+        skip: File('test/assets/sample_govbr_signature_assinado.pdf')
+                .existsSync()
+            ? false
+            : 'Missing test asset: test/assets/sample_govbr_signature_assinado.pdf');
 
-    test('Validate ICP-Brasil Token signed PDF (sample_token_icpbrasil_assinado.pdf)', () async {
+    test(
+        'Validate ICP-Brasil Token signed PDF (sample_token_icpbrasil_assinado.pdf)',
+        () async {
       final File file = File('test/assets/sample_token_icpbrasil_assinado.pdf');
       final List<int> bytes = file.readAsBytesSync();
 
       final PdfSignatureValidator validator = PdfSignatureValidator();
       // Enable fetchCrls to attempt online revocation checks (OCSP/CRL)
-      final PdfSignatureValidationReport report = await validator.validateAllSignatures(
+      final PdfSignatureValidationReport report =
+          await validator.validateAllSignatures(
         Uint8List.fromList(bytes),
         fetchCrls: true,
         trustedRootsPem: trustedRoots,
@@ -108,25 +126,28 @@ void main() {
 
       for (final PdfSignatureValidationItem sig in report.signatures) {
         if (_verbose) {
-         // ignore: avoid_print
-         print('Signature: ${sig.fieldName}');
-         // ignore: avoid_print
-         print('  Valid (Crypto): ${sig.validation.cmsSignatureValid}');
-         // ignore: avoid_print
-         print('  Policy OID: ${sig.validation.policyOid}');
-         // ignore: avoid_print
-         print('  Revocation Status: ${sig.revocationStatus.status}');
-
-         if (sig.revocationStatus.details != null) {
           // ignore: avoid_print
-          print('  Revocation Details: ${sig.revocationStatus.details}');
-         }
+          print('Signature: ${sig.fieldName}');
+          // ignore: avoid_print
+          print('  Valid (Crypto): ${sig.validation.cmsSignatureValid}');
+          // ignore: avoid_print
+          print('  Policy OID: ${sig.validation.policyOid}');
+          // ignore: avoid_print
+          print('  Revocation Status: ${sig.revocationStatus.status}');
+
+          if (sig.revocationStatus.details != null) {
+            // ignore: avoid_print
+            print('  Revocation Details: ${sig.revocationStatus.details}');
+          }
         }
 
         expect(sig.validation.cmsSignatureValid, isTrue,
-          reason: 'CMS signature must be valid');
+            reason: 'CMS signature must be valid');
       }
-     }, skip: File('test/assets/sample_token_icpbrasil_assinado.pdf').existsSync() ? false : 'Missing test asset: test/assets/sample_token_icpbrasil_assinado.pdf');
-
+    },
+        skip: File('test/assets/sample_token_icpbrasil_assinado.pdf')
+                .existsSync()
+            ? false
+            : 'Missing test asset: test/assets/sample_token_icpbrasil_assinado.pdf');
   });
 }

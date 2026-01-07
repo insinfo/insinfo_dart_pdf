@@ -232,6 +232,9 @@ export 'src/pdf/implementation/security/digital_signature/pdf_certificate.dart'
 export 'src/pdf/implementation/security/digital_signature/external_pdf_signature.dart'
     show PdfExternalSigning, PdfExternalSigningResult;
 
+export 'src/pdf/implementation/security/digital_signature/pdf_signature_utils.dart'
+    show PdfSignatureUtils, PdfSignatureOffsets;
+
 export 'src/pdf/implementation/security/digital_signature/pdf_signature_validation.dart'
     show PdfSignatureValidation, PdfSignatureValidationResult;
 export 'src/pdf/implementation/security/digital_signature/pdf_signature_validator.dart'
@@ -256,6 +259,11 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
 export 'src/security/chain/trusted_roots_provider.dart'
     show TrustedRootsProvider, CompositeTrustedRootsProvider;
 export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
+export 'src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart' show PdfCmsSigner;
+export 'src/pdf/implementation/security/digital_signature/pdf_crypto_utils.dart'
+    show PdfCryptoUtils;
+export 'src/pdf/implementation/security/digital_signature/cryptography/cipher_block_chaining_mode.dart'
+    show RsaPrivateKeyParam;
 export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'
     show TimestampServer;
 export 'src/pdf/implementation/security/enum.dart';
