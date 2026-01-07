@@ -572,6 +572,7 @@ class PdfSignatureDictionary implements IPdfWrapper {
       chain,
       hashAlgorithm!,
       false,
+      null,
     );
     final IRandom source = getUnderlyingSource();
     final List<IRandom?> sources = List<IRandom?>.generate(
@@ -690,6 +691,7 @@ class PdfSignatureDictionary implements IPdfWrapper {
       chain,
       hashAlgorithm!,
       false,
+      null,
     );
     final IRandom source = getUnderlyingSource();
     final List<IRandom?> sources = List<IRandom?>.generate(
@@ -802,6 +804,7 @@ class PdfSignatureDictionary implements IPdfWrapper {
       null,
       hashAlgorithm!,
       false,
+      null,
     );
     final IRandom source = getUnderlyingSource();
     final List<IRandom?> sources = List<IRandom?>.filled(
@@ -1441,6 +1444,7 @@ class _PdfCmsSigner {
     List<X509Certificate?>? certChain,
     String hashAlgorithm,
     bool hasRSAdata,
+    this.signaturePolicyOid,
   ) {
     _digestAlgorithm = MessageDigestAlgorithms();
     _digestAlgorithmOid = _digestAlgorithm.getAllowedDigests(hashAlgorithm);
@@ -1493,6 +1497,8 @@ class _PdfCmsSigner {
   List<int>? _signedRsaData;
   List<int>? _digest;
 
+  final String? signaturePolicyOid;
+
   //Properties
   String? get hashAlgorithm {
     _hashAlgorithm ??= _digestAlgorithm.getDigest(_digestAlgorithmOid);
@@ -1504,8 +1510,9 @@ class _PdfCmsSigner {
     List<int> secondDigest,
     List<int>? ocsp,
     List<List<int>>? crlBytes,
-    CryptographicStandard? sigtype,
-  ) {
+    CryptographicStandard? sigtype, [
+    String? signaturePolicyOid,
+  ]) {
     final Asn1EncodeCollection attribute = Asn1EncodeCollection();
     Asn1EncodeCollection v = Asn1EncodeCollection();
     v.encodableObjects.add(DerObjectID(_DigitalIdentifiers.contentType));
@@ -1517,6 +1524,21 @@ class _PdfCmsSigner {
     v.encodableObjects.add(DerObjectID(_DigitalIdentifiers.messageDigest));
     v.encodableObjects.add(DerSet(array: <Asn1Encode>[DerOctet(secondDigest)]));
     attribute.encodableObjects.add(DerSequence(collection: v));
+
+    // ETSI / ICP-Brasil: id-aa-ets-sigPolicyId (SignaturePolicyId)
+    // Attribute ::= SEQUENCE { attrType OBJECT IDENTIFIER, attrValues SET OF AttributeValue }
+    // SignaturePolicyId ::= SEQUENCE { sigPolicyId OBJECT IDENTIFIER, ... }
+    if (signaturePolicyOid != null && signaturePolicyOid.trim().isNotEmpty) {
+      v = Asn1EncodeCollection();
+      v.encodableObjects.add(DerObjectID('1.2.840.113549.1.9.16.2.15'));
+      final Asn1EncodeCollection policySeq = Asn1EncodeCollection();
+      policySeq.encodableObjects.add(DerObjectID(signaturePolicyOid.trim()));
+      v.encodableObjects.add(
+        DerSet(array: <Asn1Encode>[DerSequence(collection: policySeq)]),
+      );
+      attribute.encodableObjects.add(DerSequence(collection: v));
+    }
+
     if (sigtype == CryptographicStandard.cades && _signCert != null) {
       v = Asn1EncodeCollection();
       v.encodableObjects.add(
@@ -1554,8 +1576,9 @@ class _PdfCmsSigner {
     List<int> secondDigest,
     List<int>? ocsp,
     List<List<int>>? crlBytes,
-    CryptographicStandard? sigtype,
-  ) async {
+    CryptographicStandard? sigtype, [
+    String? signaturePolicyOid,
+  ]) async {
     final Asn1EncodeCollection attribute = Asn1EncodeCollection();
     Asn1EncodeCollection v = Asn1EncodeCollection();
     v.encodableObjects.add(DerObjectID(_DigitalIdentifiers.contentType));
@@ -1567,6 +1590,18 @@ class _PdfCmsSigner {
     v.encodableObjects.add(DerObjectID(_DigitalIdentifiers.messageDigest));
     v.encodableObjects.add(DerSet(array: <Asn1Encode>[DerOctet(secondDigest)]));
     attribute.encodableObjects.add(DerSequence(collection: v));
+
+    if (signaturePolicyOid != null && signaturePolicyOid.trim().isNotEmpty) {
+      v = Asn1EncodeCollection();
+      v.encodableObjects.add(DerObjectID('1.2.840.113549.1.9.16.2.15'));
+      final Asn1EncodeCollection policySeq = Asn1EncodeCollection();
+      policySeq.encodableObjects.add(DerObjectID(signaturePolicyOid.trim()));
+      v.encodableObjects.add(
+        DerSet(array: <Asn1Encode>[DerSequence(collection: policySeq)]),
+      );
+      attribute.encodableObjects.add(DerSequence(collection: v));
+    }
+
     if (sigtype == CryptographicStandard.cades && _signCert != null) {
       v = Asn1EncodeCollection();
       v.encodableObjects.add(
@@ -1720,7 +1755,17 @@ class _PdfCmsSigner {
     v.encodableObjects.add(DerNull.value);
     signerinfo.encodableObjects.add(DerSequence(collection: v));
     signerinfo.encodableObjects.add(
-      DerTag(0, getSequenceDataSet(secondDigest, ocsp, crls, sigtype), false),
+      DerTag(
+        0,
+        getSequenceDataSet(
+          secondDigest,
+          ocsp,
+          crls,
+          sigtype,
+          signaturePolicyOid,
+        ),
+        false,
+      ),
     );
     v = Asn1EncodeCollection();
     v.encodableObjects.add(DerObjectID(_encryptionAlgorithmOid));
@@ -1836,7 +1881,17 @@ class _PdfCmsSigner {
     v.encodableObjects.add(DerNull.value);
     signerinfo.encodableObjects.add(DerSequence(collection: v));
     signerinfo.encodableObjects.add(
-      DerTag(0, getSequenceDataSet(secondDigest, ocsp, crls, sigtype), false),
+      DerTag(
+        0,
+        getSequenceDataSet(
+          secondDigest,
+          ocsp,
+          crls,
+          sigtype,
+          signaturePolicyOid,
+        ),
+        false,
+      ),
     );
     v = Asn1EncodeCollection();
     v.encodableObjects.add(DerObjectID(_encryptionAlgorithmOid));
@@ -1986,6 +2041,7 @@ class PdfCmsSigner {
     List<String> chainPem = const <String>[],
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    String? signaturePolicyOid,
   }) {
     final RsaPrivateKeyParam privateKey =
       PdfCryptoUtils.rsaPrivateKeyFromPem(privateKeyPem, password: privateKeyPassword);
@@ -2001,6 +2057,7 @@ class PdfCmsSigner {
       extraCertsDer: chainDer,
       cryptographicStandard: cryptographicStandard,
       timeStampToken: timeStampToken,
+      signaturePolicyOid: signaturePolicyOid,
     );
   }
 
@@ -2011,6 +2068,7 @@ class PdfCmsSigner {
     required PdfCertificate certificate,
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    String? signaturePolicyOid,
   }) {
     // Reusa a mesma heurística do pipeline de assinatura do PDF:
     // seleciona o primeiro alias com chave privada.
@@ -2073,6 +2131,7 @@ class PdfCmsSigner {
       extraCertsDer: extraCerts,
       cryptographicStandard: cryptographicStandard,
       timeStampToken: timeStampToken,
+      signaturePolicyOid: signaturePolicyOid,
     );
   }
 
@@ -2090,6 +2149,7 @@ class PdfCmsSigner {
     List<Uint8List> extraCertsDer = const <Uint8List>[],
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    String? signaturePolicyOid,
   }) {
     return signDetachedRsa(
       contentDigest: contentDigest,
@@ -2099,6 +2159,7 @@ class PdfCmsSigner {
       hashAlgorithm: MessageDigestAlgorithms.secureHash256,
       cryptographicStandard: cryptographicStandard,
       timeStampToken: timeStampToken,
+      signaturePolicyOid: signaturePolicyOid,
     );
   }
 
@@ -2113,6 +2174,7 @@ class PdfCmsSigner {
     required String hashAlgorithm,
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    String? signaturePolicyOid,
   }) {
     final X509CertificateParser parser = X509CertificateParser();
     final X509Certificate? signerCert = parser.readCertificate(
@@ -2133,12 +2195,19 @@ class PdfCmsSigner {
     }
 
     // Monta atributos assinados (SET OF) e assina os bytes DER do SET.
-    final _PdfCmsSigner cms = _PdfCmsSigner(null, chain, hashAlgorithm, false);
+    final _PdfCmsSigner cms = _PdfCmsSigner(
+      null,
+      chain,
+      hashAlgorithm,
+      false,
+      signaturePolicyOid,
+    );
     final DerSet attrs = cms.getSequenceDataSet(
       contentDigest,
       null,
       null,
       cryptographicStandard,
+      signaturePolicyOid,
     );
     final List<int>? attrsDer = attrs.getEncoded(Asn1.der);
     if (attrsDer == null || attrsDer.isEmpty) {
@@ -2260,7 +2329,13 @@ class PdfCmsSigner {
       if (c != null) chain.add(c);
     }
 
-    final _PdfCmsSigner cms = _PdfCmsSigner(null, chain, hashAlgorithm, false);
+    final _PdfCmsSigner cms = _PdfCmsSigner(
+      null,
+      chain,
+      hashAlgorithm,
+      false,
+      null,
+    );
     final DerSet attrs = cms.getSequenceDataSet(
       contentDigest,
       null,

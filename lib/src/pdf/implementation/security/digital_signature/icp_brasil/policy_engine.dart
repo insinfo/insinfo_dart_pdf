@@ -1,5 +1,46 @@
 import 'lpa.dart';
 
+enum PolicyIssueSeverity {
+  warning,
+  error,
+}
+
+class PolicyIssue {
+  const PolicyIssue({
+    required this.severity,
+    required this.code,
+    required this.message,
+  });
+
+  final PolicyIssueSeverity severity;
+  final String code;
+  final String message;
+}
+
+class PolicyEvaluation {
+  const PolicyEvaluation({
+    required this.valid,
+    this.issues = const <PolicyIssue>[],
+  });
+
+  final bool valid;
+  final List<PolicyIssue> issues;
+
+  String? get firstError =>
+      issues.where((i) => i.severity == PolicyIssueSeverity.error).isEmpty
+          ? null
+          : issues
+              .firstWhere((i) => i.severity == PolicyIssueSeverity.error)
+              .message;
+
+  String? get firstWarning =>
+      issues.where((i) => i.severity == PolicyIssueSeverity.warning).isEmpty
+          ? null
+          : issues
+              .firstWhere((i) => i.severity == PolicyIssueSeverity.warning)
+              .message;
+}
+
 class IcpBrasilPolicyEngine {
   IcpBrasilPolicyEngine([this.lpa]);
 
@@ -11,35 +52,52 @@ class IcpBrasilPolicyEngine {
   /// but warns about missing LPA.
   PolicyValidationResult validatePolicy(
       String policyOid, DateTime signingTime) {
+    final PolicyEvaluation detailed = evaluatePolicy(policyOid, signingTime);
+    return PolicyValidationResult(
+      isValid: detailed.valid,
+      error: detailed.firstError,
+      warning: detailed.firstWarning,
+    );
+  }
+
+  /// Returns a structured evaluation of policy validity.
+  ///
+  /// This method is additive and meant for richer reporting.
+  PolicyEvaluation evaluatePolicy(String policyOid, DateTime signingTime) {
     if (lpa == null) {
       // Fallback: Check against known current policies if LPA is missing.
       // This is not fully compliant but allows operation without the LPA file.
-      return _validateHardcoded(policyOid, signingTime);
+      return _evaluateHardcoded(policyOid, signingTime);
     }
 
-    final String? lpaWarning = DateTime.now().isAfter(lpa!.nextUpdate)
-        ? 'LPA is outdated (NextUpdate=${lpa!.nextUpdate.toUtc().toIso8601String()})'
-        : null;
+    final List<PolicyIssue> issues = <PolicyIssue>[];
+    if (DateTime.now().isAfter(lpa!.nextUpdate)) {
+      issues.add(
+        PolicyIssue(
+          severity: PolicyIssueSeverity.warning,
+          code: 'lpa_outdated',
+          message:
+              'LPA is outdated (NextUpdate=${lpa!.nextUpdate.toUtc().toIso8601String()})',
+        ),
+      );
+    }
 
-    // Iterate over LPA policies
     for (final PolicyInfo info in lpa!.policyInfos) {
       if (info.policyOid == policyOid) {
-        final PolicyValidationResult base = _checkPeriod(info, signingTime);
-        if (base.isValid && base.warning == null && lpaWarning != null) {
-          return PolicyValidationResult(isValid: true, warning: lpaWarning);
-        }
-        if (base.isValid && base.warning != null && lpaWarning != null) {
-          return PolicyValidationResult(
-            isValid: true,
-            warning: '${base.warning}; $lpaWarning',
-          );
-        }
-        return base;
+        final PolicyEvaluation period = _evaluatePeriod(info, signingTime);
+        issues.addAll(period.issues);
+        return PolicyEvaluation(valid: period.valid, issues: issues);
       }
     }
 
-    return PolicyValidationResult(
-        isValid: false, error: 'Policy OID not found in LPA');
+    issues.add(
+      const PolicyIssue(
+        severity: PolicyIssueSeverity.error,
+        code: 'policy_oid_not_found',
+        message: 'Policy OID not found in LPA',
+      ),
+    );
+    return PolicyEvaluation(valid: false, issues: issues);
   }
 
   /// Like [validatePolicy], but when the CMS signed attributes contain the
@@ -53,31 +111,55 @@ class IcpBrasilPolicyEngine {
     List<int>? policyHashValue,
     bool strictDigest = false,
   }) {
-    final PolicyValidationResult base = validatePolicy(policyOid, signingTime);
-    if (!base.isValid) return base;
+    final PolicyEvaluation detailed =
+        evaluatePolicyWithDigest(policyOid, signingTime,
+            policyHashAlgorithmOid: policyHashAlgorithmOid,
+            policyHashValue: policyHashValue,
+            strictDigest: strictDigest);
+    return PolicyValidationResult(
+      isValid: detailed.valid,
+      error: detailed.firstError,
+      warning: detailed.firstWarning,
+    );
+  }
+
+  /// Structured variant of [validatePolicyWithDigest].
+  PolicyEvaluation evaluatePolicyWithDigest(
+    String policyOid,
+    DateTime signingTime, {
+    String? policyHashAlgorithmOid,
+    List<int>? policyHashValue,
+    bool strictDigest = false,
+  }) {
+    final PolicyEvaluation base = evaluatePolicy(policyOid, signingTime);
+    if (!base.valid) return base;
 
     if (lpa == null) {
       // No LPA => cannot verify the policy document digest.
       return base;
     }
 
+    final List<PolicyIssue> issues = <PolicyIssue>[...base.issues];
     if (policyHashAlgorithmOid == null || policyHashValue == null) {
       if (strictDigest) {
-        return PolicyValidationResult(
-          isValid: false,
-          error: 'SignaturePolicyId hash missing (required for deterministic policy validation)',
+        issues.add(
+          const PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'policy_digest_missing',
+            message:
+                'SignaturePolicyId hash missing (required for deterministic policy validation)',
+          ),
         );
+        return PolicyEvaluation(valid: false, issues: issues);
       }
-      if (base.warning != null) {
-        return PolicyValidationResult(
-          isValid: true,
-          warning: '${base.warning}; SignaturePolicyId hash missing (digest check skipped)',
-        );
-      }
-      return PolicyValidationResult(
-        isValid: true,
-        warning: 'SignaturePolicyId hash missing (digest check skipped)',
+      issues.add(
+        const PolicyIssue(
+          severity: PolicyIssueSeverity.warning,
+          code: 'policy_digest_missing',
+          message: 'SignaturePolicyId hash missing (digest check skipped)',
+        ),
       );
+      return PolicyEvaluation(valid: true, issues: issues);
     }
 
     PolicyInfo? info;
@@ -88,34 +170,55 @@ class IcpBrasilPolicyEngine {
       }
     }
     if (info == null) {
-      return PolicyValidationResult(isValid: false, error: 'Policy OID not found in LPA');
+      issues.add(
+        const PolicyIssue(
+          severity: PolicyIssueSeverity.error,
+          code: 'policy_oid_not_found',
+          message: 'Policy OID not found in LPA',
+        ),
+      );
+      return PolicyEvaluation(valid: false, issues: issues);
     }
 
-    final String expectedAlgOid = _normalizeDigestAlgorithmToOid(info.policyDigest.algorithm);
+    final String expectedAlgOid =
+        _normalizeDigestAlgorithmToOid(info.policyDigest.algorithm);
     if (expectedAlgOid != policyHashAlgorithmOid) {
-      return PolicyValidationResult(
-        isValid: false,
-        error: 'Policy digest algorithm mismatch (expected $expectedAlgOid, got $policyHashAlgorithmOid)',
+      issues.add(
+        PolicyIssue(
+          severity: PolicyIssueSeverity.error,
+          code: 'policy_digest_algorithm_mismatch',
+          message:
+              'Policy digest algorithm mismatch (expected $expectedAlgOid, got $policyHashAlgorithmOid)',
+        ),
       );
+      return PolicyEvaluation(valid: false, issues: issues);
     }
 
     final List<int> expected = info.policyDigest.value;
     if (expected.length != policyHashValue.length) {
-      return PolicyValidationResult(
-        isValid: false,
-        error: 'Policy digest length mismatch',
+      issues.add(
+        const PolicyIssue(
+          severity: PolicyIssueSeverity.error,
+          code: 'policy_digest_length_mismatch',
+          message: 'Policy digest length mismatch',
+        ),
       );
+      return PolicyEvaluation(valid: false, issues: issues);
     }
     for (int i = 0; i < expected.length; i++) {
       if (expected[i] != policyHashValue[i]) {
-        return PolicyValidationResult(
-          isValid: false,
-          error: 'Policy digest does not match LPA',
+        issues.add(
+          const PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'policy_digest_mismatch',
+            message: 'Policy digest does not match LPA',
+          ),
         );
+        return PolicyEvaluation(valid: false, issues: issues);
       }
     }
 
-    return base;
+    return PolicyEvaluation(valid: true, issues: issues);
   }
 
   static String _normalizeDigestAlgorithmToOid(String algorithm) {
@@ -137,37 +240,74 @@ class IcpBrasilPolicyEngine {
     return algorithm;
   }
 
-  PolicyValidationResult _checkPeriod(PolicyInfo info, DateTime time) {
+  PolicyEvaluation _evaluatePeriod(PolicyInfo info, DateTime time) {
     final DateTime notBefore = info.signingPeriod.notBefore;
     final DateTime? notAfter = info.signingPeriod.notAfter;
     final DateTime? revoked = info.revocationDate;
 
     if (time.isBefore(notBefore)) {
-      return PolicyValidationResult(
-          isValid: false, error: 'Signature time before policy validity');
+      return const PolicyEvaluation(
+        valid: false,
+        issues: <PolicyIssue>[
+          PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'policy_time_before_validity',
+            message: 'Signature time before policy validity',
+          )
+        ],
+      );
     }
     if (notAfter != null && time.isAfter(notAfter)) {
-      return PolicyValidationResult(
-          isValid: false, error: 'Signature time after policy validity');
+      return const PolicyEvaluation(
+        valid: false,
+        issues: <PolicyIssue>[
+          PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'policy_time_after_validity',
+            message: 'Signature time after policy validity',
+          )
+        ],
+      );
     }
     if (revoked != null && time.isAfter(revoked)) {
-      return PolicyValidationResult(
-          isValid: false, error: 'Policy was revoked before signature time');
+      return const PolicyEvaluation(
+        valid: false,
+        issues: <PolicyIssue>[
+          PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'policy_revoked_before_signature_time',
+            message: 'Policy was revoked before signature time',
+          )
+        ],
+      );
     }
 
-    return PolicyValidationResult(isValid: true);
+    return const PolicyEvaluation(valid: true);
   }
 
-  PolicyValidationResult _validateHardcoded(String oid, DateTime time) {
-    // Basic check for AD-RB syntax
+  PolicyEvaluation _evaluateHardcoded(String oid, DateTime time) {
     if (oid.startsWith('2.16.76.1.7.1.')) {
-      // Assume valid for simplified engine if no LPA provided
-      return PolicyValidationResult(
-          isValid: true,
-          warning: 'Validated against hardcoded prefix (LPA invalid/missing)');
+      return const PolicyEvaluation(
+        valid: true,
+        issues: <PolicyIssue>[
+          PolicyIssue(
+            severity: PolicyIssueSeverity.warning,
+            code: 'lpa_missing_hardcoded_prefix',
+            message: 'Validated against hardcoded prefix (LPA invalid/missing)',
+          )
+        ],
+      );
     }
-    return PolicyValidationResult(
-        isValid: false, error: 'Unknown Policy OID (LPA missing)');
+    return const PolicyEvaluation(
+      valid: false,
+      issues: <PolicyIssue>[
+        PolicyIssue(
+          severity: PolicyIssueSeverity.error,
+          code: 'lpa_missing_unknown_policy_oid',
+          message: 'Unknown Policy OID (LPA missing)',
+        )
+      ],
+    );
   }
 
   /// Validates if the digest algorithm is allowed by the policy.
@@ -197,6 +337,51 @@ class IcpBrasilPolicyEngine {
     return PolicyValidationResult(
         isValid: true,
         warning: 'Algorithm validation skipped (Policy XML missing)');
+  }
+
+  PolicyEvaluation evaluateAlgorithm(
+      String policyOid, String digestAlgorithmOid,
+      [DateTime? signingTime]) {
+    if (policyOid.startsWith('2.16.76.1.7.1.1.2')) {
+      if (digestAlgorithmOid == '2.16.840.1.101.3.4.2.1') {
+        return const PolicyEvaluation(valid: true);
+      }
+      if (digestAlgorithmOid == '1.3.14.3.2.26') {
+        return PolicyEvaluation(
+          valid: false,
+          issues: <PolicyIssue>[
+            PolicyIssue(
+              severity: PolicyIssueSeverity.error,
+              code: 'digest_sha1_not_allowed',
+              message: 'SHA-1 is not allowed for $policyOid',
+            )
+          ],
+        );
+      }
+
+      return PolicyEvaluation(
+        valid: false,
+        issues: <PolicyIssue>[
+          PolicyIssue(
+            severity: PolicyIssueSeverity.error,
+            code: 'digest_algorithm_not_allowed',
+            message:
+                'Algorithm $digestAlgorithmOid not allowed for policy $policyOid (Expected SHA256)',
+          )
+        ],
+      );
+    }
+
+    return const PolicyEvaluation(
+      valid: true,
+      issues: <PolicyIssue>[
+        PolicyIssue(
+          severity: PolicyIssueSeverity.warning,
+          code: 'digest_algorithm_validation_skipped',
+          message: 'Algorithm validation skipped (Policy XML missing)',
+        )
+      ],
+    );
   }
 }
 

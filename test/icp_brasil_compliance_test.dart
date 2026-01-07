@@ -88,6 +88,20 @@ void main() {
         expect(sig.timestampStatus, isNotNull);
         expect(sig.timestampStatus!.present, isA<bool>());
 
+        // 2c. For ICP-Brasil/Gov.br policies, missing timestamp is a warning (not an error)
+        if (sig.validation.policyOid != null &&
+            sig.validation.policyOid!.startsWith('2.16.76.1.7.1.')) {
+          if (sig.timestampStatus!.present == false) {
+            expect(
+              sig.issues.any((i) =>
+                  i.code == 'timestamp_missing' && i.severity.name == 'warning'),
+              isTrue,
+              reason:
+                  'Missing timestamp should be surfaced as warning for ICP-Brasil/Gov.br',
+            );
+          }
+        }
+
         // 3. Gov.br uses OID 2.16.76.1.7.1... (ICP-Brasil)
         // Some legacy or specific Gov.br signatures might NOT have the PolicyOID attribute.
         if (sig.validation.policyOid != null) {

@@ -25,6 +25,8 @@ import '../../io/stream_reader.dart';
 import 'x509/ocsp.dart';
 import 'icp_brasil/lpa.dart';
 import 'icp_brasil/policy_engine.dart';
+import 'icp_brasil/etsi_policy.dart';
+import 'icp_brasil/etsi_policy_enforcer.dart';
 import 'x509/x509_certificates.dart';
 import 'x509/x509_crl.dart';
 import 'x509/x509_utils.dart';
@@ -135,6 +137,32 @@ class PdfPolicyStatus {
       {'valid': valid, 'error': error, 'warning': warning, 'oid': policyOid};
 }
 
+enum PdfIssueSeverity {
+  warning,
+  error,
+}
+
+class PdfValidationIssue {
+  const PdfValidationIssue({
+    required this.severity,
+    required this.code,
+    required this.message,
+    this.category,
+  });
+
+  final PdfIssueSeverity severity;
+  final String code;
+  final String message;
+  final String? category;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'severity': severity.name,
+        'code': code,
+        'message': message,
+        'category': category,
+      };
+}
+
 class PdfTimestampStatus {
   const PdfTimestampStatus({
     required this.present,
@@ -194,6 +222,7 @@ class PdfSignatureValidationItem {
     required this.revocationStatus,
     this.policyStatus,
     this.timestampStatus,
+    this.issues = const <PdfValidationIssue>[],
   });
 
   final String fieldName;
@@ -234,6 +263,12 @@ class PdfSignatureValidationItem {
 
   final PdfTimestampStatus? timestampStatus;
 
+  /// Aggregated issues (warnings/errors) from policy/timestamp checks.
+  ///
+  /// This is additive metadata; consumers should not assume it exists in older
+  /// versions.
+  final List<PdfValidationIssue> issues;
+
   Map<String, dynamic> toMap() => <String, dynamic>{
         'field_name': fieldName,
         'byte_range': byteRange,
@@ -255,6 +290,7 @@ class PdfSignatureValidationItem {
         'revocation_status': revocationStatus.toMap(),
         'policy_status': policyStatus?.toMap(),
         'timestamp_status': timestampStatus?.toMap(),
+        'issues': issues.map((i) => i.toMap()).toList(growable: false),
       };
 }
 
@@ -296,6 +332,7 @@ class PdfSignatureValidator {
     bool strictRevocation = false,
     bool strictPolicyDigest = false,
     Lpa? lpa,
+    Map<String, String>? policyXmlByOid,
   }) async {
     final PdfDocument doc = PdfDocument(inputBytes: pdfBytes);
     try {
@@ -461,10 +498,11 @@ class PdfSignatureValidator {
 
         // Policy Check
         PdfPolicyStatus? policyStatus;
+        final List<PdfValidationIssue> issues = <PdfValidationIssue>[];
         if (res.policyOid != null) {
           final IcpBrasilPolicyEngine engine = IcpBrasilPolicyEngine(lpa);
           final DateTime checkTime = res.signingTime ?? DateTime.now();
-          PolicyValidationResult polRes = engine.validatePolicyWithDigest(
+          PolicyEvaluation polEval = engine.evaluatePolicyWithDigest(
             res.policyOid!,
             checkTime,
             policyHashAlgorithmOid: res.policyHashAlgorithmOid,
@@ -472,22 +510,112 @@ class PdfSignatureValidator {
             strictDigest: strictPolicyDigest,
           );
 
-          // Check algorithm constraints if policy is otherwise valid
-          if (polRes.isValid && res.digestAlgorithmOid != null) {
-            final PolicyValidationResult algoRes = engine.validateAlgorithm(
+          if (polEval.valid && res.digestAlgorithmOid != null) {
+            final PolicyEvaluation algoEval = engine.evaluateAlgorithm(
                 res.policyOid!, res.digestAlgorithmOid!, checkTime);
-            if (!algoRes.isValid) {
-              // Algorithm invalid: override result
-              polRes = algoRes;
-            }
+            polEval = PolicyEvaluation(
+              valid: polEval.valid && algoEval.valid,
+              issues: <PolicyIssue>[...polEval.issues, ...algoEval.issues],
+            );
           }
 
+          for (final PolicyIssue i in polEval.issues) {
+            issues.add(
+              PdfValidationIssue(
+                severity: i.severity == PolicyIssueSeverity.error
+                    ? PdfIssueSeverity.error
+                    : PdfIssueSeverity.warning,
+                code: i.code,
+                message: i.message,
+                category: 'policy',
+              ),
+            );
+          }
+
+          final String? firstError = polEval.issues
+                  .where((i) => i.severity == PolicyIssueSeverity.error)
+                  .isNotEmpty
+              ? polEval.issues
+                  .firstWhere((i) => i.severity == PolicyIssueSeverity.error)
+                  .message
+              : null;
+          final String? firstWarning = polEval.issues
+                  .where((i) => i.severity == PolicyIssueSeverity.warning)
+                  .isNotEmpty
+              ? polEval.issues
+                  .firstWhere((i) => i.severity == PolicyIssueSeverity.warning)
+                  .message
+              : null;
+
           policyStatus = PdfPolicyStatus(
-            valid: polRes.isValid,
-            error: polRes.error,
-            warning: polRes.warning,
+            valid: polEval.valid,
+            error: firstError,
+            warning: firstWarning,
             policyOid: res.policyOid,
           );
+        }
+
+        // ETSI-like policy enforcement (Mandated QProperties + algorithm constraints)
+        // This is only applied when the caller provides the policy XML for the OID.
+        bool timestampRequiredByPolicy = false;
+        if (res.policyOid != null && policyXmlByOid != null) {
+          final String? xml = policyXmlByOid[res.policyOid!];
+          if (xml != null && xml.trim().isNotEmpty) {
+            try {
+              final EtsiPolicyConstraints constraints =
+                  EtsiPolicyConstraints.parseXml(xml);
+
+              if (constraints.policyOid != null &&
+                  constraints.policyOid != res.policyOid) {
+                issues.add(
+                  PdfValidationIssue(
+                    severity: PdfIssueSeverity.warning,
+                    code: 'policy_xml_oid_mismatch',
+                    message:
+                        'Policy XML Identifier OID (${constraints.policyOid}) does not match signature Policy OID (${res.policyOid}).',
+                    category: 'policy',
+                  ),
+                );
+              }
+
+              final CmsSignedDataValidationResult cmsInfo =
+                  cmsValidator.validateCmsSignedData(sig.pkcs7Der);
+
+              final EtsiPolicyEnforcement enforcement =
+                  const EtsiPolicyEnforcer().evaluate(
+                policyOid: res.policyOid!,
+                constraints: constraints,
+                cmsInfo: cmsInfo,
+                signerChainPem: res.certsPem,
+              );
+
+              timestampRequiredByPolicy =
+                  enforcement.timestampRequiredByPolicy;
+
+              for (final PolicyIssue i in enforcement.issues) {
+                issues.add(
+                  PdfValidationIssue(
+                    severity: i.severity == PolicyIssueSeverity.error
+                        ? PdfIssueSeverity.error
+                        : PdfIssueSeverity.warning,
+                    code: i.code,
+                    message: i.message,
+                    category: 'policy',
+                  ),
+                );
+              }
+            } catch (e) {
+              issues.add(
+                PdfValidationIssue(
+                  severity: PdfIssueSeverity.warning,
+                  code: 'policy_xml_parse_failed',
+                  message:
+                      'Failed to parse/enforce policy XML for ${res.policyOid}: $e',
+                  category: 'policy',
+                ),
+              );
+            }
+          }
         }
 
         // RFC3161 Timestamp Check (PAdES-T unsigned attribute)
@@ -499,6 +627,14 @@ class PdfSignatureValidator {
           loadedCrls: loadedCrls,
           fetchCrls: fetchCrls,
           strictRevocation: strictRevocation,
+        );
+
+        issues.addAll(
+          _timestampIssues(
+            policyOid: res.policyOid,
+            timestamp: tsStatus,
+            requiredByPolicy: timestampRequiredByPolicy,
+          ),
         );
 
         // ByteRange/Contents positions
@@ -559,6 +695,7 @@ class PdfSignatureValidator {
             revocationStatus: revStatus,
             policyStatus: policyStatus,
             timestampStatus: tsStatus,
+            issues: issues,
           ),
         );
       }
@@ -572,6 +709,68 @@ class PdfSignatureValidator {
   static const String _oidIdAaTimeStampToken = '1.2.840.113549.1.9.16.2.14';
   static const String _oidSignedData = '1.2.840.113549.1.7.2';
   static const String _oidTstInfo = '1.2.840.113549.1.9.16.1.4';
+
+  static bool _isIcpBrasilOrGovBrPolicyOid(String? policyOid) {
+    if (policyOid == null) return false;
+    return policyOid.startsWith('2.16.76.1.7.1.');
+  }
+
+  static List<PdfValidationIssue> _timestampIssues({
+    required String? policyOid,
+    required PdfTimestampStatus timestamp,
+    bool requiredByPolicy = false,
+  }) {
+    final bool isIcp = _isIcpBrasilOrGovBrPolicyOid(policyOid);
+
+    // By default we only surface timestamp issues for ICP-Brasil/Gov.br. When the
+    // policy XML explicitly mandates a timestamp, we enforce it regardless.
+    if (!isIcp && !requiredByPolicy) return const <PdfValidationIssue>[];
+
+    if (!timestamp.present) {
+      if (requiredByPolicy) {
+        return const <PdfValidationIssue>[
+          PdfValidationIssue(
+            severity: PdfIssueSeverity.error,
+            code: 'timestamp_missing',
+            message:
+                'RFC3161 timestamp (PAdES-T) is required by policy, but is not present',
+            category: 'timestamp',
+          )
+        ];
+      }
+
+      return const <PdfValidationIssue>[
+        PdfValidationIssue(
+          severity: PdfIssueSeverity.warning,
+          code: 'timestamp_missing',
+          message:
+              'RFC3161 timestamp (PAdES-T) not present; treated as warning for ICP-Brasil/Gov.br by default',
+          category: 'timestamp',
+        )
+      ];
+    }
+
+    if (!timestamp.valid) {
+      final bool deterministicInvalid =
+          timestamp.messageImprintOk == false ||
+              timestamp.tokenSignatureValid == false ||
+              timestamp.errors.contains('timestamp_token_signature_invalid');
+
+      return <PdfValidationIssue>[
+        PdfValidationIssue(
+          severity:
+              deterministicInvalid ? PdfIssueSeverity.error : PdfIssueSeverity.warning,
+          code: 'timestamp_invalid',
+          message: deterministicInvalid
+              ? 'RFC3161 timestamp token is present but cryptographically invalid'
+              : 'RFC3161 timestamp token validation is inconclusive/failed (treated as warning by default)',
+          category: 'timestamp',
+        )
+      ];
+    }
+
+    return const <PdfValidationIssue>[];
+  }
 
   Future<PdfTimestampStatus> _validateRfc3161Timestamp({
     required Uint8List signatureCmsDer,

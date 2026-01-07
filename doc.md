@@ -652,6 +652,13 @@ This repository includes a server-side validation helper that can inspect **all*
 - Chain trust (when trusted roots are provided)
 - Revocation status (best-effort or strict)
 - Policy status (when SignaturePolicyId is present and LPA is provided)
+- Timestamp status (RFC 3161, when present)
+- Aggregated issues (warnings/errors) in `PdfSignatureValidationItem.issues`
+
+Note on timestamp severity (ICP-Brasil / Gov.br):
+
+- If the signature policy OID indicates ICP-Brasil/Gov.br (`2.16.76.1.7.1.*`) and no RFC3161 timestamp token is present, this is reported as a **warning** issue (`timestamp_missing`) by default.
+- If a timestamp token is present but deterministically invalid (e.g. token CMS signature invalid or message imprint mismatch), this is reported as an **error** issue (`timestamp_invalid`).
 
 ### What is validated (high level)
 
@@ -813,7 +820,7 @@ Gaps that can still impact “strong legal robustness” depending on your compl
 
 - External signing injection still uses a regex scan in one path (see `external_pdf_signature.dart` TODO); ideally this should be fully parser-based
 - Policy validation can fall back to heuristics when full LPA/policy data is not available
-- Timestamp token validation (RFC 3161) is not fully reported/verified during validation (request/embedding exists, but end-to-end timestamp verification may need expansion)
+- Timestamp validation is reported via `timestampStatus` and `issues`, but you may want stricter local rules depending on your compliance target (e.g. enforce PAdES-T/LTV as hard requirements)
 - Full offline-LTV proof (strict verification that DSS/VRI contains *all* required evidence for each signature across all scenarios) is best-effort and may need stricter rules per your use case
 
 ## Gov.br external signature (server-side)
