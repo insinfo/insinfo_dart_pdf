@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:dart_pdf/pdf.dart' as pdf;
 import 'package:test/test.dart';
 
+const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
+
 void main() {
   final bool hasOpenSsl = _hasOpenSsl();
 
@@ -65,7 +67,7 @@ void main() {
           trustedRootsPem: <String>[File(certPath).readAsStringSync()],
         );
 
-        if (report.signatures.isNotEmpty) {
+        if (_verbose && report.signatures.isNotEmpty) {
           for (final pdf.PdfSignatureValidationItem item in report.signatures) {
             // ignore: avoid_print
             print(
@@ -188,7 +190,7 @@ Future<Uint8List> _externallySignWithOpenSsl({
   ]);
 
   // Debug aid: show a small ASN.1 parse snippet.
-  if (fieldName == 'Sig1') {
+  if (_verbose && fieldName == 'Sig1') {
     final ProcessResult asn1 = await Process.run('openssl', [
       'asn1parse',
       '-inform',

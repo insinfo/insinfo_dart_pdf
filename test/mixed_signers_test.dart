@@ -8,6 +8,8 @@ import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/asn1/der.dart';
 import 'package:test/test.dart';
 
+const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
+
 void main() {
   final Map<DerObjectID, String> symbols = {
     X509Name.cn: 'CN',
@@ -49,13 +51,20 @@ void main() {
       
       final String subjectStr = signerCert.c!.subject!.getString(false, symbols).toLowerCase();
       final String issuerStr = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
-      
-      print('Signer: $subjectStr');
-      print('Issuer: $issuerStr');
+
+      if (_verbose) {
+        // ignore: avoid_print
+        print('Signer: $subjectStr');
+        // ignore: avoid_print
+        print('Issuer: $issuerStr');
+      }
 
       // Chain validation (cripto) deve funcionar com truststore embutido.
       if (sig.chainTrusted != true) {
-        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        }
       }
       expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
 
@@ -100,12 +109,19 @@ void main() {
       final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
       final String subjectStr = signerCert.c!.subject!.getString(false, symbols).toLowerCase();
       final String issuerStr = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
-      
-      print('Signer: $subjectStr');
-      print('Issuer: $issuerStr');
+
+      if (_verbose) {
+        // ignore: avoid_print
+        print('Signer: $subjectStr');
+        // ignore: avoid_print
+        print('Issuer: $issuerStr');
+      }
 
       if (sig.chainTrusted != true) {
-        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        }
       }
       expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
 
@@ -145,19 +161,29 @@ void main() {
 
     for (var sig in report.signatures) {
       expect(sig.validation.cmsSignatureValid, isTrue);
-      print('Validating ${sig.fieldName} in ${file.path}');
+      if (_verbose) {
+        // ignore: avoid_print
+        print('Validating ${sig.fieldName} in ${file.path}');
+      }
 
       // Print signer DN to help diagnose missing issuer.
       if (sig.validation.certsPem.isNotEmpty) {
         final X509Certificate signerCert = X509Utils.parsePemCertificate(sig.validation.certsPem.first);
         final String subjectStr = signerCert.c!.subject!.getString(false, symbols).toLowerCase();
         final String issuerStr = signerCert.c!.issuer!.getString(false, symbols).toLowerCase();
-        print('Signer: $subjectStr');
-        print('Issuer: $issuerStr');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Signer: $subjectStr');
+          // ignore: avoid_print
+          print('Issuer: $issuerStr');
+        }
       }
 
       if (sig.chainTrusted != true) {
-        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        }
       }
       expect(sig.chainTrusted, isTrue, reason: 'Chain not trusted for ${sig.fieldName}');
     }
@@ -180,9 +206,15 @@ void main() {
 
     for (var sig in report.signatures) {
       expect(sig.validation.cmsSignatureValid, isTrue);
-      print('Validating ${sig.fieldName}: Chain Trusted = ${sig.chainTrusted}');
+      if (_verbose) {
+        // ignore: avoid_print
+        print('Validating ${sig.fieldName}: Chain Trusted = ${sig.chainTrusted}');
+      }
       if (sig.chainTrusted != true) {
-        print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Chain errors for ${sig.fieldName}: ${sig.chainErrors}');
+        }
       }
     }
   });

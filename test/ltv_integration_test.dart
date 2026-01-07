@@ -8,6 +8,8 @@ import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_signature_validator.dart';
 import 'package:test/test.dart';
 
+const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
+
 void main() {
   final bool hasOpenSsl = _hasOpenSsl();
 
@@ -64,8 +66,11 @@ void main() {
       final PdfSignatureValidator validator = PdfSignatureValidator();
       final PdfSignatureValidationReport report = await validator.validateAllSignatures(ltvBytes, trustedRootsPem: [certPem]);
       final PdfSignatureValidationItem sig = report.signatures.first;
-      
-      print('LTV Info: hasDss=${sig.ltv.hasDss} dssCerts=${sig.ltv.dssCertsCount}');
+
+      if (_verbose) {
+        // ignore: avoid_print
+        print('LTV Info: hasDss=${sig.ltv.hasDss} dssCerts=${sig.ltv.dssCertsCount}');
+      }
 
       expect(sig.ltv.hasDss, isTrue, reason: 'DSS Dictionary should be present');
       expect(sig.ltv.dssCertsCount, greaterThanOrEqualTo(1), reason: 'DSS should contain the signer certificate');
