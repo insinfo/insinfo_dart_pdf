@@ -21,6 +21,17 @@ class X509ChainValidationResult {
 ///
 /// Note: this library currently supports RSA certificate signature validation.
 class X509Utils {
+  static String derToPem(Uint8List der) {
+    final base64Cert = base64.encode(der);
+    final buffer = StringBuffer();
+    buffer.writeln('-----BEGIN CERTIFICATE-----');
+    for (int i = 0; i < base64Cert.length; i += 64) {
+      buffer.writeln(base64Cert.substring(i, (i + 64 < base64Cert.length) ? i + 64 : base64Cert.length));
+    }
+    buffer.writeln('-----END CERTIFICATE-----');
+    return buffer.toString();
+  }
+
   static Uint8List pemToDer(String pem) {
     final String normalized = pem
         .replaceAll('-----BEGIN CERTIFICATE-----', '')

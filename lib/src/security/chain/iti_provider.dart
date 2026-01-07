@@ -1,23 +1,20 @@
-import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
+import 'generated/iti_trust_store.dart';
 
 class ItiProvider {
-  static const List<String> _certs = [
-    'assets/truststore/iti/AutoridadeCertificadoraRaizdoGovernoFederaldoBrasilv1.crt',
-    'assets/truststore/iti/ACFinaldoGovernoFederaldoBrasilv1.crt',
-    'assets/truststore/iti/ACIntermediariadoGovernoFederaldoBrasilv1.crt',
-  ];
-
   Future<List<Uint8List>> getTrustedRoots() async {
-    final List<Uint8List> roots = [];
-    for (final path in _certs) {
-      final file = File(path);
-      if (await file.exists()) {
-        roots.add(await file.readAsBytes());
-      } else {
-        throw Exception('Certificate not found: $path');
-      }
-    }
-    return roots;
+    return itiTrustStore.map((pem) {
+      return _pemToDer(pem);
+    }).toList();
+  }
+
+  Uint8List _pemToDer(String pem) {
+    var lines = pem.split('\n');
+    lines = lines
+        .where((line) => !line.startsWith('-----'))
+        .map((line) => line.trim())
+        .toList();
+    return base64.decode(lines.join(''));
   }
 }

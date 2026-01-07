@@ -23,6 +23,7 @@ import 'icp_brasil/policy_engine.dart';
 import 'x509/x509_certificates.dart';
 import 'x509/x509_crl.dart';
 import 'x509/x509_utils.dart';
+import '../../../../security/chain/icp_brasil_provider.dart';
 
 class PdfLtvInfo {
   const PdfLtvInfo({
@@ -183,11 +184,13 @@ class PdfSignatureValidator {
   /// [trustedRootsPem]: List of trusted CA certificates in PEM format.
   /// [crlBytes]: Optional list of CRLs (DER or PEM bytes) to use for revocation checking.
   /// [fetchCrls]: If true, tries to download CRLs from Distribution Points in certificates.
+  /// [useEmbeddedIcpBrasil]: If true, adds the built-in ICP-Brasil trusted roots to the verification anchors.
   Future<PdfSignatureValidationReport> validateAllSignatures(
     Uint8List pdfBytes, {
     List<String>? trustedRootsPem,
     List<Uint8List>? crlBytes,
     bool fetchCrls = false,
+    bool useEmbeddedIcpBrasil = false,
     Lpa? lpa,
   }) async {
     final PdfDocument doc = PdfDocument(inputBytes: pdfBytes);
@@ -199,6 +202,30 @@ class PdfSignatureValidator {
       final PdfSignatureValidation cmsValidator = PdfSignatureValidation();
       final List<PdfSignatureValidationItem> out = <PdfSignatureValidationItem>[];
 
+      final List<String> effectiveRoots = <String>[];
+      if (trustedRootsPem != null) {
+        effectiveRoots.addAll(trustedRootsPem);
+      }
+      if (useEmbeddedIcpBrasil) {
+         final icpProvider = IcpBrasilProvider();
+         // We need PEMs here but the provider returns DERs in standard interface
+         // However, internally we know we have the store in format.
+         // Let's rely on the public interface or import the store directly?
+         // Ideally imports the list directly if we want sync access for 'icpBrasilTrustStore'
+         // But since I refactored it out, I should probably import the generated file here too 
+         // OR update the provider to be useful here.
+         // For now, I'll temporarily import the generated file to keep this working
+         // But wait, I can't import 'generated' easily if it's far away.
+         // Let's just fix the import at the top to point to the new location of the provider, 
+         // and we can fetch the roots. 
+         // But wait, validateAllSignatures is async, so we can await.
+         
+         final rootsDer = await icpProvider.getTrustedRoots();
+          for (final der in rootsDer) {
+             effectiveRoots.add(X509Utils.derToPem(der));
+          }
+      }
+
       // Prepare CRLs
       final List<X509Crl> loadedCrls = <X509Crl>[];
       if (crlBytes != null) {
@@ -208,12 +235,10 @@ class PdfSignatureValidator {
          }
       }
 
-      // Prepare Roots
+      // Prepare Roots Objects
       final List<X509Certificate> roots = <X509Certificate>[];
-      if (trustedRootsPem != null) {
-        for (final String r in trustedRootsPem) {
-            try { roots.add(X509Utils.parsePemCertificate(r)); } catch (_) {}
-        }
+      for (final String r in effectiveRoots) {
+          try { roots.add(X509Utils.parsePemCertificate(r)); } catch (_) {}
       }
 
       for (final _ParsedSignature sig in sigs) {
@@ -225,10 +250,10 @@ class PdfSignatureValidator {
         );
 
         bool? chainTrusted;
-        if (trustedRootsPem != null && trustedRootsPem.isNotEmpty) {
+        if (effectiveRoots.isNotEmpty) {
           chainTrusted = X509Utils.verifyChainPem(
             chainPem: res.certsPem,
-            trustedRootsPem: trustedRootsPem,
+            trustedRootsPem: effectiveRoots,
           ).trusted;
         }
 
