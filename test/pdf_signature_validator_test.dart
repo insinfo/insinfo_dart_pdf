@@ -100,12 +100,11 @@ void main() {
               reason: 'Document must be intact for ${item.fieldName}');
           expect(item.validation.certsPem, isNotEmpty,
               reason: 'CMS should contain certs for ${item.fieldName}');
-          
-          // Note: chainTrusted is currently false because certificate reconstruction 
-          // creates a functional cert but lacks the CA signature for chain validation.
-          // This is a known limitation (see TODO.md). The signature itself is valid (cms=true).
-          expect(item.chainTrusted, isFalse,
-              reason: 'Chain trust is currently limited by certificate reconstruction');
+
+          // When we provide the self-signed root (the same cert used to sign),
+          // chain validation is expected to succeed.
+          expect(item.chainTrusted, isTrue,
+              reason: 'Chain trust should validate against provided trustedRootsPem');
         }
       } finally {
         await testDir.delete(recursive: true);

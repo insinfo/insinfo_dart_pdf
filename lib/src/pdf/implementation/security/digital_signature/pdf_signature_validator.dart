@@ -288,6 +288,29 @@ class PdfSignatureValidator {
           );
           chainTrusted = chainResult.trusted;
           chainErrors = chainResult.errors;
+
+          // If chain validation fails and online fetching is allowed, try to augment
+          // intermediates from AIA (CA Issuers) similar to PDFBox's CertInformationCollector.
+          if (fetchCrls && chainTrusted == false && res.certsPem.isNotEmpty) {
+            try {
+              final X509Certificate leaf = X509Utils.parsePemCertificate(res.certsPem.first);
+              final List<String> fetchedPem =
+                  await RevocationDataClient.fetchCaIssuersCertificatesPem(leaf);
+              if (fetchedPem.isNotEmpty) {
+                extraCandidatesPem.addAll(fetchedPem);
+                final X509ChainValidationResult retry = X509Utils.verifyChainPem(
+                  chainPem: res.certsPem,
+                  trustedRootsPem: effectiveRoots,
+                  extraCandidatesPem: extraCandidatesPem,
+                  validationTime: res.signingTime,
+                );
+                chainTrusted = retry.trusted;
+                chainErrors = retry.errors;
+              }
+            } catch (_) {
+              // ignore
+            }
+          }
         }
 
         // Revocation Check

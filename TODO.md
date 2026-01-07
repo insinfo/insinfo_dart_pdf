@@ -142,6 +142,31 @@ Verificação:
 *   `dart analyze`: sem issues.
 *   Testes: `external_signature_test.dart`, `pdf_signature_validator_test.dart`, `ltv_integration_test.dart` passando.
 
+## Atualização - 07/01/2026 - Testes, cadeia e próximos ajustes
+
+Resultados do `dart test` (ambiente Windows / Dart 3.6.2):
+
+* `test/icp_brasil_compliance_test.dart`:
+	* Carregou 334 raízes confiáveis.
+	* `sample_govbr_signature_assinado.pdf`: assinatura encontrada, `Valid=true`, `Intact=true`, `Policy OID=null` (aviso mantido: nem toda assinatura Gov.br contém o atributo de Policy OID no CMS).
+	* `sample_token_icpbrasil_assinado.pdf`: `Valid (Crypto)=true`, revogação `good` (OCSP), `Policy OID=null` (aviso mantido: pode ser assinatura sem `SignaturePolicyId` explícito).
+
+* `test/mixed_signers_test.dart`: validação de PDFs com múltiplos assinantes (Gov.br + ICP-Brasil) OK.
+* `test/ltv_integration_test.dart`: criação de DSS/VRI OK.
+
+Correção aplicada após o log acima:
+
+* `test/pdf_signature_validator_test.dart`: o teste estava com expectativa desatualizada (`chainTrusted=false`). Agora que a validação de cadeia com raízes fornecidas está funcionando, a expectativa foi corrigida para `chainTrusted=true`.
+
+Melhoria portada das referências (PDFBox / CertInformationCollector):
+
+* Quando `fetchCrls=true` e a cadeia não valida, o validador agora tenta buscar intermediários via AIA (`CA Issuers`, OID `1.3.6.1.5.5.7.48.2`) e reprocessa a cadeia com os certificados baixados.
+
+Pendências relevantes:
+
+* Implementar parser completo de LPA do ITI (Demoiselle Signer) para validação jurídica PBAD (hoje o motor é parcial/hardcoded).
+* Expandir validação de política para diferenciar claramente “policy ausente” vs “policy implied” (quando aplicável) sem forçar um OID inválido.
+
 
 Several providers offer free, trusted timestamp APIs that follow the industry-standard RFC 3161 protocol. These services work by timestamping a hash of your data (the data itself is not sent), providing cryptographic proof of the data's existence and integrity at a specific point in time. 
 Here are some popular, free, and trusted options:

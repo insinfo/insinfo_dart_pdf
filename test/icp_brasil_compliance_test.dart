@@ -7,6 +7,8 @@ import 'package:dart_pdf/src/security/chain/icp_brasil_provider.dart';
 import 'package:dart_pdf/src/security/chain/iti_provider.dart';
 import 'package:dart_pdf/src/security/chain/serpro_provider.dart';
 
+const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
+
 String derToPem(Uint8List der) {
   final base64Cert = base64.encode(der);
   final buffer = StringBuffer();
@@ -23,27 +25,22 @@ void main() {
     List<String> trustedRoots = [];
 
     setUpAll(() async {
-        try {
-            final icp = IcpBrasilProvider();
-            final iti = ItiProvider();
-            final serpro = SerproProvider();
-            
-            for (var c in await icp.getTrustedRoots()) trustedRoots.add(derToPem(c));
-            for (var c in await iti.getTrustedRoots()) trustedRoots.add(derToPem(c));
-            for (var c in await serpro.getTrustedRoots()) trustedRoots.add(derToPem(c));
-            print('Loaded ${trustedRoots.length} trusted roots.');
-        } catch (e) {
-            print('Warning loading roots: $e');
-        }
+      final icp = IcpBrasilProvider();
+      final iti = ItiProvider();
+      final serpro = SerproProvider();
+
+      for (var c in await icp.getTrustedRoots()) trustedRoots.add(derToPem(c));
+      for (var c in await iti.getTrustedRoots()) trustedRoots.add(derToPem(c));
+      for (var c in await serpro.getTrustedRoots()) trustedRoots.add(derToPem(c));
+
+      if (_verbose) {
+        // ignore: avoid_print
+        print('Loaded ${trustedRoots.length} trusted roots.');
+      }
     });
 
     test('Validate Gov.br signed PDF (sample_govbr_signature_assinado.pdf)', () async {
-      print('Testing sample_govbr_signature_assinado.pdf...');
       final File file = File('test/assets/sample_govbr_signature_assinado.pdf');
-      if (!file.existsSync()) {
-        print('Skipping test: file not found at ${file.path}');
-        return;
-      }
       final List<int> bytes = file.readAsBytesSync();
 
       final PdfSignatureValidator validator = PdfSignatureValidator();
@@ -53,16 +50,25 @@ void main() {
         trustedRootsPem: trustedRoots,
       );
 
-      print('Gov.br Signatures found: ${report.signatures.length}');
       expect(report.signatures.isNotEmpty, isTrue, reason: 'Gov.br file should have at least one signature');
 
       for (final PdfSignatureValidationItem sig in report.signatures) {
-        print('Signature: ${sig.fieldName}');
-        print('  Valid: ${sig.validation.cmsSignatureValid}');
-        print('  Intact: ${sig.validation.documentIntact}');
-        print('  Policy OID: ${sig.validation.policyOid}');
-        if (sig.policyStatus != null) {
-           print('  Policy Status: ${sig.policyStatus!.valid} (${sig.policyStatus!.error ?? sig.policyStatus!.warning})');
+        if (_verbose) {
+          // ignore: avoid_print
+          print('Signature: ${sig.fieldName}');
+          // ignore: avoid_print
+          print('  Valid: ${sig.validation.cmsSignatureValid}');
+          // ignore: avoid_print
+          print('  Intact: ${sig.validation.documentIntact}');
+          // ignore: avoid_print
+          print('  Policy OID: ${sig.validation.policyOid}');
+          if (sig.policyStatus != null) {
+            // ignore: avoid_print
+            print(
+              '  Policy Status: ${sig.policyStatus!.valid} '
+              '(${sig.policyStatus!.error ?? sig.policyStatus!.warning})',
+            );
+          }
         }
 
         // 1. Signature must be cryptographically valid
@@ -74,29 +80,21 @@ void main() {
         // 3. Gov.br uses OID 2.16.76.1.7.1... (ICP-Brasil)
         // Some legacy or specific Gov.br signatures might NOT have the PolicyOID attribute.
         if (sig.validation.policyOid != null) {
-           print('  Detected Policy: ${sig.validation.policyOid}');
-            if (sig.policyStatus != null) {
-               expect(sig.policyStatus!.valid, isTrue, reason: 'Policy validation failed');
-            }
-        } else {
-             print('  (Warning: No Policy OID detected for Gov.br signature)');
+          if (_verbose) {
+            // ignore: avoid_print
+            print('  Detected Policy: ${sig.validation.policyOid}');
+          }
+          if (sig.policyStatus != null) {
+            expect(sig.policyStatus!.valid, isTrue,
+                reason: 'Policy validation failed');
+          }
         }
       }
-    });
+    }, skip: File('test/assets/sample_govbr_signature_assinado.pdf').existsSync() ? false : 'Missing test asset: test/assets/sample_govbr_signature_assinado.pdf');
 
     test('Validate ICP-Brasil Token signed PDF (sample_token_icpbrasil_assinado.pdf)', () async {
-      print('Testing sample_token_icpbrasil_assinado.pdf...');
       final File file = File('test/assets/sample_token_icpbrasil_assinado.pdf');
-      if (!file.existsSync()) {
-        print('Skipping test: file not found at ${file.path}');
-        return;
-      }
       final List<int> bytes = file.readAsBytesSync();
-
-      print('--- Validation Info ---');
-      print('OCSP (consulta de revogação): http://ocsp-ac-oab.certisign.com.br');
-      print('CA Issuers (cadeia/emitente do certificado): http://icp-brasil.certisign.com.br/repositorio/certificados/AC_OAB_G3.p7c');
-      print('-----------------------');
 
       final PdfSignatureValidator validator = PdfSignatureValidator();
       // Enable fetchCrls to attempt online revocation checks (OCSP/CRL)
@@ -106,30 +104,29 @@ void main() {
         trustedRootsPem: trustedRoots,
       );
 
-      print('Token Signatures found: ${report.signatures.length}');
       expect(report.signatures.isNotEmpty, isTrue);
 
       for (final PdfSignatureValidationItem sig in report.signatures) {
+        if (_verbose) {
+         // ignore: avoid_print
          print('Signature: ${sig.fieldName}');
+         // ignore: avoid_print
          print('  Valid (Crypto): ${sig.validation.cmsSignatureValid}');
+         // ignore: avoid_print
          print('  Policy OID: ${sig.validation.policyOid}');
+         // ignore: avoid_print
          print('  Revocation Status: ${sig.revocationStatus.status}');
-         
-         if (sig.revocationStatus.details != null) {
-            print('  Revocation Details: ${sig.revocationStatus.details}');
-         }
 
-         if (!sig.validation.cmsSignatureValid) {
-            print('  INFO: Signature crypto validation returned false (Likely missing Trust Chain/Issuer for verification).');
-         } else {
-            print('  SUCCESS: Signature is cryptographically valid.');
+         if (sig.revocationStatus.details != null) {
+          // ignore: avoid_print
+          print('  Revocation Details: ${sig.revocationStatus.details}');
          }
-         
-         if (sig.validation.policyOid == null) {
-            print('  WARNING: No Policy OID found in Token signature.');
-         }
+        }
+
+        expect(sig.validation.cmsSignatureValid, isTrue,
+          reason: 'CMS signature must be valid');
       }
-    });
+     }, skip: File('test/assets/sample_token_icpbrasil_assinado.pdf').existsSync() ? false : 'Missing test asset: test/assets/sample_token_icpbrasil_assinado.pdf');
 
   });
 }

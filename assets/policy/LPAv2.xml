@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<lpa:ApprovedSignaturePoliciesList xmlns:lpa="http://www.iti.gov.br/LPA/v2#">
+  <lpa:NextUpdate>2030-01-01T00:00:00.000Z</lpa:NextUpdate>
+  <lpa:Version>2</lpa:Version>
+
+  <lpa:PolicyInfo>
+    <lpa:SigningPeriod>
+      <lpa:NotBefore>2012-09-21T00:00:00.000Z</lpa:NotBefore>
+      <lpa:NotAfter>2023-06-21T00:00:00.000Z</lpa:NotAfter>
+    </lpa:SigningPeriod>
+
+    <XAdES:Identifier xmlns:XAdES="http://uri.etsi.org/01903/v1.3.2#" Qualifier="OIDAsURN">urn:oid:2.16.76.1.7.1.6.2.2</XAdES:Identifier>
+
+    <lpa:PolicyDigestAndURI>
+      <lpa:PolicyURI>http://politicas.icpbrasil.gov.br/PA_AD_RB_v2_2.xml</lpa:PolicyURI>
+      <lpa:PolicyDigest>
+        <ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" />
+        <ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">AA==</ds:DigestValue>
+      </lpa:PolicyDigest>
+    </lpa:PolicyDigestAndURI>
+  </lpa:PolicyInfo>
+</lpa:ApprovedSignaturePoliciesList>
