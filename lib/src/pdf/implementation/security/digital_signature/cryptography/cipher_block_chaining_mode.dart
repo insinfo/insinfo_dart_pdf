@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+
+import 'package:pointycastle/export.dart' as pc;
 import 'ipadding.dart';
 
 /// internal class
@@ -402,4 +404,18 @@ class RsaPrivateKeyParam extends RsaKeyParam {
       q.hashCode ^
       publicExponent.hashCode ^
       inverse.hashCode;
+}
+
+/// EC public key wrapper used by ECDSA signature verification.
+class EcPublicKeyParam extends CipherParameter {
+  EcPublicKeyParam(this.publicKey) : super(false);
+
+  final pc.ECPublicKey publicKey;
+}
+
+/// EC private key wrapper used by ECDSA signature generation.
+class EcPrivateKeyParam extends CipherParameter {
+  EcPrivateKeyParam(this.privateKey) : super(true);
+
+  final pc.ECPrivateKey privateKey;
 }

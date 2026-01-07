@@ -218,6 +218,15 @@ class PdfSignatureValidation {
             '2.16.840.1.101.3.4.2.1' || _ => 'SHA-256withRSA',
           };
         }
+        if (signMode == null && cms.signatureAlgorithmOid == '1.2.840.10045.2.1') {
+          // id-ecPublicKey: infer hash from digestAlgorithmOid.
+          signMode = switch (cms.digestAlgorithmOid) {
+            '1.3.14.3.2.26' => 'SHA-1withECDSA',
+            '2.16.840.1.101.3.4.2.2' => 'SHA-384withECDSA',
+            '2.16.840.1.101.3.4.2.3' => 'SHA-512withECDSA',
+            '2.16.840.1.101.3.4.2.1' || _ => 'SHA-256withECDSA',
+          };
+        }
         signMode ??= 'SHA-256withRSA';
         final SignerUtilities util = SignerUtilities();
 

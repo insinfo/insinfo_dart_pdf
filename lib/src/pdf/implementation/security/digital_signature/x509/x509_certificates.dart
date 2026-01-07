@@ -292,7 +292,7 @@ class X509Certificate extends X509ExtensionBase {
         throw ArgumentError.value(keyInfo, 'keyInfo', 'Could not decode EC public key point');
       }
 
-      result = _EcPublicKeyParam(pc.ECPublicKey(q, domain));
+      result = EcPublicKeyParam(pc.ECPublicKey(q, domain));
     } else {
       throw ArgumentError.value(
         keyInfo,
@@ -367,7 +367,7 @@ class X509Certificate extends X509ExtensionBase {
   }
 
   void _verifyEcdsa(String sigOid, CipherParameter publicKey) {
-    if (publicKey is! _EcPublicKeyParam) {
+    if (publicKey is! EcPublicKeyParam) {
       throw ArgumentError.value(publicKey, 'publicKey', 'ECDSA requires an EC public key');
     }
 
@@ -581,12 +581,6 @@ class X509Certificate extends X509ExtensionBase {
     }
     return p1 == null ? p2!.getAsn1() is Asn1Null : p1.getAsn1() is Asn1Null;
   }
-}
-
-class _EcPublicKeyParam extends CipherParameter {
-  _EcPublicKeyParam(this.publicKey) : super(false);
-
-  final pc.ECPublicKey publicKey;
 }
 
 /// internal class

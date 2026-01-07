@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:intl/intl.dart';
+import 'package:pointycastle/export.dart' as pc;
 
 import '../../../interfaces/pdf_interface.dart';
 import '../../io/pdf_constants.dart';
@@ -1095,6 +1096,8 @@ class _SignaturePrivateKey {
     _hashAlgorithm = alg.getDigest(alg.getAllowedDigests(hashAlgorithm));
     if (key == null || key is RsaKeyParam) {
       _encryptionAlgorithm = 'RSA';
+    } else if (key is EcPrivateKeyParam) {
+      _encryptionAlgorithm = 'ECDSA';
     } else {
       throw ArgumentError.value(key, 'key', 'Invalid key');
     }
@@ -1186,6 +1189,20 @@ class SignerUtilities {
     _algms['RIPEMD160WITHRSA'] = 'RIPEMD160withRSA';
     _algms['RIPEMD160WITHRSAENCRYPTION'] = 'RIPEMD160withRSA';
     _algms[NistObjectIds.rsaSignatureWithRipeMD160.id] = 'RIPEMD160withRSA';
+
+    // ECDSA-with-SHA* (X9.62)
+    _algms['SHA1WITHECDSA'] = 'SHA-1withECDSA';
+    _algms['SHA-1WITHECDSA'] = 'SHA-1withECDSA';
+    _algms['SHA256WITHECDSA'] = 'SHA-256withECDSA';
+    _algms['SHA-256WITHECDSA'] = 'SHA-256withECDSA';
+    _algms['SHA384WITHECDSA'] = 'SHA-384withECDSA';
+    _algms['SHA-384WITHECDSA'] = 'SHA-384withECDSA';
+    _algms['SHA512WITHECDSA'] = 'SHA-512withECDSA';
+    _algms['SHA-512WITHECDSA'] = 'SHA-512withECDSA';
+    _algms['1.2.840.10045.4.1'] = 'SHA-1withECDSA';
+    _algms['1.2.840.10045.4.3.2'] = 'SHA-256withECDSA';
+    _algms['1.2.840.10045.4.3.3'] = 'SHA-384withECDSA';
+    _algms['1.2.840.10045.4.3.4'] = 'SHA-512withECDSA';
     _oids['SHA-1withRSA'] = PkcsObjectId.sha1WithRsaEncryption;
     _oids['SHA-256withRSA'] = PkcsObjectId.sha256WithRsaEncryption;
     _oids['SHA-384withRSA'] = PkcsObjectId.sha384WithRsaEncryption;
@@ -1216,6 +1233,14 @@ class SignerUtilities {
       return _RmdSigner(DigestAlgorithms.sha384);
     } else if (mechanism == 'SHA-512withRSA') {
       return _RmdSigner(DigestAlgorithms.sha512);
+    } else if (mechanism == 'SHA-1withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha1);
+    } else if (mechanism == 'SHA-256withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha256);
+    } else if (mechanism == 'SHA-384withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha384);
+    } else if (mechanism == 'SHA-512withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha512);
     } else {
       throw ArgumentError.value('Signer $algorithm not recognised.');
     }
@@ -1242,10 +1267,171 @@ class SignerUtilities {
       return _RmdSigner(DigestAlgorithms.sha384);
     } else if (mechanism == 'SHA-512withRSA') {
       return _RmdSigner(DigestAlgorithms.sha512);
+    } else if (mechanism == 'SHA-1withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha1);
+    } else if (mechanism == 'SHA-256withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha256);
+    } else if (mechanism == 'SHA-384withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha384);
+    } else if (mechanism == 'SHA-512withECDSA') {
+      return _EcdsaSigner(DigestAlgorithms.sha512);
     } else {
       throw ArgumentError.value('Signer $algorithm not recognised.');
     }
     return result;
+  }
+}
+
+class _EcdsaSigner implements ISigner {
+  _EcdsaSigner(String digest) {
+    _digestName = digest;
+    reset();
+  }
+
+  late final String _digestName;
+  late bool _isSigning;
+  EcPrivateKeyParam? _privateKey;
+  EcPublicKeyParam? _publicKey;
+  late BytesBuilder _buffer;
+
+  Hash _hashForName(String digest) {
+    if (digest == DigestAlgorithms.sha1) return sha1;
+    if (digest == DigestAlgorithms.sha256) return sha256;
+    if (digest == DigestAlgorithms.sha384) return sha384;
+    if (digest == DigestAlgorithms.sha512) return sha512;
+    throw ArgumentError.value(digest, 'digest', 'Invalid digest');
+  }
+
+  pc.SecureRandom _secureRandom() {
+    final pc.FortunaRandom rnd = pc.FortunaRandom();
+    final Random sys = Random.secure();
+    final Uint8List seed = Uint8List.fromList(
+      List<int>.generate(32, (_) => sys.nextInt(256)),
+    );
+    rnd.seed(pc.KeyParameter(seed));
+    return rnd;
+  }
+
+  @override
+  void initialize(bool isSigning, ICipherParameter? parameters) {
+    _isSigning = isSigning;
+    reset();
+
+    if (isSigning) {
+      if (parameters is! EcPrivateKeyParam) {
+        throw ArgumentError.value(parameters, 'parameters', 'EC private key required.');
+      }
+      if (!(parameters.isPrivate ?? false)) {
+        throw ArgumentError.value(parameters, 'parameters', 'Private key required.');
+      }
+      _privateKey = parameters;
+      _publicKey = null;
+      return;
+    }
+
+    if (parameters is! EcPublicKeyParam) {
+      throw ArgumentError.value(parameters, 'parameters', 'EC public key required.');
+    }
+    if (parameters.isPrivate ?? false) {
+      throw ArgumentError.value(parameters, 'parameters', 'Public key required.');
+    }
+    _publicKey = parameters;
+    _privateKey = null;
+  }
+
+  @override
+  void blockUpdate(List<int> input, int inOff, int length) {
+    _buffer.add(input.sublist(inOff, inOff + length));
+  }
+
+  Uint8List _hash() {
+    final Hash h = _hashForName(_digestName);
+    final Digest d = h.convert(_buffer.toBytes());
+    return Uint8List.fromList(d.bytes);
+  }
+
+  List<int> _derEncodeSig(pc.ECSignature sig) {
+    final DerSequence seq = DerSequence(
+      array: <Asn1Encode>[
+        DerInteger.fromNumber(sig.r),
+        DerInteger.fromNumber(sig.s),
+      ],
+    );
+    return seq.getEncoded(Asn1.der) ?? const <int>[];
+  }
+
+  pc.ECSignature _derDecodeSig(List<int> signature) {
+    final Asn1? parsed = Asn1Stream(PdfStreamReader(signature)).readAsn1();
+    if (parsed is! Asn1Sequence || parsed.count < 2) {
+      throw ArgumentError('Invalid ECDSA signature encoding.');
+    }
+    final DerInteger r = DerInteger.getNumber(parsed[0])!;
+    final DerInteger s = DerInteger.getNumber(parsed[1])!;
+    return pc.ECSignature(r.positiveValue, s.positiveValue);
+  }
+
+  @override
+  List<int>? generateSignature() {
+    if (!_isSigning) {
+      throw ArgumentError.value('Invalid entry');
+    }
+    final EcPrivateKeyParam? k = _privateKey;
+    if (k == null) {
+      throw StateError('Missing EC private key');
+    }
+
+    final Uint8List hashBytes = _hash();
+    final pc.ECDSASigner signer = pc.ECDSASigner();
+    signer.init(
+      true,
+      pc.ParametersWithRandom(
+        pc.PrivateKeyParameter<pc.ECPrivateKey>(k.privateKey),
+        _secureRandom(),
+      ),
+    );
+    final pc.ECSignature sig = signer.generateSignature(hashBytes) as pc.ECSignature;
+    final List<int> der = _derEncodeSig(sig);
+    if (der.isEmpty) {
+      throw StateError('Failed to DER-encode ECDSA signature');
+    }
+    return der;
+  }
+
+  @override
+  bool validateSignature(List<int> signature) {
+    if (_isSigning) {
+      throw Exception('Invalid entry');
+    }
+    final EcPublicKeyParam? k = _publicKey;
+    if (k == null) {
+      return false;
+    }
+
+    final Uint8List hashBytes = _hash();
+
+    pc.ECSignature sig;
+    try {
+      sig = _derDecodeSig(signature);
+    } catch (_) {
+      return false;
+    }
+
+    final pc.ECDSASigner signer = pc.ECDSASigner();
+    signer.init(
+      false,
+      pc.PublicKeyParameter<pc.ECPublicKey>(k.publicKey),
+    );
+
+    try {
+      return signer.verifySignature(hashBytes, sig);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  void reset() {
+    _buffer = BytesBuilder(copy: true);
   }
 }
 
@@ -1795,13 +1981,14 @@ class PdfCmsSigner {
   static Uint8List signDetachedSha256RsaFromPem({
     required Uint8List contentDigest,
     required String privateKeyPem,
+    String? privateKeyPassword,
     required String certificatePem,
     List<String> chainPem = const <String>[],
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
   }) {
     final RsaPrivateKeyParam privateKey =
-        PdfCryptoUtils.rsaPrivateKeyFromPem(privateKeyPem);
+      PdfCryptoUtils.rsaPrivateKeyFromPem(privateKeyPem, password: privateKeyPassword);
     final Uint8List certificateDer =
         PdfCryptoUtils.certificateDerFromPem(certificatePem);
     final List<Uint8List> chainDer =
@@ -1965,6 +2152,133 @@ class PdfCmsSigner {
     final List<int>? signature = keySigner.sign(attrsDer);
     if (signature == null || signature.isEmpty) {
       throw StateError('Falha ao assinar signedAttrs (RSA).');
+    }
+
+    cms.setSignedData(signature, null, keySigner.getEncryptionAlgorithm());
+
+    final List<int>? cmsDer = cms.sign(
+      contentDigest,
+      null,
+      timeStampToken,
+      null,
+      null,
+      cryptographicStandard,
+      hashAlgorithm,
+    );
+
+    if (cmsDer == null || cmsDer.isEmpty) {
+      throw StateError('Falha ao gerar CMS SignedData.');
+    }
+
+    return Uint8List.fromList(cmsDer);
+  }
+
+  /// Gera um CMS detached **ECDSA + SHA-256** diretamente de PEM.
+  ///
+  /// Entradas:
+  /// - [contentDigest]: digest já calculado (ex.: SHA-256 do conteúdo alvo).
+  /// - [privateKeyPem]: `BEGIN EC PRIVATE KEY` (SEC1) ou `BEGIN PRIVATE KEY` (PKCS#8).
+  /// - [certificatePem]: `BEGIN CERTIFICATE` do signatário.
+  /// - [chainPem]: cadeia/intermediários adicionais (cada item pode conter 1+ certs).
+  ///
+  /// Se a chave for `ENCRYPTED PRIVATE KEY`, forneça [privateKeyPassword].
+  static Uint8List signDetachedSha256EcdsaFromPem({
+    required Uint8List contentDigest,
+    required String privateKeyPem,
+    String? privateKeyPassword,
+    required String certificatePem,
+    List<String> chainPem = const <String>[],
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    final EcPrivateKeyParam privateKey = PdfCryptoUtils.ecPrivateKeyFromPem(
+      privateKeyPem,
+      password: privateKeyPassword,
+    );
+    final Uint8List certificateDer =
+        PdfCryptoUtils.certificateDerFromPem(certificatePem);
+    final List<Uint8List> chainDer =
+        PdfCryptoUtils.certificateChainDerFromPem(chainPem);
+
+    return signDetachedSha256Ecdsa(
+      contentDigest: contentDigest,
+      certificateDer: certificateDer,
+      privateKey: privateKey,
+      extraCertsDer: chainDer,
+      cryptographicStandard: cryptographicStandard,
+      timeStampToken: timeStampToken,
+    );
+  }
+
+  /// Gera um CMS detached **ECDSA + SHA-256**.
+  static Uint8List signDetachedSha256Ecdsa({
+    required Uint8List contentDigest,
+    required Uint8List certificateDer,
+    required EcPrivateKeyParam privateKey,
+    List<Uint8List> extraCertsDer = const <Uint8List>[],
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    return signDetachedEcdsa(
+      contentDigest: contentDigest,
+      certificateDer: certificateDer,
+      privateKey: privateKey,
+      extraCertsDer: extraCertsDer,
+      hashAlgorithm: MessageDigestAlgorithms.secureHash256,
+      cryptographicStandard: cryptographicStandard,
+      timeStampToken: timeStampToken,
+    );
+  }
+
+  /// Gera um CMS detached ECDSA para o [hashAlgorithm] informado.
+  ///
+  /// [hashAlgorithm] segue a convenção interna (ex.: `SHA-256`, `SHA-1`, `SHA-384`, `SHA-512`).
+  static Uint8List signDetachedEcdsa({
+    required Uint8List contentDigest,
+    required Uint8List certificateDer,
+    required EcPrivateKeyParam privateKey,
+    List<Uint8List> extraCertsDer = const <Uint8List>[],
+    required String hashAlgorithm,
+    CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
+    Uint8List? timeStampToken,
+  }) {
+    final X509CertificateParser parser = X509CertificateParser();
+    final X509Certificate? signerCert = parser.readCertificate(
+      PdfStreamReader(certificateDer),
+    );
+    if (signerCert == null) {
+      throw ArgumentError.value(
+        certificateDer,
+        'certificateDer',
+        'Falha ao parsear certificado DER do signatário.',
+      );
+    }
+
+    final List<X509Certificate?> chain = <X509Certificate?>[signerCert];
+    for (final Uint8List der in extraCertsDer) {
+      final X509Certificate? c = parser.readCertificate(PdfStreamReader(der));
+      if (c != null) chain.add(c);
+    }
+
+    final _PdfCmsSigner cms = _PdfCmsSigner(null, chain, hashAlgorithm, false);
+    final DerSet attrs = cms.getSequenceDataSet(
+      contentDigest,
+      null,
+      null,
+      cryptographicStandard,
+    );
+    final List<int>? attrsDer = attrs.getEncoded(Asn1.der);
+    if (attrsDer == null || attrsDer.isEmpty) {
+      throw StateError('Falha ao codificar signedAttrs para DER.');
+    }
+
+    final _SignaturePrivateKey keySigner = _SignaturePrivateKey(
+      hashAlgorithm,
+      privateKey,
+    );
+    final List<int>? signature = keySigner.sign(attrsDer);
+    if (signature == null || signature.isEmpty) {
+      throw StateError('Falha ao assinar signedAttrs (ECDSA).');
     }
 
     cms.setSignedData(signature, null, keySigner.getEncryptionAlgorithm());

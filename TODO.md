@@ -278,6 +278,6 @@ Só faz sentido se você quiser assinar/validar XML e PKCS#7 fora de PDF.
 Integrações Java de keystore/smartcard/PKCS#11
 Tipicamente moram em core/cryptography no ecossistema Java e não “traduzem” bem para Dart sem ffi nativos.
 
-Próximo passo (precisa de confirmação sua)
+Próximo passo 
 
-A “policy-engine ETSI completa” ainda é o gap #2. Antes de eu aplicar enforcement (ex.: “policy X exige timestamp”), você quer que eu trate ausência/invalidade de timestamp como erro (falha) ou apenas warning para policies ICP‑Brasil/Gov.br?
+A “policy-engine ETSI completa” ainda é o gap #2. Antes de eu aplicar enforcement (ex.: “policy X exige timestamp”), você quer que eu trate ausência/invalidade de timestamp como erro (falha) ou apenas warning para policies ICP‑Brasil/Gov.br? apenas warning para policies ICP‑Brasil/Gov.br
