@@ -200,17 +200,25 @@ class X509Certificate extends X509ExtensionBase {
     try {
       final Asn1Octet? str = getExtension(DerObjectID('2.5.29.15'));
       if (str != null) {
-        final DerBitString bits = DerBitString.getDetBitString(
-          Asn1Stream(PdfStreamReader(str.getOctets())).readAsn1(),
-        )!;
-        final List<int> bytes = bits.getBytes()!;
-        final int length = (bytes.length * 8) - bits.extra!;
-        _keyUsage = List<bool>.generate(
-          (length < 9) ? 9 : length,
-          (int i) => false,
-        );
-        for (int i = 0; i != length; i++) {
-          _keyUsage![i] = (bytes[i ~/ 8] & (0x80 >> (i % 8))) != 0;
+        final Asn1? asn1 =
+            Asn1Stream(PdfStreamReader(str.getOctets())).readAsn1();
+        final DerBitString? bits = DerBitString.getDetBitString(asn1);
+        if (bits != null) {
+          final List<int>? bytes = bits.getBytes();
+          if (bytes != null) {
+            final int length = (bytes.length * 8) - (bits.extra ?? 0);
+            _keyUsage = List<bool>.generate(
+              (length < 9) ? 9 : length,
+              (int i) => false,
+            );
+            for (int i = 0; i != length; i++) {
+              _keyUsage![i] = (bytes[i ~/ 8] & (0x80 >> (i % 8))) != 0;
+            }
+          } else {
+            _keyUsage = null;
+          }
+        } else {
+          _keyUsage = null;
         }
       } else {
         _keyUsage = null;
@@ -309,9 +317,19 @@ class X509Certificate extends X509ExtensionBase {
 class X509CertificateStructure extends Asn1Encode {
   /// internal constructor
   X509CertificateStructure(Asn1Sequence seq) {
-    _tbsCert = SingnedCertificate.getCertificate(seq[0]);
-    _sigAlgID = Algorithms.getAlgorithms(seq[1]);
-    _sig = DerBitString.getDetBitString(seq[2]);
+    if (seq.count > 0 && (seq[0] is DerTag || seq[0] is Asn1Tag)) {
+      // Handle case where seq is the TBSCertificate itself (missing outer Certificate wrapper)
+      _tbsCert = SingnedCertificate(seq);
+      _sigAlgID = null;
+      _sig = null;
+    } else {
+      _tbsCert = SingnedCertificate.getCertificate(seq[0]);
+      if (_tbsCert == null) {
+        throw ArgumentError('Invalid TBSCertificate');
+      }
+      _sigAlgID = Algorithms.getAlgorithms(seq[1]);
+      _sig = DerBitString.getDetBitString(seq[2]);
+    }
   }
   //Fields
   SingnedCertificate? _tbsCert;
@@ -412,7 +430,10 @@ class SingnedCertificate extends Asn1Encode {
       return obj;
     }
     if (obj != null) {
-      return SingnedCertificate(Asn1Sequence.getSequence(obj)!);
+      final Asn1Sequence? seq = Asn1Sequence.getSequence(obj);
+      if (seq != null) {
+        return SingnedCertificate(seq);
+      }
     }
     return null;
   }

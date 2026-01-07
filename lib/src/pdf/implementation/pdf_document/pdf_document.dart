@@ -19,6 +19,8 @@ import '../color_space/pdf_icc_color_profile.dart';
 import '../forms/pdf_form.dart';
 import '../forms/pdf_form_field_collection.dart';
 import '../forms/pdf_xfdf_document.dart';
+import '../forms/pdf_field.dart';
+import '../forms/pdf_signature_field.dart';
 import '../general/file_specification_base.dart';
 import '../general/pdf_destination.dart';
 import '../general/pdf_named_destination.dart';
@@ -173,6 +175,19 @@ class PdfDocument {
   PdfPasswordCallback? onPdfPassword;
 
   //Properties
+  /// Gets a value indicating whether the document contains any digital signatures.
+  bool get hasSignatures {
+    if (_form != null) {
+      for (int i = 0; i < _form!.fields.count; i++) {
+        final PdfField field = _form!.fields[i];
+        if (field is PdfSignatureField && field.isSigned) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// Gets the security features of the document like encryption.
   ///
   /// ```dart
@@ -787,6 +802,9 @@ class PdfDocument {
                 .encryptOnlyAttachment = false;
           }
         }
+      }
+      if (hasSignatures) {
+        fileStructure.incrementalUpdate = true;
       }
       if (fileStructure.incrementalUpdate &&
           (_helper._security == null ||

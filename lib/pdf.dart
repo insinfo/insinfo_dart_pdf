@@ -231,6 +231,18 @@ export 'src/pdf/implementation/security/digital_signature/pdf_certificate.dart'
     show PdfCertificate;
 export 'src/pdf/implementation/security/digital_signature/external_pdf_signature.dart'
     show PdfExternalSigning, PdfExternalSigningResult;
+
+export 'src/pdf/implementation/security/digital_signature/pdf_signature_validation.dart'
+    show PdfSignatureValidation, PdfSignatureValidationResult;
+export 'src/pdf/implementation/security/digital_signature/pdf_signature_validator.dart'
+    show
+        PdfSignatureValidator,
+        PdfSignatureValidationReport,
+        PdfSignatureValidationItem,
+        PdfDocMdpInfo,
+        PdfLtvInfo;
+export 'src/pdf/implementation/security/digital_signature/x509/x509_utils.dart'
+    show X509Utils, X509ChainValidationResult;
 export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
     show GovBrSignatureApi;
 export 'src/pdf/implementation/security/digital_signature/govbr_oauth.dart'

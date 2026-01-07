@@ -1,16 +1,14 @@
 // ignore_for_file: unused_local_variable
 
 import 'dart:io';
-
 import 'package:dart_pdf/pdf.dart';
 
-
 void main() async {
-//Loads PDF file.
+
   final document =
       PdfDocument(inputBytes: File('example.pdf').readAsBytesSync());
 
-  //Adds a new page
+
   PdfPage page =
       document.pages.count > 0 ? document.pages[0] : document.pages.add();
 
@@ -31,7 +29,7 @@ void main() async {
       cryptographicStandard: CryptographicStandard.cades);
 
   var field = PdfSignatureField(page, 'signature',
-     // bounds: Rect.fromLTWH(0, 0, 200, 100), 
+      // bounds: Rect.fromLTWH(0, 0, 200, 100),
       signature: signature);
 
   //Add a signature field to the form

@@ -38,32 +38,18 @@ lib/generated_plugin_registrant.dart
 
 example/windows/
 .pdb
+pubspec.lock
 
-Invoice.pdf
 
 changes_isaque.md
-
-example.pdf
-
 riodasostras_rj_gov_br_chained.crt
 riodasostras_rj_gov_br.csr
 riodasostras_rj_gov_br.key
 output.pfx
 riodasostras.rj.gov.br.pfx
 estampa1382141175514466498.png
-
-IsaqueNevesSantAna.pfx
-example_sign.pdf
-onlysign/
 example2/
-example_sign2.pdf
-pubspec.lock
-decisao-4874-assinada.pdf
-
-Arquivo teste de assinatura digital - Assinado.pdf
-gov_assinado.pdf
-acordo_extrajudicial_assinado.pdf
-CertExchange.cer
-
-pedido.pdf
 merged_dart_pdf_code.dart.txt
+referencias/
+
+test/assets/12/

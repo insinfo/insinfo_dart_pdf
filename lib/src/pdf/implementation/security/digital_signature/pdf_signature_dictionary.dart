@@ -28,6 +28,8 @@ import 'cryptography/cipher_utils.dart';
 import 'cryptography/ipadding.dart';
 import 'cryptography/pkcs1_encoding.dart';
 import 'cryptography/rsa_algorithm.dart';
+import 'kms/timestamp_client.dart';
+
 import 'cryptography/signature_utilities.dart';
 import 'pdf_certificate.dart';
 import 'pdf_external_signer.dart';
@@ -741,10 +743,40 @@ class PdfSignatureDictionary implements IPdfWrapper {
               null,
               externalSignature!.getEncryptionAlgorithm(),
             );
+            
+            // Try to fetch Timestamp if configured
+            List<int>? timeStampResponse;
+            if (_sig!.timestampServer != null) {
+              try {
+                // Calculate hash of the signature (extSignature)
+                final AccumulatorSink<Digest> output = AccumulatorSink<Digest>();
+                final ByteConversionSink input = sha256.startChunkedConversion(output);
+                input.add(extSignature!);
+                input.close();
+                final List<int> signatureHash = output.events.single.bytes;
+
+                final TimeStampClient tsClient = TimeStampClient(
+                  _sig!.timestampServer!.uri.toString(),
+                  username: _sig!.timestampServer!.userName,
+                  password: _sig!.timestampServer!.password,
+                );
+                
+                timeStampResponse = await tsClient.getTimeStampToken(signatureHash);
+              } catch (e) {
+                // Log or handle error? For now fallback or fail?
+                // If TST is required but fails, we might want to throw or just continue without TST.
+                // Revert to null to let legacy logic try? Or just fail?
+                // Let's assume we want to use the new client.
+                // We'll leave it null so signAsync *might* try its legacy logic if we pass server.
+                // But better to just log or rethrow if important.
+                rethrow; 
+              }
+            }
+
             pkcs7Content = await pkcs7.signAsync(
               hash,
               _sig!.timestampServer,
-              null,
+              timeStampResponse,
               ocspByte,
               crlBytes,
               _sig!.cryptographicStandard,
@@ -1504,7 +1536,18 @@ class _PdfCmsSigner {
     v.encodableObjects.add(DerNull.value);
     signerinfo.encodableObjects.add(DerSequence(collection: v));
     signerinfo.encodableObjects.add(DerOctet(_digest!));
+    if (timeStampResponse != null) {
+      final Asn1EncodeCollection? timeAsn1Encoded = getAttributes(
+        timeStampResponse,
+      );
+      if (timeAsn1Encoded != null) {
+        signerinfo.encodableObjects.add(
+          DerTag(1, DerSet(collection: timeAsn1Encoded), false),
+        );
+      }
+    }
     final Asn1EncodeCollection body = Asn1EncodeCollection();
+
     body.encodableObjects.add(DerInteger(bigIntToBytes(BigInt.from(_version))));
     body.encodableObjects.add(DerSet(collection: digestAlgorithms));
     body.encodableObjects.add(contentinfo);
@@ -1997,31 +2040,83 @@ class _RmdSigner implements ISigner {
     } catch (e) {
       return false;
     }
-    if (sig.length == expected.length) {
-      for (int i = 0; i < sig.length; i++) {
-        if (sig[i] != expected[i]) {
-          return false;
+
+    // Robust path: parse DigestInfo and compare the digest bytes.
+    // This avoids strict byte-level comparisons that may vary depending on
+    // AlgorithmIdentifier parameter encoding (NULL vs absent).
+    try {
+      if (hash != null && _id != null && _id!.id != null) {
+        final Asn1? parsed = Asn1Stream(PdfStreamReader(sig)).readAsn1();
+        if (parsed is Asn1Sequence && parsed.count >= 2) {
+          final Asn1Sequence algSeq = parsed[0]!.getAsn1()! as Asn1Sequence;
+          final DerObjectID oid = algSeq[0]!.getAsn1()! as DerObjectID;
+          final Asn1? digestObj = parsed[1]!.getAsn1();
+          if (digestObj is DerOctet) {
+            final List<int> digestBytes = digestObj.getOctets() ?? const <int>[];
+            if (oid.id == _id!.id!.id && digestBytes.length == hash.length) {
+              bool ok = true;
+              for (int i = 0; i < hash.length; i++) {
+                if (digestBytes[i] != hash[i]) {
+                  ok = false;
+                  break;
+                }
+              }
+              if (ok) {
+                return true;
+              }
+            }
+          }
         }
       }
-    } else if (sig.length == expected.length - 2) {
-      final int sigOffset = sig.length - hash!.length - 2;
-      final int expectedOffset = expected.length - hash.length - 2;
-      expected[1] -= 2;
-      expected[3] -= 2;
-      for (int i = 0; i < hash.length; i++) {
-        if (sig[sigOffset + i] != expected[expectedOffset + i]) {
-          return false;
+    } catch (_) {
+      // fall back to strict compare below
+    }
+
+    bool matches(List<int> expectedBytes) {
+      if (hash == null) return false;
+      if (sig.length == expectedBytes.length) {
+        for (int i = 0; i < sig.length; i++) {
+          if (sig[i] != expectedBytes[i]) {
+            return false;
+          }
         }
+        return true;
       }
-      for (int i = 0; i < sigOffset; i++) {
-        if (sig[i] != expected[i]) {
-          return false;
+      if (sig.length == expectedBytes.length - 2) {
+        final int sigOffset = sig.length - hash.length - 2;
+        final int expectedOffset = expectedBytes.length - hash.length - 2;
+        // Some providers omit NULL params in AlgorithmIdentifier, which reduces
+        // DigestInfo length by 2 bytes.
+        final List<int> expectedAdjusted = List<int>.from(expectedBytes);
+        expectedAdjusted[1] -= 2;
+        expectedAdjusted[3] -= 2;
+        for (int i = 0; i < hash.length; i++) {
+          if (sig[sigOffset + i] != expectedAdjusted[expectedOffset + i]) {
+            return false;
+          }
         }
+        for (int i = 0; i < sigOffset; i++) {
+          if (sig[i] != expectedAdjusted[i]) {
+            return false;
+          }
+        }
+        return true;
       }
-    } else {
       return false;
     }
-    return true;
+
+    // Fallback: strict byte-level comparisons.
+    if (matches(expected)) {
+      return true;
+    }
+    if (_id != null && _id!.id != null) {
+      final List<int>? expectedNoParams =
+          DigestInformation(Algorithms(_id!.id!), hash).getDerEncoded();
+      if (expectedNoParams != null && matches(expectedNoParams)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   List<int>? derEncode(List<int>? hash) {

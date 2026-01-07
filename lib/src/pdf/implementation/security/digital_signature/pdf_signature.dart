@@ -26,6 +26,7 @@ import 'asn1/der.dart';
 import 'pdf_certificate.dart';
 import 'pdf_external_signer.dart';
 import 'pdf_signature_dictionary.dart';
+import 'kms/revocation_data_client.dart';
 import 'time_stamp_server/time_stamp_server.dart';
 import 'x509/ocsp_utils.dart';
 import 'x509/x509_certificates.dart';
@@ -47,6 +48,9 @@ class PdfSignature {
     DateTime? signedDate,
   }) {
     _helper = PdfSignatureHelper(this);
+    if (documentPermissions != null && documentPermissions.isNotEmpty) {
+      _helper.certificated = true;
+    }
     _init(
       signedName,
       locationInfo,
@@ -468,7 +472,7 @@ class PdfSignatureHelper {
       if (type == RevocationType.crl ||
           type == RevocationType.ocspAndCrl ||
           (ocspCollection.isEmpty && type == RevocationType.ocspOrCrl)) {
-        final List<List<int>> cim = await RevocationList().getEncoded(
+        final List<List<int>> cim = await RevocationDataClient.fetchCrls(
           certificates[k],
         );
         if (cim.isNotEmpty) {

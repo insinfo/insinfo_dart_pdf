@@ -112,8 +112,7 @@ void main() {
 
         final tempPdfPath = prepResult.tempFilePath;
         final preparedBytes = File(tempPdfPath).readAsBytesSync();
-        final ranges =
-            pdf.PdfExternalSigning.extractByteRange(preparedBytes);
+        final ranges = pdf.PdfExternalSigning.extractByteRange(preparedBytes);
 
         final start1 = ranges[0];
         final len1 = ranges[1];
@@ -157,6 +156,21 @@ void main() {
           p7sHex: sigHex,
         );
 
+        final pdf.PdfSignatureValidationResult validation =
+            pdf.PdfSignatureValidation().validatePdfSignature(finalizedBytes);
+        expect(validation.cmsSignatureValid, isTrue);
+        expect(validation.byteRangeDigestOk, isTrue);
+        expect(validation.documentIntact, isTrue);
+        expect(validation.certsPem, isNotEmpty);
+
+        // Tamper with a byte inside the signed region: digest check must fail.
+        final Uint8List tampered = Uint8List.fromList(finalizedBytes);
+        tampered[50] = (tampered[50] + 1) & 0xFF;
+        final pdf.PdfSignatureValidationResult tamperedValidation =
+            pdf.PdfSignatureValidation().validatePdfSignature(tampered);
+        expect(tamperedValidation.documentIntact, isFalse);
+        expect(tamperedValidation.byteRangeDigestOk, isFalse);
+
         final signedPdfPath = '${testDir.path}/final_signed.pdf';
         File(signedPdfPath).writeAsBytesSync(finalizedBytes);
         expect(finalizedBytes, isNotEmpty);
@@ -171,8 +185,7 @@ void main() {
 
 bool _hasOpenSsl() {
   try {
-    final ProcessResult result =
-        Process.runSync('openssl', const ['version']);
+    final ProcessResult result = Process.runSync('openssl', const ['version']);
     return result.exitCode == 0;
   } catch (_) {
     return false;

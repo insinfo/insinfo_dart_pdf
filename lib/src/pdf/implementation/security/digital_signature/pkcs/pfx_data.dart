@@ -41,7 +41,11 @@ class Algorithms extends Asn1Encode {
     if (obj is String) {
       return Algorithms(DerObjectID(obj));
     }
-    return Algorithms.fromSequence(Asn1Sequence.getSequence(obj)!);
+    final Asn1Sequence? seq = Asn1Sequence.getSequence(obj);
+    if (seq != null) {
+      return Algorithms.fromSequence(seq);
+    }
+    return null;
   }
 
   late Asn1Sequence _sequence;

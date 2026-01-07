@@ -224,7 +224,9 @@ class PdfCrossTable {
 
   /// internal method
   void save(PdfWriter writer) {
-    _saveHead(writer);
+    if (!document!.fileStructure.incrementalUpdate) {
+      _saveHead(writer);
+    }
     _objects!.clear();
     if (_archives != null) {
       _archives!.clear();
@@ -270,7 +272,9 @@ class PdfCrossTable {
 
   /// internal method
   Future<void> saveAsync(PdfWriter writer) async {
-    await _saveHeadAsync(writer);
+    if (!document!.fileStructure.incrementalUpdate) {
+      await _saveHeadAsync(writer);
+    }
     _objects!.clear();
     if (_archives != null) {
       _archives!.clear();
