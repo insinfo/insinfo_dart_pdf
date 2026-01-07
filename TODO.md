@@ -89,6 +89,29 @@ validar assinatura local,
 validar cadeia + CRL,
 aplicar TSA e gerar LTV.
 
+## Atualização - 07/01/2026 - Status atual (resumo)
+
+Implementado/validado:
+
+- [x] `PdfSignatureValidator.validateAllSignatures(...)` valida **todas** as assinaturas (CMS + ByteRange + integridade) e reporta offsets, DocMDP e LTV.
+- [x] API pública por assinatura: `PdfSignatureValidator.validateSignature(...)`.
+- [x] Revogação com modo estrito (`strictRevocation=true`): OCSP/CRL com verificação de assinatura + janela de validade.
+- [x] Política ICP-Brasil: extração de `SignaturePolicyId` e validação determinística por digest quando LPA e hash existem (opcional `strictPolicyDigest`).
+- [x] Auditoria LTV (self-check por assinatura): `PdfLtvSelfCheckResult`.
+- [x] Providers de confiança (ICP/ITI/Serpro) com interface comum `TrustedRootsProvider` e suporte a provider custom via `trustedRootsProvider(s)`.
+- [x] Script CLI de validação e relatório: `scripts/validate_pdf_signatures.dart`.
+- [x] Heurística de classificação de provedor (serpro/gov.br/certisign) baseada na cadeia CMS: `lib/src/security/signer_classifier.dart`.
+- [x] Testes adicionados/atualizados:
+	- provider de roots (DER) no validador
+	- `strictDigest` no policy engine
+	- integração de classificação com PDFs reais em `test/assets/`
+
+Pendências/próximos passos (alta prioridade):
+
+- [ ] Loader “oficial” de LPA/policies a partir de `assets/policy` com opção de caminho custom (sem quebrar web).
+- [ ] Remover/evitar regex no fluxo de external signing como padrão (usar parser interno por default, regex só como fallback).
+- [ ] Provider embutido de confiança para Gov.br (roots) para validar `chainTrusted` sem precisar fornecer PEM manualmente.
+
 ## Atualização - 06/01/2026 - Status da Implementação
 
 A biblioteca foi atualizada com sucesso para incluir um analisador sintático seguro e robusto, sem expressões regulares, para assinaturas em PDF, além de corrigir problemas críticos na lógica de validação criptográfica CMS/PKCS#7.
@@ -227,3 +250,30 @@ https://www.gov.br/iti/pt-br/assuntos/repositorio/certificados-das-acs-da-icp-br
 https://www.gov.br/iti/pt-br/assuntos/repositorio/repositorio-ac-raiz
 https://acraiz.icpbrasil.gov.br/credenciadas/CertificadosAC-ICP-Brasil/ACcompactadox.zip
 https://acraiz.icpbrasil.gov.br/credenciadas/CertificadosAC-ICP-Brasil/ACcompactado.zip
+
+O que vale portar (alto valor) para o seu Dart/PDF
+
+No signer-master existe geração e validação do timestamp: timestamp, principalmente TimeStampOperator.validate(...) e TimestampGeneratorImpl.validateTimeStamp(...).
+No seu Dart hoje você tem request/parse básico em timestamp_client.dart, mas não tem um verificador completo do TimeStampToken (assinatura do token, TSTInfo.messageImprint vs hash esperado, nonce/policy, chain trust + revogação “no tempo do carimbo”, etc.).
+Isso é um dos maiores gaps para PAdES‑T/PAdES‑LT “forte”.
+
+
+Engine de política muito mais completa (ETSI Signature Policy + ICP‑Brasil LPA)
+
+Em policy-engine há parsing ASN.1 de SignatureValidationPolicy/constraints/mandated attributes (ex.: algoritmos permitidos, regras de atributos assinados/unsigned, janela de signing, etc.).
+Seu Dart hoje valida policy principalmente por OID + digest vs LPA e mantém heurísticas quando faltam dados. Portar “tudo” é grande importante, (ex.: enforcement de AlgorithmConstraints, MandatedUnsignedAttr para exigir timestamps/revocation refs quando a policy manda) aumenta muito a robustez “jurídica forte”.
+
+Checklist de conformidade PAdES baseada em PKCS#7/CAdES checker
+
+Em policy-impl-pades o PAdESChecker delega para um CAdESChecker e produz SignatureInformations.
+Você já valida CMS/atributos no Dart, mas a “forma de reportar” e alguns checks adicionais (dependendo de como está no CAdESChecker) podem ser úteis para enriquecer o relatório (ex.: requisitos por perfil/política).
+
+O que NÃO é prioritário portar 
+
+CAdES (.p7s) e XAdES/XMLDSig
+
+Módulos: policy-impl-cades, policy-impl-xades, signer-xmldsig.
+Só faz sentido se você quiser assinar/validar XML e PKCS#7 fora de PDF.
+
+Integrações Java de keystore/smartcard/PKCS#11
+Tipicamente moram em core/cryptography no ecossistema Java e não “traduzem” bem para Dart sem ffi nativos.

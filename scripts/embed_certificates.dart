@@ -22,6 +22,13 @@ void main() async {
     'itiTrustStore',
     'ITI Root Certificates',
   );
+
+  await generate(
+    'assets/truststore/gov.br',
+    'lib/src/security/chain/generated/govbr_trust_store.dart',
+    'govBrTrustStore',
+    'Gov.br Root Certificates',
+  );
 }
 
 Future<void> generate(
@@ -36,7 +43,17 @@ Future<void> generate(
     return;
   }
 
-  final files = dir.listSync(recursive: true).whereType<File>();
+  final files = dir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((f) {
+        final lower = f.path.toLowerCase();
+        return lower.endsWith('.crt') ||
+            lower.endsWith('.pem') ||
+            lower.endsWith('.cer');
+      })
+      .toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
   final StringBuffer buffer = StringBuffer();
 
   buffer.writeln("/// $description embedded for AOT/Wasm support");
@@ -45,35 +62,20 @@ Future<void> generate(
   buffer.writeln("const List<String> $varName = [");
 
   int count = 0;
-  for (var file in files) {
-    // Basic filter for cert files if mixed content exists
-    if (!file.path.endsWith('.crt') && !file.path.endsWith('.pem') && !file.path.endsWith('.cer')) {
-       // print('Skipping potential non-cert file: ${file.path}');
-       // continue;
-    }
-
+  final Set<String> seen = <String>{};
+  for (final file in files) {
     try {
       final bytes = await file.readAsBytes();
-      String pem = '';
-      
-      // Basic check if it's already PEM (starts with -----BEGIN)
-      try {
-        final content = utf8.decode(bytes);
-        if (content.contains('-----BEGIN CERTIFICATE-----')) {
-           pem = content.replaceAll('\r\n', '\n').trim();
-        } else {
-           throw Exception('Not PEM');
+      final List<String> pemBlocks = _readAsPemBlocks(bytes);
+      for (final pem in pemBlocks) {
+        final normalized = pem.replaceAll('\r\n', '\n').trim();
+        if (!seen.add(normalized)) {
+          continue;
         }
-      } catch (e) {
-        // Assume DER, convert to PEM
-        final base64 = base64Encode(bytes);
-        pem = '-----BEGIN CERTIFICATE-----\n$base64\n-----END CERTIFICATE-----';
+        final escaped = normalized.replaceAll('\n', '\\n');
+        buffer.writeln("  '$escaped',");
+        count++;
       }
-
-      // Escape the string for Dart
-      final escaped = pem.replaceAll('\n', '\\n');
-      buffer.writeln("  '$escaped',");
-      count++;
     } catch (e) {
       print('Skipping ${file.path}: $e');
     }
@@ -87,4 +89,40 @@ Future<void> generate(
   }
   outFile.writeAsStringSync(buffer.toString());
   print('Generated $outputPath with $count certificates.');
+}
+
+List<String> _readAsPemBlocks(List<int> bytes) {
+  // Try to parse as PEM first.
+  try {
+    final content = utf8.decode(bytes);
+    if (content.contains('-----BEGIN CERTIFICATE-----')) {
+      final normalized = content.replaceAll('\r\n', '\n');
+      final blocks = _extractPemCertificates(normalized);
+      if (blocks.isNotEmpty) {
+        return blocks;
+      }
+    }
+  } catch (_) {
+    // Not UTF-8 PEM; fall through to DER.
+  }
+
+  // Assume DER and convert to PEM.
+  final base64 = base64Encode(bytes);
+  return <String>[
+    '-----BEGIN CERTIFICATE-----\n$base64\n-----END CERTIFICATE-----',
+  ];
+}
+
+List<String> _extractPemCertificates(String pemText) {
+  final regExp = RegExp(
+    r'-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----',
+    multiLine: true,
+  );
+  final matches = regExp.allMatches(pemText).toList(growable: false);
+  if (matches.isEmpty) return const <String>[];
+
+  return matches
+      .map((m) => pemText.substring(m.start, m.end).trim())
+      .where((s) => s.isNotEmpty)
+      .toList(growable: false);
 }

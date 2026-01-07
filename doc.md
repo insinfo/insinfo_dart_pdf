@@ -31,6 +31,8 @@ The PDF package is a non-UI, reusable Flutter library for creating PDF reports p
   - [PDF conformance](#pdf-conformance)
   - [PDF form](#pdf-form)
   - [Digital signature](#digital-signature)
+- [Signature validation (PAdES / server-side)](#signature-validation-pades--server-side)
+- [Gov.br external signature (server-side)](#govbr-external-signature-server-side)
 - [Support and feedback](#support-and-feedback)
 - [About Insinfo<sup>&reg;</sup>](#about-insinfo)
 
@@ -639,6 +641,180 @@ signatureField.signature = PdfSignature(
 File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
+
+## Signature validation (PAdES / server-side)
+
+This repository includes a server-side validation helper that can inspect **all** signatures in a PDF and report:
+
+- CMS signature validity
+- ByteRange digest match
+- Document integrity (`documentIntact`)
+- Chain trust (when trusted roots are provided)
+- Revocation status (best-effort or strict)
+- Policy status (when SignaturePolicyId is present and LPA is provided)
+
+### What is validated (high level)
+
+This validation path is designed to be robust for ICP-Brasil-style PAdES/CMS flows.
+
+- PDF parsing is done using the internal PDF parser (no regex scan) to extract `/ByteRange` and `/Contents`.
+- CMS/PKCS#7 is validated, and common signed attributes are checked (algorithm compatibility, signingTime when present, SKI/issuer/serial coherence, etc.).
+- Chain trust can be evaluated using embedded roots and/or custom trust stores.
+- Revocation can run in best-effort mode or strict mode (signature + time window checks on OCSP/CRL evidence).
+- LTV (DSS/VRI) is audited with a best-effort self-check to estimate whether offline validation should be possible.
+
+Relevant code entry points:
+
+- PDF extraction: `pdf_signature_utils.dart`
+- CMS validation: `pdf_signature_validation.dart`
+- Orchestration/reporting: `pdf_signature_validator.dart`
+
+### Validate all signatures
+
+```dart
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dart_pdf/pdf.dart';
+
+Future<void> main() async {
+  final Uint8List pdfBytes = File('input.pdf').readAsBytesSync();
+
+  final PdfSignatureValidationReport report = await PdfSignatureValidator().validateAllSignatures(
+    pdfBytes,
+    // Adds the built-in ICP-Brasil / ITI / SERPRO roots as trust anchors.
+    useEmbeddedIcpBrasil: true,
+
+    // Downloads OCSP/CRL using certificate URLs (slower).
+    fetchCrls: false,
+
+    // When true, only returns revocation status "good" if evidence is validated
+    // (signature + time window).
+    strictRevocation: false,
+
+    // When true, requires SignaturePolicyId hash when policyOid is present.
+    strictPolicyDigest: false,
+  );
+
+  print('PDF intact: ${report.allDocumentsIntact}');
+  for (final s in report.signatures) {
+    print('${s.fieldName}: cms=${s.validation.cmsSignatureValid} digest=${s.validation.byteRangeDigestOk} intact=${s.validation.documentIntact}');
+  }
+}
+```
+
+### Validate a single signature field
+
+If you already know the field name and only want the result for that signature:
+
+```dart
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dart_pdf/pdf.dart';
+
+Future<void> main() async {
+  final Uint8List pdfBytes = File('input.pdf').readAsBytesSync();
+
+  final PdfSignatureValidationItem? item = await PdfSignatureValidator().validateSignature(
+    pdfBytes,
+    fieldName: 'Signature1',
+    useEmbeddedIcpBrasil: true,
+    strictRevocation: true,
+    strictPolicyDigest: true,
+  );
+
+  if (item == null) {
+    print('Signature field not found');
+    return;
+  }
+
+  print('Trusted chain: ${item.validation.chainTrusted}');
+  print('Revocation: ${item.validation.revocationStatus}');
+}
+```
+
+### Trust stores (ICP-Brasil / ITI / Serpro / Gov.br)
+
+The validator can evaluate `chainTrusted` if you provide trust anchors.
+
+- ICP-Brasil / ITI / Serpro: enable `useEmbeddedIcpBrasil: true`
+- Gov.br: use the embedded provider `GovBrProvider()`
+
+Example:
+
+```dart
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dart_pdf/pdf.dart';
+
+Future<void> main() async {
+  final Uint8List pdfBytes = File('input.pdf').readAsBytesSync();
+
+  final report = await PdfSignatureValidator().validateAllSignatures(
+    pdfBytes,
+    useEmbeddedIcpBrasil: true,
+    trustedRootsProviders: [GovBrProvider()],
+  );
+
+  for (final s in report.signatures) {
+    print('${s.fieldName}: trusted=${s.validation.chainTrusted}');
+  }
+}
+```
+
+#### Updating embedded trust stores
+
+Trust stores are embedded for AOT/Wasm support and are generated from `assets/truststore/**`.
+To regenerate:
+
+```bash
+dart run scripts/embed_certificates.dart
+```
+
+This will update the generated files under `lib/src/security/chain/generated/`.
+
+### CLI helper
+
+For quick validation from the command line, use:
+
+```bash
+dart run scripts/validate_pdf_signatures.dart input.pdf
+```
+
+By default, the CLI enables auto-trust (embedded ICP-Brasil roots + Gov.br roots), so it can print `Cadeia confiável: SIM/NÃO`.
+
+Useful flags:
+
+- `--no-auto-trust`: disables automatic trust roots loading
+- `--embedded-icpbrasil`: explicitly enable ICP-Brasil roots (useful with `--no-auto-trust`)
+- `--embedded-govbr`: explicitly enable Gov.br roots (useful with `--no-auto-trust`)
+- `--fetch-crls`: enables network fetching of OCSP/CRL via URLs (slower)
+- `--strict-revocation`: requires validated OCSP/CRL evidence (signature + time window)
+- `--strict-policy-digest`: requires SignaturePolicyId digest match when policy is present
+
+The script prints PDF integrity, per-signature validity, and a best-effort provider label (serpro/gov.br/certisign).
+
+### ICP-Brasil / PAdES status (implemented vs remaining gaps)
+
+Implemented (current state):
+
+- Parser-based extraction of `/ByteRange` and `/Contents` for validation (avoids regex)
+- CMS/PKCS#7 validation, including signed-attributes sanity checks
+- Embedded trust stores: ICP-Brasil / ITI / Serpro, plus Gov.br provider (`GovBrProvider`)
+- Chain building + trust evaluation (`chainTrusted`) using providers/trust stores
+- Revocation: OCSP/CRL fetching + strict validation option (signature + time window)
+- Policy engine: deterministic validation when LPA and SignaturePolicyId digest are available
+- LTV: DSS/VRI construction scaffolding and best-effort “self-check” audit
+- Public validation APIs: validate all signatures or validate a single signature
+
+Gaps that can still impact “strong legal robustness” depending on your compliance bar:
+
+- External signing injection still uses a regex scan in one path (see `external_pdf_signature.dart` TODO); ideally this should be fully parser-based
+- Policy validation can fall back to heuristics when full LPA/policy data is not available
+- Timestamp token validation (RFC 3161) is not fully reported/verified during validation (request/embedding exists, but end-to-end timestamp verification may need expansion)
+- Full offline-LTV proof (strict verification that DSS/VRI contains *all* required evidence for each signature across all scenarios) is best-effort and may need stricter rules per your use case
 
 ## Gov.br external signature (server-side)
 

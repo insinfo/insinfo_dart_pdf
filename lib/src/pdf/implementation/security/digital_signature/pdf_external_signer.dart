@@ -13,12 +13,18 @@ class IPdfExternalSigner {
   //Public methods
   /// Asynchronously returns signed message digest.
   Future<SignerResult?> sign(List<int> message) async {
-    return null;
+    throw UnimplementedError(
+      'IPdfExternalSigner.sign() must be implemented by the caller. '
+      'Provide a subclass that signs the provided bytes and returns SignerResult.',
+    );
   }
 
   /// Synchronously returns signed message digest.
   SignerResult? signSync(List<int> message) {
-    return null;
+    throw UnimplementedError(
+      'IPdfExternalSigner.signSync() must be implemented by the caller. '
+      'Provide a subclass that signs the provided bytes and returns SignerResult.',
+    );
   }
 }
 

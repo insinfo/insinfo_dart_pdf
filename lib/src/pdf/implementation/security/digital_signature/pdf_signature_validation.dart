@@ -49,6 +49,12 @@ class PdfSignatureValidationResult {
 
   /// The Signature Policy OID (e.g. "2.16.76.1.7.1.6") if present in signed attributes.
   final String? policyOid;
+
+  /// Hash algorithm OID from SignaturePolicyId.sigPolicyHash (when present).
+  final String? policyHashAlgorithmOid;
+
+  /// Hash bytes from SignaturePolicyId.sigPolicyHash (when present).
+  final Uint8List? policyHashValue;
   
   /// The signing time extracted from the signed attributes (id-signingTime), if present.
   final DateTime? signingTime;
@@ -64,6 +70,8 @@ class PdfSignatureValidationResult {
     required this.coversWholeDocument,
     required this.certsPem,
     this.policyOid,
+    this.policyHashAlgorithmOid,
+    this.policyHashValue,
     this.signingTime,
     this.digestAlgorithmOid,
   });
@@ -99,6 +107,8 @@ class _CmsParsed {
     this.signerIssuerDer,
     this.signerSki,
     this.policyOid,
+    this.policyHashAlgorithmOid,
+    this.policyHashValue,
     this.signingTime,
   });
 
@@ -114,6 +124,8 @@ class _CmsParsed {
   final Uint8List? signerIssuerDer;
   final Uint8List? signerSki;
   final String? policyOid;
+  final String? policyHashAlgorithmOid;
+  final Uint8List? policyHashValue;
   final DateTime? signingTime;
 }
 
@@ -426,6 +438,8 @@ class PdfSignatureValidation {
       coversWholeDocument: coversWholeDocument,
       certsPem: certsPem,
       policyOid: cms.policyOid,
+      policyHashAlgorithmOid: cms.policyHashAlgorithmOid,
+      policyHashValue: cms.policyHashValue,
       signingTime: cms.signingTime,
       digestAlgorithmOid: cms.digestAlgorithmOid,
     );
@@ -907,6 +921,8 @@ class PdfSignatureValidation {
     Uint8List? signedAttrsTaggedDer;
     Uint8List? messageDigest;
     String? policyOid;
+    String? policyHashAlgorithmOid;
+    Uint8List? policyHashValue;
     DateTime? signingTime;
     if (signedAttrsTag != null) {
       final _SignedAttrsRaw raw = _extractSignedAttrsRawFromCms(cmsBytes);
@@ -922,6 +938,10 @@ class PdfSignatureValidation {
             // print('Objects in set: ${attrsParsed.objects.length}');
             messageDigest = _extractMessageDigestFromSignedAttrs(attrsParsed);
             policyOid = _extractPolicyOidFromSignedAttrs(attrsParsed);
+            final ({String? algorithmOid, Uint8List? value}) polHash =
+              _extractPolicyHashFromSignedAttrs(attrsParsed);
+            policyHashAlgorithmOid = polHash.algorithmOid;
+            policyHashValue = polHash.value;
             signingTime = _extractSigningTimeFromSignedAttrs(attrsParsed);
             // print('EXTRACTED FROM RAW -> MD: ${messageDigest != null}, OID: $policyOid');
           } else {
@@ -951,6 +971,10 @@ class PdfSignatureValidation {
             if (attrsParsed is Asn1Set) {
               messageDigest = _extractMessageDigestFromSignedAttrs(attrsParsed);
               policyOid = _extractPolicyOidFromSignedAttrs(attrsParsed);
+              final ({String? algorithmOid, Uint8List? value}) polHash =
+                  _extractPolicyHashFromSignedAttrs(attrsParsed);
+              policyHashAlgorithmOid = polHash.algorithmOid;
+              policyHashValue = polHash.value;
               signingTime = _extractSigningTimeFromSignedAttrs(attrsParsed);
             }
           } catch (_) {
@@ -998,6 +1022,8 @@ class PdfSignatureValidation {
       signerIssuerDer: sidIssuerDer,
       signerSki: sidSki,
       policyOid: policyOid,
+      policyHashAlgorithmOid: policyHashAlgorithmOid,
+      policyHashValue: policyHashValue,
       signingTime: signingTime,
     );
   }
@@ -1126,6 +1152,66 @@ class PdfSignatureValidation {
       return null;
     }
     return null;
+  }
+
+  ({String? algorithmOid, Uint8List? value}) _extractPolicyHashFromSignedAttrs(
+    Asn1Set signedAttrs,
+  ) {
+    for (int i = 0; i < signedAttrs.objects.length; i++) {
+      final Asn1Encode? itemEnc = signedAttrs[i];
+      final Asn1? itemAsn1 = itemEnc?.getAsn1();
+      if (itemAsn1 is! Asn1Sequence || itemAsn1.count < 2) continue;
+
+      final DerObjectID? oidObj = itemAsn1[0]?.getAsn1() as DerObjectID?;
+      if (oidObj == null) continue;
+      // id-aa-ets-sigPolicyId
+      if (oidObj.id != '1.2.840.113549.1.9.16.2.15') continue;
+
+      final Asn1? valuesAsn1 = itemAsn1[1]?.getAsn1();
+      final Asn1Set? values = valuesAsn1 is Asn1Set
+          ? valuesAsn1
+          : Asn1Set.getAsn1Set(valuesAsn1, false);
+      if (values == null || values.objects.isEmpty) {
+        return (algorithmOid: null, value: null);
+      }
+
+      final Asn1Encode? firstEnc = values[0];
+      final Asn1? first = firstEnc?.getAsn1();
+      if (first is! Asn1Sequence) {
+        return (algorithmOid: null, value: null);
+      }
+
+      // SignaturePolicyId ::= SEQUENCE {
+      //    sigPolicyId SigPolicyId,
+      //    sigPolicyHash SigPolicyHash OPTIONAL,
+      //    sigPolicyQualifiers SEQUENCE SIZE (1..MAX) OF SigPolicyQualifier OPTIONAL }
+      if (first.count < 2) {
+        return (algorithmOid: null, value: null);
+      }
+
+      final Asn1? sigPolicyHashAsn1 = first[1]?.getAsn1();
+      if (sigPolicyHashAsn1 is! Asn1Sequence || sigPolicyHashAsn1.count < 2) {
+        return (algorithmOid: null, value: null);
+      }
+
+      // SigPolicyHash ::= OtherHashAlgAndValue
+      // OtherHashAlgAndValue ::= SEQUENCE { hashAlgorithm AlgorithmIdentifier, hashValue OCTET STRING }
+      final Asn1? algoSeq = sigPolicyHashAsn1[0]?.getAsn1();
+      String? algorithmOid;
+      if (algoSeq is Asn1Sequence && algoSeq.count >= 1) {
+        final Asn1? algoOidAsn1 = algoSeq[0]?.getAsn1();
+        if (algoOidAsn1 is DerObjectID) algorithmOid = algoOidAsn1.id;
+      }
+
+      final Asn1? valueAsn1 = sigPolicyHashAsn1[1]?.getAsn1();
+      Uint8List? value;
+      if (valueAsn1 is DerOctet && valueAsn1.getOctets() != null) {
+        value = Uint8List.fromList(valueAsn1.getOctets()!);
+      }
+
+      return (algorithmOid: algorithmOid, value: value);
+    }
+    return (algorithmOid: null, value: null);
   }
 
   DateTime? _extractSigningTimeFromSignedAttrs(Asn1Set signedAttrs) {

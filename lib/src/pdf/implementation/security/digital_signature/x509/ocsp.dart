@@ -6,8 +6,10 @@ import '../../../io/stream_reader.dart';
 import '../asn1/asn1.dart';
 import '../asn1/asn1_stream.dart';
 import '../asn1/der.dart';
+import 'revocation_signature_verifier.dart';
 import 'x509_certificates.dart';
 import 'x509_name.dart';
+import 'x509_time.dart';
 
 /// Represents the status of a certificate in an OCSP response.
 enum OcspCertificateStatus { good, revoked, unknown }
@@ -98,10 +100,132 @@ class OcspRequest {
 }
 
 class OcspResponse {
-  OcspResponse({required this.status, this.revocationTime});
+  OcspResponse({
+    required this.status,
+    this.revocationTime,
+    this.signatureValid,
+    this.thisUpdate,
+    this.nextUpdate,
+    this.producedAt,
+    this.signatureAlgorithmOid,
+    this.details,
+  });
 
   final OcspCertificateStatus status;
   final DateTime? revocationTime;
+
+  /// True if the BasicOCSPResponse signature was verified.
+  /// Null when signature validation was not performed.
+  final bool? signatureValid;
+
+  /// thisUpdate from SingleResponse.
+  final DateTime? thisUpdate;
+
+  /// nextUpdate from SingleResponse (optional).
+  final DateTime? nextUpdate;
+
+  /// producedAt from ResponseData.
+  final DateTime? producedAt;
+
+  /// Signature algorithm OID from BasicOCSPResponse.signatureAlgorithm.
+  final String? signatureAlgorithmOid;
+
+  /// Human-readable details when parsing/validation is partial.
+  final String? details;
+
+  /// Parses and validates an OCSP response for a specific [cert] and [issuer].
+  ///
+  /// Validation includes:
+  /// - response status == successful
+  /// - SingleResponse serial matches [cert]
+  /// - time window checks against [validationTime]
+  /// - signature verification using included responder cert (preferred) or [issuer]
+  static OcspResponse? parseValidated(
+    List<int> bytes, {
+    required X509Certificate cert,
+    required X509Certificate issuer,
+    required DateTime validationTime,
+    Duration maxClockSkew = const Duration(minutes: 5),
+  }) {
+    final _BasicOcspParsed? basic = _parseBasic(bytes);
+    if (basic == null) return null;
+
+    // Pick the first SingleResponse that matches the cert serial.
+    final BigInt? wantedSerial = cert.c?.serialNumber?.value;
+    _OcspSingle? single;
+    if (wantedSerial != null) {
+      for (final _OcspSingle s in basic.singles) {
+        if (s.serial != null && s.serial == wantedSerial) {
+          single = s;
+          break;
+        }
+      }
+    }
+    single ??= basic.singles.isNotEmpty ? basic.singles.first : null;
+
+    if (single == null) {
+      return OcspResponse(
+        status: OcspCertificateStatus.unknown,
+        signatureValid: false,
+        signatureAlgorithmOid: basic.signatureAlgorithmOid,
+        details: 'OCSP: no SingleResponse found',
+      );
+    }
+
+    // Time window checks.
+    bool timeOk = true;
+    final DateTime now = validationTime.toUtc();
+    final DateTime? thisUp = single.thisUpdate?.toUtc();
+    final DateTime? nextUp = single.nextUpdate?.toUtc();
+    if (thisUp != null && now.isBefore(thisUp.subtract(maxClockSkew))) {
+      timeOk = false;
+    }
+    if (nextUp != null && now.isAfter(nextUp.add(maxClockSkew))) {
+      timeOk = false;
+    }
+
+    // Responder cert selection: prefer embedded certs.
+    X509Certificate? responder;
+    if (basic.certs.isNotEmpty) {
+      responder = _pickResponderCertificate(basic, issuer);
+    }
+    responder ??= issuer; // fallback
+
+    bool? sigOk;
+    try {
+      sigOk = RevocationSignatureVerifier.verify(
+        signatureAlgorithmOid: basic.signatureAlgorithmOid ?? '',
+        signatureAlgorithmParameters: basic.signatureAlgorithmParameters,
+        signedDataDer: Uint8List.fromList(basic.tbsResponseDataDer),
+        signatureBytes: Uint8List.fromList(basic.signatureBytes),
+        signerCert: responder,
+      );
+    } catch (_) {
+      sigOk = false;
+    }
+
+    if (sigOk != true || !timeOk) {
+      return OcspResponse(
+        status: OcspCertificateStatus.unknown,
+        signatureValid: sigOk,
+        thisUpdate: single.thisUpdate,
+        nextUpdate: single.nextUpdate,
+        producedAt: basic.producedAt,
+        signatureAlgorithmOid: basic.signatureAlgorithmOid,
+        details: !timeOk ? 'OCSP: response outside validity window' : 'OCSP: signature invalid',
+      );
+    }
+
+    return OcspResponse(
+      status: single.status,
+      revocationTime: single.revocationTime,
+      signatureValid: sigOk,
+      thisUpdate: single.thisUpdate,
+      nextUpdate: single.nextUpdate,
+      producedAt: basic.producedAt,
+      signatureAlgorithmOid: basic.signatureAlgorithmOid,
+    );
+  }
 
   /// Parses an OCSP Response bytes.
   ///
@@ -129,7 +253,7 @@ class OcspResponse {
       
       // 0 = success
       if (statusCode != 0) {
-        return OcspResponse(status: OcspCertificateStatus.unknown);
+        return OcspResponse(status: OcspCertificateStatus.unknown, details: 'OCSPResponseStatus=$statusCode');
       }
 
       // responseBytes
@@ -159,67 +283,279 @@ class OcspResponse {
   }
 
   static OcspResponse? _parseBasicOcspResponse(List<int> bytes) {
-      // BasicOCSPResponse ::= SEQUENCE {
-      //    tbsResponseData ResponseData,
-      //    signatureAlgorithm AlgorithmIdentifier,
-      //    signature BIT STRING,
-      //    certs [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL }
-      final Asn1 asn1 = Asn1Stream(PdfStreamReader(Uint8List.fromList(bytes))).readAsn1()!;
-      if (asn1 is! Asn1Sequence) return null;
-      final Asn1Sequence seq = asn1;
-      
-      // ResponseData ::= SEQUENCE {
-      //   version [0] EXPLICIT Version DEFAULT v1,
-      //   responderID ResponderID,
-      //   producedAt GeneralizedTime,
-      //   responses SEQUENCE OF SingleResponse,
-      //   responseExtensions [1] EXPLICIT Extensions OPTIONAL }
-      final Asn1Sequence tbsResp = Asn1Sequence.getSequence(seq[0]!.getAsn1())!;
-      
-      // We need to find 'responses' sequence.
-      // version and extensions are tagged.
-      // responderID is CHOICE (Name or KeyHash).
-      // producedAt is GeneralizedTime.
-      
-      // Simple parse strategy: find the first SEQUENCE OF SEQUENCE that looks like responses.
-      for(int i=0; i<tbsResp.count; i++) {
-         final IAsn1? el = tbsResp[i];
-         if (el is Asn1Sequence) {
-            // Check if this is 'responses'
-            // SingleResponse ::= SEQUENCE {
-            //    certID CertID,
-            //    certStatus CertStatus,
-            //    thisUpdate GeneralizedTime,
-            //    nextUpdate [0] EXPLICIT GeneralizedTime OPTIONAL,
-            //    singleExtensions [1] EXPLICIT Extensions OPTIONAL }
-            
-            // Just scan for first SingleResponse
-            if (el.count > 0 && el[0] is Asn1Sequence) {
-               final Asn1Sequence singleResp = el[0] as Asn1Sequence;
-               // Parse SingleResponse
-               // index 1 is certStatus
-               if (singleResp.count > 1) {
-                   final IAsn1? statusObj = singleResp[1];
-                   if (statusObj is Asn1Tag) {
-                      // CertStatus ::= CHOICE {
-                      //   good [0] IMPLICIT NULL,
-                      //   revoked [1] IMPLICIT RevokedInfo,
-                      //   unknown [2] IMPLICIT UnknownInfo }
-                      if (statusObj.tagNumber == 0) {
-                          return OcspResponse(status: OcspCertificateStatus.good);
-                      } else if (statusObj.tagNumber == 1) {
-                          return OcspResponse(status: OcspCertificateStatus.revoked);
-                      } else {
-                          return OcspResponse(status: OcspCertificateStatus.unknown);
-                      }
-                   }
-               }
-            }
-         }
+      final _BasicOcspParsed? basic = _parseBasic(bytes);
+      if (basic == null) return null;
+      if (basic.singles.isEmpty) {
+        return OcspResponse(
+          status: OcspCertificateStatus.unknown,
+          signatureAlgorithmOid: basic.signatureAlgorithmOid,
+          details: 'OCSP: no SingleResponse',
+        );
       }
-
-      return OcspResponse(status: OcspCertificateStatus.unknown);
+      final _OcspSingle s = basic.singles.first;
+      return OcspResponse(
+        status: s.status,
+        revocationTime: s.revocationTime,
+        thisUpdate: s.thisUpdate,
+        nextUpdate: s.nextUpdate,
+        producedAt: basic.producedAt,
+        signatureAlgorithmOid: basic.signatureAlgorithmOid,
+      );
   }
+}
+
+class _OcspSingle {
+  _OcspSingle({
+    required this.status,
+    this.serial,
+    this.revocationTime,
+    this.thisUpdate,
+    this.nextUpdate,
+  });
+
+  final OcspCertificateStatus status;
+  final BigInt? serial;
+  final DateTime? revocationTime;
+  final DateTime? thisUpdate;
+  final DateTime? nextUpdate;
+}
+
+class _BasicOcspParsed {
+  _BasicOcspParsed({
+    required this.tbsResponseDataDer,
+    required this.signatureAlgorithmOid,
+    required this.signatureAlgorithmParameters,
+    required this.signatureBytes,
+    required this.certs,
+    required this.singles,
+    required this.responderIdByKey,
+    required this.responderIdByName,
+    required this.producedAt,
+  });
+
+  final List<int> tbsResponseDataDer;
+  final String? signatureAlgorithmOid;
+  final Asn1Encode? signatureAlgorithmParameters;
+  final List<int> signatureBytes;
+  final List<X509Certificate> certs;
+  final List<_OcspSingle> singles;
+  final Uint8List? responderIdByKey;
+  final X509Name? responderIdByName;
+  final DateTime? producedAt;
+}
+
+_BasicOcspParsed? _parseBasic(List<int> bytes) {
+  try {
+    final Asn1 asn1 = Asn1Stream(PdfStreamReader(Uint8List.fromList(bytes))).readAsn1()!;
+    if (asn1 is! Asn1Sequence || asn1.count < 3) return null;
+    final Asn1Sequence seq = asn1;
+
+    final Asn1? tbsObj = seq[0]?.getAsn1();
+    final Asn1Sequence? tbs = Asn1Sequence.getSequence(tbsObj);
+    if (tbs == null) return null;
+    final List<int>? tbsDer = (tbs as Asn1Encode).getDerEncoded();
+    if (tbsDer == null || tbsDer.isEmpty) return null;
+
+    // signatureAlgorithm AlgorithmIdentifier
+    final Asn1? algObj = seq[1]?.getAsn1();
+    final Asn1Sequence? algSeq = Asn1Sequence.getSequence(algObj);
+    String? algOid;
+    Asn1Encode? algParams;
+    if (algSeq != null && algSeq.count >= 1) {
+      final Asn1? oidAsn1 = algSeq[0]?.getAsn1();
+      if (oidAsn1 is DerObjectID) {
+        algOid = oidAsn1.id;
+      }
+      if (algSeq.count >= 2) {
+        algParams = algSeq[1] as Asn1Encode?;
+      }
+    }
+
+    // signature BIT STRING
+    final Asn1? sigObj = seq[2]?.getAsn1();
+    final DerBitString? sigBits = sigObj is DerBitString ? sigObj : DerBitString.getDetBitString(sigObj);
+    final List<int>? sigBytes = sigBits?.getBytes();
+    if (sigBytes == null) return null;
+
+    // certs [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL
+    final List<X509Certificate> certs = <X509Certificate>[];
+    if (seq.count >= 4) {
+      final Asn1? maybeTag = seq[3]?.getAsn1();
+      if (maybeTag is Asn1Tag && maybeTag.tagNumber == 0) {
+        final Asn1? certsObj = maybeTag.getObject();
+        final Asn1Sequence? certSeq = Asn1Sequence.getSequence(certsObj);
+        if (certSeq != null) {
+          for (int i = 0; i < certSeq.count; i++) {
+            final Asn1? c = certSeq[i]?.getAsn1();
+            if (c is! Asn1Sequence) continue;
+            final X509CertificateStructure? s = X509CertificateStructure.getInstance(c);
+            if (s == null) continue;
+            certs.add(X509Certificate(s));
+          }
+        }
+      }
+    }
+
+    // Parse ResponseData
+    int idx = 0;
+    if (tbs.count > 0 && tbs[0] is Asn1Tag && (tbs[0] as Asn1Tag).tagNumber == 0) {
+      idx++; // version
+    }
+
+    Uint8List? responderKeyHash;
+    X509Name? responderName;
+    if (idx < tbs.count) {
+      final Asn1? rid = tbs[idx]?.getAsn1();
+      if (rid is Asn1Tag) {
+        if (rid.tagNumber == 2) {
+          final Asn1Octet? oct = Asn1Octet.getOctetStringFromObject(rid.getObject());
+          final List<int>? key = oct?.getOctets();
+          if (key != null) responderKeyHash = Uint8List.fromList(key);
+        } else if (rid.tagNumber == 1) {
+          final Asn1? nm = rid.getObject();
+          final Asn1Sequence? nmSeq = Asn1Sequence.getSequence(nm);
+          if (nmSeq != null) responderName = X509Name(nmSeq);
+        }
+      }
+      idx++;
+    }
+
+    DateTime? producedAt;
+    if (idx < tbs.count) {
+      final Asn1? p = tbs[idx]?.getAsn1();
+      if (p is GeneralizedTime) {
+        producedAt = p.toDateTime();
+      }
+      idx++;
+    }
+
+    final List<_OcspSingle> singles = <_OcspSingle>[];
+    if (idx < tbs.count) {
+      final Asn1Sequence? responses = Asn1Sequence.getSequence(tbs[idx]?.getAsn1());
+      if (responses != null) {
+        for (int i = 0; i < responses.count; i++) {
+          final Asn1Sequence? single = Asn1Sequence.getSequence(responses[i]?.getAsn1());
+          if (single == null || single.count < 3) continue;
+
+          // certID
+          BigInt? serial;
+          final Asn1Sequence? certId = Asn1Sequence.getSequence(single[0]?.getAsn1());
+          if (certId != null && certId.count >= 4) {
+            final Asn1? serialAsn1 = certId[3]?.getAsn1();
+            if (serialAsn1 is DerInteger) {
+              serial = serialAsn1.value;
+            }
+          }
+
+          // certStatus CHOICE
+          OcspCertificateStatus st = OcspCertificateStatus.unknown;
+          DateTime? revTime;
+          final Asn1? statusAsn1 = single[1]?.getAsn1();
+          if (statusAsn1 is Asn1Tag) {
+            if (statusAsn1.tagNumber == 0) {
+              st = OcspCertificateStatus.good;
+            } else if (statusAsn1.tagNumber == 1) {
+              st = OcspCertificateStatus.revoked;
+              final Asn1? ri = statusAsn1.getObject();
+              final Asn1Sequence? revokedInfo = Asn1Sequence.getSequence(ri);
+              if (revokedInfo != null && revokedInfo.count >= 1) {
+                final Asn1? t = revokedInfo[0]?.getAsn1();
+                revTime = X509Time.getTime(t)?.toDateTime();
+              }
+            } else {
+              st = OcspCertificateStatus.unknown;
+            }
+          }
+
+          // thisUpdate
+          DateTime? thisUpdate;
+          final Asn1? thisUpAsn1 = single[2]?.getAsn1();
+          thisUpdate = X509Time.getTime(thisUpAsn1)?.toDateTime();
+
+          // nextUpdate [0] EXPLICIT GeneralizedTime OPTIONAL
+          DateTime? nextUpdate;
+          if (single.count >= 4) {
+            final Asn1? maybeNext = single[3]?.getAsn1();
+            if (maybeNext is Asn1Tag && maybeNext.tagNumber == 0) {
+              final Asn1? inner = maybeNext.getObject();
+              nextUpdate = X509Time.getTime(inner)?.toDateTime();
+            }
+          }
+
+          singles.add(
+            _OcspSingle(
+              status: st,
+              serial: serial,
+              revocationTime: revTime,
+              thisUpdate: thisUpdate,
+              nextUpdate: nextUpdate,
+            ),
+          );
+        }
+      }
+    }
+
+    return _BasicOcspParsed(
+      tbsResponseDataDer: tbsDer,
+      signatureAlgorithmOid: algOid,
+      signatureAlgorithmParameters: algParams,
+      signatureBytes: sigBytes,
+      certs: certs,
+      singles: singles,
+      responderIdByKey: responderKeyHash,
+      responderIdByName: responderName,
+      producedAt: producedAt,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+X509Certificate? _pickResponderCertificate(_BasicOcspParsed basic, X509Certificate issuer) {
+  // ResponderID byKey is SHA-1 hash of responder public key BIT STRING contents.
+  if (basic.responderIdByKey != null) {
+    for (final X509Certificate c in basic.certs) {
+      try {
+        final PublicKeyInformation? spki = c.c?.subjectPublicKeyInfo;
+        final DerBitString? pk = spki?.publicKey;
+        final List<int>? pkBytes = pk?.getBytes();
+        if (pkBytes == null) continue;
+        final List<int> h = sha1.convert(pkBytes).bytes;
+        if (Uint8List.fromList(h).length == basic.responderIdByKey!.length) {
+          bool eq = true;
+          for (int i = 0; i < h.length; i++) {
+            if (h[i] != basic.responderIdByKey![i]) {
+              eq = false;
+              break;
+            }
+          }
+          if (eq) return c;
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+  }
+
+  if (basic.responderIdByName != null) {
+    final String wanted = basic.responderIdByName!.toString();
+    for (final X509Certificate c in basic.certs) {
+      final String? subj = c.c?.subject?.toString();
+      if (subj != null && subj == wanted) return c;
+    }
+  }
+
+  // Fallback: prefer a cert issued by the issuer.
+  for (final X509Certificate c in basic.certs) {
+    try {
+      c.verify(issuer.getPublicKey());
+      return c;
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  return basic.certs.isNotEmpty ? basic.certs.first : null;
 }
 
 class AlgorithmIdentifier extends Asn1Encode {

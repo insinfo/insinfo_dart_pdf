@@ -13,6 +13,7 @@ import '../../primitives/pdf_name.dart';
 import '../../primitives/pdf_number.dart';
 import '../../primitives/pdf_reference.dart';
 import '../../primitives/pdf_reference_holder.dart';
+import '../../primitives/pdf_stream.dart';
 import '../../primitives/pdf_string.dart';
 import 'kms/revocation_data_client.dart';
 import 'pdf_signature_validation.dart';
@@ -26,6 +27,7 @@ import 'x509/x509_utils.dart';
 import '../../../../security/chain/icp_brasil_provider.dart';
 import '../../../../security/chain/iti_provider.dart';
 import '../../../../security/chain/serpro_provider.dart';
+import '../../../../security/chain/trusted_roots_provider.dart';
 
 class PdfLtvInfo {
   const PdfLtvInfo({
@@ -48,6 +50,36 @@ class PdfLtvInfo {
         'dss_certs_count': dssCertsCount,
         'dss_ocsps_count': dssOcspsCount,
         'dss_crls_count': dssCrlsCount,
+      };
+}
+
+class PdfLtvSelfCheckResult {
+  const PdfLtvSelfCheckResult({
+    required this.offlineSufficient,
+    required this.issues,
+    required this.cmsCertsCount,
+    required this.dssCertsMatchedCount,
+    required this.vriHasCerts,
+    required this.vriHasOcsp,
+    required this.vriHasCrl,
+  });
+
+  final bool offlineSufficient;
+  final List<String> issues;
+  final int cmsCertsCount;
+  final int dssCertsMatchedCount;
+  final bool vriHasCerts;
+  final bool vriHasOcsp;
+  final bool vriHasCrl;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'offline_sufficient': offlineSufficient,
+        'issues': issues,
+        'cms_certs_count': cmsCertsCount,
+        'dss_certs_matched_count': dssCertsMatchedCount,
+        'vri_has_certs': vriHasCerts,
+        'vri_has_ocsp': vriHasOcsp,
+        'vri_has_crl': vriHasCrl,
       };
 }
 
@@ -114,6 +146,7 @@ class PdfSignatureValidationItem {
     this.chainErrors,
     required this.docMdp,
     required this.ltv,
+    this.ltvSelfCheck,
     required this.revocationStatus,
     this.policyStatus,
   });
@@ -144,6 +177,11 @@ class PdfSignatureValidationItem {
 
   final PdfDocMdpInfo docMdp;
   final PdfLtvInfo ltv;
+
+  /// Best-effort audit of whether DSS/VRI seems sufficient for offline validation.
+  ///
+  /// Null when the PDF has no DSS.
+  final PdfLtvSelfCheckResult? ltvSelfCheck;
   
   final PdfRevocationResult revocationStatus;
 
@@ -165,6 +203,7 @@ class PdfSignatureValidationItem {
         'chain_errors': chainErrors,
         'doc_mdp': docMdp.toMap(),
         'ltv': ltv.toMap(),
+        'ltv_self_check': ltvSelfCheck?.toMap(),
         'revocation_status': revocationStatus.toMap(),
         'policy_status': policyStatus?.toMap(),
       };
@@ -194,12 +233,18 @@ class PdfSignatureValidator {
   /// [crlBytes]: Optional list of CRLs (DER or PEM bytes) to use for revocation checking.
   /// [fetchCrls]: If true, tries to download CRLs from Distribution Points in certificates.
   /// [useEmbeddedIcpBrasil]: If true, adds the built-in ICP-Brasil trusted roots to the verification anchors.
+  /// [strictRevocation]: If true, only returns revocation status 'good' when OCSP/CRL evidence is
+  /// validated (signature + time window). When false, revocation checking is best-effort.
   Future<PdfSignatureValidationReport> validateAllSignatures(
     Uint8List pdfBytes, {
     List<String>? trustedRootsPem,
+    TrustedRootsProvider? trustedRootsProvider,
+    List<TrustedRootsProvider>? trustedRootsProviders,
     List<Uint8List>? crlBytes,
     bool fetchCrls = false,
     bool useEmbeddedIcpBrasil = false,
+    bool strictRevocation = false,
+    bool strictPolicyDigest = false,
     Lpa? lpa,
   }) async {
     final PdfDocument doc = PdfDocument(inputBytes: pdfBytes);
@@ -216,6 +261,45 @@ class PdfSignatureValidator {
       if (trustedRootsPem != null) {
         effectiveRoots.addAll(trustedRootsPem);
       }
+
+      bool isSelfSigned(X509Certificate cert) {
+        final String? subject = cert.c?.subject?.toString();
+        final String? issuer = cert.c?.issuer?.toString();
+        if (subject == null || issuer == null || subject != issuer) {
+          return false;
+        }
+        try {
+          cert.verify(cert.getPublicKey());
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      Future<void> addRootsFromProvider(TrustedRootsProvider provider) async {
+        final List<Uint8List> ders = await provider.getTrustedRootsDer();
+        for (final Uint8List der in ders) {
+          final String pem = X509Utils.derToPem(der);
+          extraCandidatesPem.add(pem);
+          try {
+            final X509Certificate cert = X509Utils.parsePemCertificate(pem);
+            if (isSelfSigned(cert)) {
+              effectiveRoots.add(pem);
+            }
+          } catch (_) {
+            // ignore invalid certs
+          }
+        }
+      }
+
+      if (trustedRootsProvider != null) {
+        await addRootsFromProvider(trustedRootsProvider);
+      }
+      if (trustedRootsProviders != null && trustedRootsProviders.isNotEmpty) {
+        for (final TrustedRootsProvider p in trustedRootsProviders) {
+          await addRootsFromProvider(p);
+        }
+      }
       if (useEmbeddedIcpBrasil) {
         // Trust anchors embutidos (roots) para ICP-Brasil / ITI / Serpro.
         final IcpBrasilProvider icpProvider = IcpBrasilProvider();
@@ -225,20 +309,6 @@ class PdfSignatureValidator {
         final List<Uint8List> icpRootsDer = await icpProvider.getTrustedRoots();
         final List<Uint8List> itiRootsDer = await itiProvider.getTrustedRoots();
         final List<Uint8List> serproRootsDer = await serproProvider.getTrustedRoots();
-
-        bool isSelfSigned(X509Certificate cert) {
-          final String? subject = cert.c?.subject?.toString();
-          final String? issuer = cert.c?.issuer?.toString();
-          if (subject == null || issuer == null || subject != issuer) {
-            return false;
-          }
-          try {
-            cert.verify(cert.getPublicKey());
-            return true;
-          } catch (_) {
-            return false;
-          }
-        }
 
         for (final Uint8List der in <Uint8List>[...icpRootsDer, ...itiRootsDer, ...serproRootsDer]) {
           final String pem = X509Utils.derToPem(der);
@@ -314,11 +384,14 @@ class PdfSignatureValidator {
         }
 
         // Revocation Check
+           final DateTime revocationTime = (res.signingTime ?? DateTime.now()).toUtc();
         final PdfRevocationResult revStatus = await _checkRevocation(
              res.certsPem, 
              roots,
              loadedCrls, 
-             fetchCrls: fetchCrls
+             fetchCrls: fetchCrls,
+             strict: strictRevocation,
+             validationTime: revocationTime,
         );
 
         // Policy Check
@@ -326,7 +399,13 @@ class PdfSignatureValidator {
         if (res.policyOid != null) {
             final IcpBrasilPolicyEngine engine = IcpBrasilPolicyEngine(lpa);
             final DateTime checkTime = res.signingTime ?? DateTime.now();
-            PolicyValidationResult polRes = engine.validatePolicy(res.policyOid!, checkTime);
+            PolicyValidationResult polRes = engine.validatePolicyWithDigest(
+              res.policyOid!,
+              checkTime,
+              policyHashAlgorithmOid: res.policyHashAlgorithmOid,
+              policyHashValue: res.policyHashValue,
+              strictDigest: strictPolicyDigest,
+            );
             
             // Check algorithm constraints if policy is otherwise valid
             if (polRes.isValid && res.digestAlgorithmOid != null) {
@@ -382,6 +461,12 @@ class PdfSignatureValidator {
           signaturePkcs7Der: sig.pkcs7Der,
         );
 
+        final PdfLtvSelfCheckResult? ltvSelfCheck = _computeLtvSelfCheck(
+          catalogInfo: catalogInfo,
+          signaturePkcs7Der: sig.pkcs7Der,
+          cmsCertsPem: res.certsPem,
+        );
+
         out.add(
           PdfSignatureValidationItem(
             fieldName: sig.fieldName,
@@ -397,6 +482,7 @@ class PdfSignatureValidator {
             chainErrors: chainErrors,
             docMdp: docMdp,
             ltv: ltv,
+            ltvSelfCheck: ltvSelfCheck,
             revocationStatus: revStatus,
             policyStatus: policyStatus,
           ),
@@ -413,7 +499,12 @@ class PdfSignatureValidator {
       List<String> chainPem,
       List<X509Certificate> trustedRoots,
       List<X509Crl> localCrls,
-      {required bool fetchCrls}
+      {
+        required bool fetchCrls,
+        required DateTime validationTime,
+        bool strict = false,
+        Duration maxClockSkew = const Duration(minutes: 5),
+      }
   ) async {
      if (chainPem.isEmpty) {
         return const PdfRevocationResult(isRevoked: false, status: 'unknown', details: 'No certificates in signature');
@@ -427,10 +518,41 @@ class PdfSignatureValidator {
         } catch (_) {}
      }
      
+     bool isSelfSigned(X509Certificate cert) {
+       final String? subject = cert.c?.subject?.toString();
+       final String? issuer = cert.c?.issuer?.toString();
+       if (subject == null || issuer == null || subject != issuer) return false;
+       try {
+         cert.verify(cert.getPublicKey());
+         return true;
+       } catch (_) {
+         return false;
+       }
+     }
+
+     bool dnEqual(String? a, String? b) => a != null && b != null && a.trim() == b.trim();
+
+     bool crlTimeWindowOk(X509Crl crl) {
+       final DateTime now = validationTime.toUtc();
+       final DateTime? thisUp = crl.thisUpdate?.toUtc();
+       final DateTime? nextUp = crl.nextUpdate?.toUtc();
+       if (thisUp != null && now.isBefore(thisUp.subtract(maxClockSkew))) return false;
+       if (nextUp != null && now.isAfter(nextUp.add(maxClockSkew))) return false;
+       return true;
+     }
+
+     // Track missing evidence when strict.
+     final List<String> missingEvidenceFor = <String>[];
+
      // 1. Iterate chain (leaf first)
      // Usually leaf matches issuer in next cert.
-     for (int i=0; i<chain.length; i++) {
+     for (int i = 0; i < chain.length; i++) {
         final X509Certificate cert = chain[i];
+
+        // Skip revocation checks for a trust anchor / self-signed cert.
+        if (isSelfSigned(cert)) {
+          continue;
+        }
         
         // Find Issuer (needed for OCSP and typically CRL check too)
         X509Certificate? issuer = X509Utils.findIssuer(cert, trustedRoots);
@@ -438,22 +560,45 @@ class PdfSignatureValidator {
              issuer = X509Utils.findIssuer(cert, chain);
         }
 
+        bool hasValidatedGoodForCert = false;
+
+        final BigInt? serial = cert.c?.serialNumber?.value;
+        if (serial == null) {
+          if (strict) {
+            missingEvidenceFor.add(cert.c?.subject?.toString() ?? 'unknown-subject');
+          }
+          continue;
+        }
+
         // 2. Try OCSP
         if (fetchCrls && issuer != null) {
-             final OcspResponse? ocsp = await RevocationDataClient.checkOcsp(cert, issuer);
-             if (ocsp != null) {
-                 if (ocsp.status == OcspCertificateStatus.revoked) {
-                     return PdfRevocationResult(
-                        isRevoked: true, 
-                        status: 'revoked', 
-                        details: 'OCSP: Certificate revoked',
-                     );
-                 }
-                 if (ocsp.status == OcspCertificateStatus.good) {
-                     // OCSP says good. Skip CRL check for this cert.
-                     continue;
-                 }
-             }
+          final List<int>? ocspBytes = await RevocationDataClient.fetchOcspResponseBytes(cert, issuer);
+          if (ocspBytes != null && ocspBytes.isNotEmpty) {
+            final OcspResponse? ocsp = strict
+                ? OcspResponse.parseValidated(
+                    ocspBytes,
+                    cert: cert,
+                    issuer: issuer,
+                    validationTime: validationTime,
+                    maxClockSkew: maxClockSkew,
+                  )
+                : OcspResponse.parse(ocspBytes);
+
+            if (ocsp != null) {
+              if (ocsp.status == OcspCertificateStatus.revoked) {
+                return PdfRevocationResult(
+                  isRevoked: true,
+                  status: 'revoked',
+                  details: 'OCSP: certificate revoked',
+                );
+              }
+              if (ocsp.status == OcspCertificateStatus.good) {
+                if (!strict || ocsp.signatureValid == true) {
+                  hasValidatedGoodForCert = true;
+                }
+              }
+            }
+          }
         }
    
         // 3. Fetch or find CRLs for this cert
@@ -472,28 +617,87 @@ class PdfSignatureValidator {
         }
         
         if (candidateCrls.isEmpty) {
-           // Can't check
-           continue; 
+          if (strict && !hasValidatedGoodForCert) {
+            missingEvidenceFor.add(cert.c?.subject?.toString() ?? 'unknown-subject');
+          }
+          continue;
         }
-
-        // 3. Check revocation
-        final BigInt? serial = cert.c?.serialNumber?.value;
-        if (serial == null) continue;
         
         for (final crl in candidateCrls) {
-           // Ideally we check if CRL issuer matches cert issuer. 
-           // Here we skip issuer check for MVP, just check serial presence.
-           if (crl.isRevoked(serial)) {
-              return PdfRevocationResult(
-                 isRevoked: true,
-                 status: 'revoked',
-                 details: 'Certificate with serial $serial found in CRL',
-              );
-           }
+          if (strict) {
+            if (issuer == null) {
+              continue;
+            }
+            final String? crlIssuer = crl.issuer?.toString();
+            final String? issuerSubject = issuer.c?.subject?.toString();
+            final String? certIssuer = cert.c?.issuer?.toString();
+            if (!dnEqual(crlIssuer, issuerSubject)) {
+              continue;
+            }
+            if (!dnEqual(issuerSubject, certIssuer)) {
+              continue;
+            }
+            if (!crlTimeWindowOk(crl)) {
+              continue;
+            }
+            if (!crl.verifySignature(issuer)) {
+              continue;
+            }
+          }
+
+          if (crl.isRevoked(serial)) {
+            return PdfRevocationResult(
+              isRevoked: true,
+              status: 'revoked',
+              details: 'CRL: certificate revoked',
+            );
+          }
+
+          if (strict) {
+            // This CRL is relevant and validated; treat as positive evidence for "not revoked".
+            hasValidatedGoodForCert = true;
+          }
+        }
+
+        if (strict && !hasValidatedGoodForCert) {
+          missingEvidenceFor.add(cert.c?.subject?.toString() ?? 'unknown-subject');
         }
      }
 
+     if (strict && missingEvidenceFor.isNotEmpty) {
+       final String msg = 'Missing validated revocation evidence for ${missingEvidenceFor.length} cert(s)';
+       return PdfRevocationResult(isRevoked: false, status: 'unknown', details: msg);
+     }
+
      return const PdfRevocationResult(isRevoked: false, status: 'good');
+  }
+
+  /// Validates a single signature field by name.
+  ///
+  /// Returns null when the field is not found.
+  Future<PdfSignatureValidationItem?> validateSignature(
+    Uint8List pdfBytes, {
+    required String fieldName,
+    List<String>? trustedRootsPem,
+    List<Uint8List>? crlBytes,
+    bool fetchCrls = false,
+    bool useEmbeddedIcpBrasil = false,
+    bool strictRevocation = false,
+    Lpa? lpa,
+  }) async {
+    final PdfSignatureValidationReport report = await validateAllSignatures(
+      pdfBytes,
+      trustedRootsPem: trustedRootsPem,
+      crlBytes: crlBytes,
+      fetchCrls: fetchCrls,
+      useEmbeddedIcpBrasil: useEmbeddedIcpBrasil,
+      strictRevocation: strictRevocation,
+      lpa: lpa,
+    );
+    for (final PdfSignatureValidationItem item in report.signatures) {
+      if (item.fieldName == fieldName) return item;
+    }
+    return null;
   }
 }
 
@@ -730,6 +934,127 @@ PdfLtvInfo _computeLtvInfo({
     dssCertsCount: certsCount,
     dssOcspsCount: ocspsCount,
     dssCrlsCount: crlsCount,
+  );
+}
+
+PdfLtvSelfCheckResult? _computeLtvSelfCheck({
+  required _CatalogInfo catalogInfo,
+  required Uint8List signaturePkcs7Der,
+  required List<String> cmsCertsPem,
+}) {
+  final PdfDictionary? dss = catalogInfo.dss;
+  if (dss == null) return null;
+
+  final List<String> issues = <String>[];
+  final String vriName = _computeVriName(signaturePkcs7Der);
+
+  // Locate /DSS/VRI entry for this signature.
+  PdfDictionary? vriDict;
+  try {
+    final dynamic vriPrim = PdfCrossTable.dereference(dss[PdfDictionaryProperties.vri]);
+    final dynamic vri = vriPrim is PdfReferenceHolder ? vriPrim.object : vriPrim;
+    if (vri is PdfDictionary) vriDict = vri;
+  } catch (_) {
+    vriDict = null;
+  }
+  if (vriDict == null) {
+    issues.add('DSS/VRI missing');
+  }
+
+  PdfDictionary? vriEntry;
+  if (vriDict != null) {
+    try {
+      dynamic entry = vriDict[vriName];
+      entry ??= vriDict[PdfName(vriName)];
+      entry = PdfCrossTable.dereference(entry);
+      entry = entry is PdfReferenceHolder ? entry.object : entry;
+      if (entry is PdfDictionary) vriEntry = entry;
+    } catch (_) {
+      vriEntry = null;
+    }
+  }
+  if (vriDict != null && vriEntry == null) {
+    issues.add('VRI entry missing for signature');
+  }
+
+  bool vriHasOcsp = false;
+  bool vriHasCrl = false;
+  bool vriHasCerts = false;
+
+  if (vriEntry != null) {
+    try {
+      final dynamic ocsp = PdfCrossTable.dereference(vriEntry[PdfDictionaryProperties.ocsp]);
+      if (ocsp is PdfArray && ocsp.count > 0) vriHasOcsp = true;
+    } catch (_) {}
+
+    try {
+      final dynamic crl = PdfCrossTable.dereference(vriEntry[PdfDictionaryProperties.crl]);
+      if (crl is PdfArray && crl.count > 0) vriHasCrl = true;
+    } catch (_) {}
+
+    try {
+      final dynamic certs = PdfCrossTable.dereference(vriEntry['Cert'] ?? vriEntry['CERT']);
+      if (certs is PdfArray && certs.count > 0) vriHasCerts = true;
+    } catch (_) {}
+
+    if (!vriHasOcsp && !vriHasCrl) {
+      issues.add('VRI has no OCSP/CRL');
+    }
+    if (!vriHasCerts) {
+      issues.add('VRI has no Cert array');
+    }
+  }
+
+  // Check that DSS has certificates matching what CMS includes.
+  int dssCertsMatchedCount = 0;
+  final int cmsCertsCount = cmsCertsPem.length;
+
+  try {
+    final dynamic certsPrim = PdfCrossTable.dereference(dss[PdfDictionaryProperties.certs]);
+    final PdfArray? dssCertsArr = certsPrim is PdfArray ? certsPrim : null;
+    if (dssCertsArr == null) {
+      if (cmsCertsCount > 0) issues.add('DSS/Certs missing');
+    } else {
+      final Set<String> dssCertHashes = <String>{};
+      for (int i = 0; i < dssCertsArr.count; i++) {
+        dynamic item = PdfCrossTable.dereference(dssCertsArr[i]);
+        item = item is PdfReferenceHolder ? item.object : item;
+        if (item is! PdfStream) continue;
+        final List<int>? bytes = item.getDecompressedData(false) ?? item.dataStream;
+        if (bytes == null || bytes.isEmpty) continue;
+        final String h = crypto.sha256.convert(bytes).toString();
+        dssCertHashes.add(h);
+      }
+
+      for (final String pem in cmsCertsPem) {
+        try {
+          final Uint8List der = X509Utils.pemToDer(pem);
+          final String h = crypto.sha256.convert(der).toString();
+          if (dssCertHashes.contains(h)) {
+            dssCertsMatchedCount++;
+          }
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      if (cmsCertsCount > 0 && dssCertsMatchedCount < cmsCertsCount) {
+        issues.add('DSS certs do not cover CMS certs');
+      }
+    }
+  } catch (_) {
+    if (cmsCertsCount > 0) issues.add('Failed to read DSS/Certs');
+  }
+
+  final bool offlineSufficient = issues.isEmpty;
+  return PdfLtvSelfCheckResult(
+    offlineSufficient: offlineSufficient,
+    issues: issues,
+    cmsCertsCount: cmsCertsCount,
+    dssCertsMatchedCount: dssCertsMatchedCount,
+    vriHasCerts: vriHasCerts,
+    vriHasOcsp: vriHasOcsp,
+    vriHasCrl: vriHasCrl,
   );
 }
 

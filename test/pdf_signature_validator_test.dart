@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -115,6 +116,90 @@ void main() {
     timeout: const Timeout(Duration(minutes: 3)),
     skip: hasOpenSsl ? false : 'openssl not available',
   );
+
+  test(
+    'PdfSignatureValidator accepts TrustedRootsProvider (DER) for chain trust',
+    () async {
+      if (!hasOpenSsl) return;
+
+      final Directory testDir = await Directory.systemTemp.createTemp('sig_val_roots_provider_');
+      try {
+        final String keyPath = '${testDir.path}/user_key.pem';
+        final String certPath = '${testDir.path}/user_cert.pem';
+
+        await _runCmd('openssl', [
+          'req',
+          '-x509',
+          '-newkey',
+          'rsa:2048',
+          '-keyout',
+          keyPath,
+          '-out',
+          certPath,
+          '-days',
+          '365',
+          '-nodes',
+          '-subj',
+          '/CN=Jane Doe',
+          '-addext',
+          'keyUsage=digitalSignature'
+        ]);
+
+        final pdf.PdfDocument doc = pdf.PdfDocument();
+        doc.pages.add().graphics.drawString(
+              'Hello, World! trustedRootsProvider test.',
+              pdf.PdfStandardFont(pdf.PdfFontFamily.helvetica, 12),
+            );
+        final Uint8List unsignedPdf = Uint8List.fromList(await doc.save());
+        doc.dispose();
+
+        final Uint8List signedOnce = await _externallySignWithOpenSsl(
+          pdfBytes: unsignedPdf,
+          fieldName: 'Sig1',
+          keyPath: keyPath,
+          certPath: certPath,
+          workDir: testDir,
+        );
+
+        final String certPem = File(certPath).readAsStringSync();
+        final Uint8List certDer = _pemToDer(certPem);
+
+        final pdf.TrustedRootsProvider provider = _StaticTrustedRootsProvider([certDer]);
+
+        final pdf.PdfSignatureValidationReport report = await pdf.PdfSignatureValidator().validateAllSignatures(
+          signedOnce,
+          trustedRootsProvider: provider,
+        );
+
+        expect(report.signatures.length, 1);
+        expect(report.signatures.single.validation.documentIntact, isTrue);
+        expect(report.signatures.single.validation.cmsSignatureValid, isTrue);
+        expect(report.signatures.single.validation.byteRangeDigestOk, isTrue);
+        expect(report.signatures.single.chainTrusted, isTrue,
+            reason: 'Chain trust should validate against trustedRootsProvider');
+      } finally {
+        await testDir.delete(recursive: true);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+    skip: hasOpenSsl ? false : 'openssl not available',
+  );
+}
+
+class _StaticTrustedRootsProvider implements pdf.TrustedRootsProvider {
+  _StaticTrustedRootsProvider(this._roots);
+  final List<Uint8List> _roots;
+
+  @override
+  Future<List<Uint8List>> getTrustedRootsDer() async => _roots;
+}
+
+Uint8List _pemToDer(String pem) {
+  final String body = pem
+      .replaceAll('-----BEGIN CERTIFICATE-----', '')
+      .replaceAll('-----END CERTIFICATE-----', '')
+      .replaceAll(RegExp(r'\s+'), '');
+  return Uint8List.fromList(base64Decode(body));
 }
 
 Future<Uint8List> _externallySignWithOpenSsl({

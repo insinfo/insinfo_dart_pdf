@@ -42,6 +42,101 @@ class IcpBrasilPolicyEngine {
         isValid: false, error: 'Policy OID not found in LPA');
   }
 
+  /// Like [validatePolicy], but when the CMS signed attributes contain the
+  /// SignaturePolicyId hash, validates it against LPA's [PolicyInfo.policyDigest].
+  ///
+  /// This makes policy validation deterministic when LPA is available.
+  PolicyValidationResult validatePolicyWithDigest(
+    String policyOid,
+    DateTime signingTime, {
+    String? policyHashAlgorithmOid,
+    List<int>? policyHashValue,
+    bool strictDigest = false,
+  }) {
+    final PolicyValidationResult base = validatePolicy(policyOid, signingTime);
+    if (!base.isValid) return base;
+
+    if (lpa == null) {
+      // No LPA => cannot verify the policy document digest.
+      return base;
+    }
+
+    if (policyHashAlgorithmOid == null || policyHashValue == null) {
+      if (strictDigest) {
+        return PolicyValidationResult(
+          isValid: false,
+          error: 'SignaturePolicyId hash missing (required for deterministic policy validation)',
+        );
+      }
+      if (base.warning != null) {
+        return PolicyValidationResult(
+          isValid: true,
+          warning: '${base.warning}; SignaturePolicyId hash missing (digest check skipped)',
+        );
+      }
+      return PolicyValidationResult(
+        isValid: true,
+        warning: 'SignaturePolicyId hash missing (digest check skipped)',
+      );
+    }
+
+    PolicyInfo? info;
+    for (final PolicyInfo p in lpa!.policyInfos) {
+      if (p.policyOid == policyOid) {
+        info = p;
+        break;
+      }
+    }
+    if (info == null) {
+      return PolicyValidationResult(isValid: false, error: 'Policy OID not found in LPA');
+    }
+
+    final String expectedAlgOid = _normalizeDigestAlgorithmToOid(info.policyDigest.algorithm);
+    if (expectedAlgOid != policyHashAlgorithmOid) {
+      return PolicyValidationResult(
+        isValid: false,
+        error: 'Policy digest algorithm mismatch (expected $expectedAlgOid, got $policyHashAlgorithmOid)',
+      );
+    }
+
+    final List<int> expected = info.policyDigest.value;
+    if (expected.length != policyHashValue.length) {
+      return PolicyValidationResult(
+        isValid: false,
+        error: 'Policy digest length mismatch',
+      );
+    }
+    for (int i = 0; i < expected.length; i++) {
+      if (expected[i] != policyHashValue[i]) {
+        return PolicyValidationResult(
+          isValid: false,
+          error: 'Policy digest does not match LPA',
+        );
+      }
+    }
+
+    return base;
+  }
+
+  static String _normalizeDigestAlgorithmToOid(String algorithm) {
+    // LPA DER uses OIDs; LPA XML often uses xmlenc URIs.
+    final RegExp oidRe = RegExp(r'^\d+(?:\.\d+)+$');
+    if (oidRe.hasMatch(algorithm)) return algorithm;
+    switch (algorithm) {
+      case 'http://www.w3.org/2000/09/xmldsig#sha1':
+        return '1.3.14.3.2.26';
+      case 'http://www.w3.org/2001/04/xmlenc#sha224':
+        return '2.16.840.1.101.3.4.2.4';
+      case 'http://www.w3.org/2001/04/xmlenc#sha256':
+        return '2.16.840.1.101.3.4.2.1';
+      case 'http://www.w3.org/2001/04/xmlenc#sha384':
+        return '2.16.840.1.101.3.4.2.2';
+      case 'http://www.w3.org/2001/04/xmlenc#sha512':
+        return '2.16.840.1.101.3.4.2.3';
+    }
+    return algorithm;
+  }
+
   PolicyValidationResult _checkPeriod(PolicyInfo info, DateTime time) {
     final DateTime notBefore = info.signingPeriod.notBefore;
     final DateTime? notAfter = info.signingPeriod.notAfter;

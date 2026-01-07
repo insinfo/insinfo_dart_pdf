@@ -93,7 +93,7 @@ class Lpa {
     final Iterable<xml.XmlElement> elements =
         root.descendantElements.where((e) => e.name.local == localName);
     final xml.XmlElement? first = elements.isEmpty ? null : elements.first;
-    return first?.text.trim();
+    return first?.innerText.trim();
   }
 
   static Iterable<xml.XmlElement> _allElements(
@@ -177,7 +177,7 @@ class PolicyInfo {
 
     final String? notBeforeText = signingPeriodEl.childElements
         .where((e) => e.name.local == 'NotBefore')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (notBeforeText == null) return null;
@@ -186,7 +186,7 @@ class PolicyInfo {
 
     final String? notAfterText = signingPeriodEl.childElements
         .where((e) => e.name.local == 'NotAfter')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     final DateTime? notAfter =
@@ -194,7 +194,7 @@ class PolicyInfo {
 
     final String? revocationText = policyInfoElement.childElements
         .where((e) => e.name.local == 'RevocationDate')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     final DateTime? revocationDate =
@@ -202,7 +202,7 @@ class PolicyInfo {
 
     final String? identifierText = policyInfoElement.descendantElements
         .where((e) => e.name.local == 'Identifier')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (identifierText == null) return null;
@@ -218,7 +218,7 @@ class PolicyInfo {
 
     final String? policyUri = digestAndUri.childElements
         .where((e) => e.name.local == 'PolicyURI')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (policyUri == null) return null;
@@ -238,7 +238,7 @@ class PolicyInfo {
 
     final String? digestValueB64 = policyDigestEl.descendantElements
         .where((e) => e.name.local == 'DigestValue')
-        .map((e) => e.text.trim())
+      .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (digestValueB64 == null) return null;

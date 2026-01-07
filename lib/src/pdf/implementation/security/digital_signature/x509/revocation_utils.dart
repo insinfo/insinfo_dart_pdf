@@ -35,13 +35,31 @@ class RevocationUtils {
   }
 
   static void _parseDistributionPoint(Asn1Sequence dp, List<String> urls) {
-      if (dp.count > 0) {
-          final IAsn1? first = dp[0];
-          // Check for tag [0]
-          if (first is Asn1Tag && first.tagNumber == 0) {
-              // Implementation detail: need to unwrap tag to get general names.
-          }
-      }
+        // DistributionPoint ::= SEQUENCE {
+        //   distributionPoint [0] DistributionPointName OPTIONAL,
+        //   reasons [1] ReasonFlags OPTIONAL,
+        //   cRLIssuer [2] GeneralNames OPTIONAL }
+        if (dp.count == 0) return;
+
+        for (int i = 0; i < dp.count; i++) {
+            final IAsn1? el = dp[i];
+            if (el is! Asn1Tag) continue;
+            if (el.tagNumber != 0) continue;
+
+            // distributionPoint [0] EXPLICIT DistributionPointName
+            final Asn1? dpNameObj = el.getObject();
+            if (dpNameObj is! Asn1Tag) continue;
+
+            // DistributionPointName ::= CHOICE { fullName [0] GeneralNames, ... }
+            if (dpNameObj.tagNumber != 0) continue;
+            final Asn1? fullName = dpNameObj.getObject();
+            if (fullName is! Asn1Sequence) continue;
+
+            // GeneralNames ::= SEQUENCE OF GeneralName
+            for (int j = 0; j < fullName.count; j++) {
+                _addFromGeneralName(fullName[j], urls);
+            }
+        }
   }
 
   /// Extracts OCSP URLs from the AIA extension.
@@ -73,9 +91,33 @@ class RevocationUtils {
   }
   
   static void _addFromGeneralName(IAsn1? gn, List<String> urls) {
-      if (gn is Asn1Tag && gn.tagNumber == 6) {
-          // Tag 6 is IA5String (URI)
-           // Placeholder
-      }
+        // GeneralName ::= CHOICE { uniformResourceIdentifier [6] IA5String, ... }
+        if (gn is! Asn1Tag || gn.tagNumber != 6) return;
+
+        try {
+            // In many encodings the [6] is implicit IA5String; try common string types.
+            final Asn1? inner = gn.getObject();
+            String? url;
+            if (inner is DerAsciiString) {
+                url = inner.getString();
+            } else if (inner is DerUtf8String) {
+                url = inner.getString();
+            } else if (inner is DerPrintableString) {
+                url = inner.getString();
+            } else if (inner is Asn1Octet) {
+                final List<int>? octets = inner.getOctets();
+                if (octets != null) url = String.fromCharCodes(octets);
+            }
+
+            // Fallback: tag may contain raw bytes.
+            url ??= gn.getAsn1().toString();
+
+            final String trimmed = url.trim();
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                urls.add(trimmed);
+            }
+        } catch (_) {
+            // ignore
+        }
   }
 }

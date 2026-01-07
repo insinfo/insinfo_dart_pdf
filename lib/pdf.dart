@@ -240,7 +240,10 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature_validato
         PdfSignatureValidationReport,
         PdfSignatureValidationItem,
         PdfDocMdpInfo,
-        PdfLtvInfo;
+        PdfLtvInfo,
+        PdfLtvSelfCheckResult,
+        PdfRevocationResult,
+        PdfPolicyStatus;
 export 'src/pdf/implementation/security/digital_signature/x509/x509_utils.dart'
     show X509Utils, X509ChainValidationResult;
 export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
@@ -250,6 +253,9 @@ export 'src/pdf/implementation/security/digital_signature/govbr_oauth.dart'
 export 'src/pdf/implementation/security/digital_signature/pdf_external_signer.dart';
 export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
     show PdfSignature, RevocationType;
+export 'src/security/chain/trusted_roots_provider.dart'
+    show TrustedRootsProvider, CompositeTrustedRootsProvider;
+export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
 export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'
     show TimestampServer;
 export 'src/pdf/implementation/security/enum.dart';
