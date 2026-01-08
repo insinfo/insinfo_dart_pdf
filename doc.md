@@ -1,88 +1,63 @@
-# PDF library
+# Biblioteca PDF
 
- feature-rich and high-performance non-UI PDF library written natively in Dart. It allows you to add robust PDF functionalities to Flutter applications.
-
-
-## Overview
-
-The PDF package is a non-UI, reusable Flutter library for creating PDF reports programmatically with formatted text, images, shapes, tables, links, lists, headers, footers, and more. The library can be used to create, read, edit, and secure PDF documents in Flutter mobile and web platforms without dependency on Adobe Acrobat. The creation of a PDF follows the most popular PDF 1.7 (ISO 32000-1) and latest PDF 2.0 (ISO 32000-2) specifications.
+Biblioteca de PDF (sem UI), rica em recursos e de alta performance, escrita nativamente em Dart. Permite adicionar funcionalidades robustas de PDF a aplicações Flutter.
 
 
+## Visão geral
 
-## Table of contents
-- [Key features](#key-features)
-- [Get the demo application](#get-the-demo-application)
-- [Useful links](#useful-links)
-- [Installation](#installation)
-- [Getting started](#getting-started)
-  - [Create a PDF document from simple text](#create-a-pdf-document-from-simple-text)
-  - [Add text using TrueType fonts](#add-text-using-truetype-fonts)
-  - [Add images to a PDF document](#add-images-to-a-pdf-document)
-  - [PDF document with flow layout](#pdf-document-with-flow-layout)
-  - [Add bullets and lists](#add-bullets-and-lists)
-  - [Add tables](#add-tables)
-  - [Add headers and footers](#add-headers-and-footers)
-  - [Load and modify an existing PDF document](#load-and-modify-an-existing-pdf-document)
-  - [Create and load annotations](#create-and-load-annotations)
-  - [Add bookmarks](#add-bookmarks)
-  - [Extract text](#extract-text)
-  - [Find text](#find-text)
-  - [Encryption and decryption](#encryption-and-decryption)
-  - [PDF conformance](#pdf-conformance)
-  - [PDF form](#pdf-form)
-  - [Digital signature](#digital-signature)
-- [Signature validation (PAdES / server-side)](#signature-validation-pades--server-side)
-- [Gov.br external signature (server-side)](#govbr-external-signature-server-side)
-- [Support and feedback](#support-and-feedback)
-- [About Insinfo<sup>&reg;</sup>](#about-insinfo)
+O pacote PDF é uma biblioteca Flutter reutilizável (sem UI) para criar relatórios PDF programaticamente com texto formatado, imagens, formas, tabelas, links, listas, cabeçalhos, rodapés e mais. A biblioteca pode ser usada para criar, ler, editar e proteger PDFs em Flutter (mobile e web) sem dependência do Adobe Acrobat. A criação de PDFs segue a especificação PDF 1.7 (ISO 32000-1) e a PDF 2.0 (ISO 32000-2).
 
-## Key features
 
-The following are the key features of Insinfo<sup>&reg;</sup> Flutter PDF:
+## Sumário
+- [Principais recursos](#key-features)
+- [Primeiros passos](#getting-started)
+  - [Criar um PDF a partir de texto simples](#create-a-pdf-document-from-simple-text)
+  - [Adicionar texto usando fontes TrueType](#add-text-using-truetype-fonts)
+  - [Adicionar imagens em um PDF](#add-images-to-a-pdf-document)
+  - [PDF com layout fluido (flow)](#pdf-document-with-flow-layout)
+  - [Adicionar bullets e listas](#add-bullets-and-lists)
+  - [Adicionar tabelas](#add-tables)
+  - [Adicionar cabeçalhos e rodapés](#add-headers-and-footers)
+  - [Carregar e modificar um PDF existente](#load-and-modify-an-existing-pdf-document)
+  - [Criar e carregar anotações](#create-and-load-annotations)
+  - [Adicionar bookmarks](#add-bookmarks)
+  - [Extrair texto](#extract-text)
+  - [Buscar texto](#find-text)
+  - [Criptografia e descriptografia](#encryption-and-decryption)
+  - [Conformidade PDF](#pdf-conformance)
+  - [Formulários PDF](#pdf-form)
+  - [Assinatura digital](#assinatura-digital)
+- [Validação de assinaturas (PAdES / server-side)](#validação-de-assinaturas-pades--server-side)
+- [Assinatura externa Gov.br (server-side)](#assinatura-externa-govbr-server-side)
+- [Suporte e feedback](#support-and-feedback)
+- [Sobre a Insinfo<sup>&reg;</sup>](#about-insinfo)
 
-* Create multipage PDF files from scratch.
-* Add Unicode and RTL text.
-* Insert JPEG and PNG images in the PDF document.
-* Generate tables in PDF files with different styles and formats.
-* Add headers and footers.
-* Add different shapes to PDF files.
-* Add paragraphs, bullets, and lists.
-* Open, modify, and save existing PDF files.
-* Encrypt and decrypt PDF files with advanced standards.
-* Add, modify, and remove interactive elements such as bookmarks, annotations, hyperlinks, and attachments.
-* Create PDF/A-1B, PDF/A-2B, PDF/A-3B conformances.
-* Digitally sign PDF documents.
-* Use on mobile and web platforms.
+<a id="key-features"></a>
 
-## Get the demo application
+## Principais recursos
 
-Explore the full capability of our Flutter widgets on your device by installing our sample browser application from the following app stores and viewing the sample code in GitHub.
+Principais recursos do Insinfo<sup>&reg;</sup> Flutter PDF:
 
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.insinfo.flutter.examples"><img src="https://cdn.insinfo.com/content/images/FTControl/google-play-store.png"/></a>
-  <a href="https://flutter.insinfo.com"><img src="https://cdn.insinfo.com/content/images/FTControl/web-sample-browser.png"/></a>
-  <a href="https://www.microsoft.com/en-us/p/insinfo-flutter-gallery/9nhnbwcsf85d?activetab=pivot:overviewtab"><img src="https://cdn.insinfo.com/content/images/FTControl/windows-store.png"/></a> 
-</p>
-<p align="center">
-  <a href="https://snapcraft.io/insinfo-flutter-gallery"><img src="https://cdn.insinfo.com/content/images/FTControl/snap-store.png"/></a>
-  <a href="https://github.com/insinfo/flutter-examples"><img src="https://cdn.insinfo.com/content/images/FTControl/github-samples.png"/></a>
-</p>
+* Criar PDFs multipágina do zero.
+* Adicionar texto Unicode e RTL.
+* Inserir imagens JPEG e PNG no documento.
+* Gerar tabelas em PDFs com estilos e formatos diferentes.
+* Adicionar cabeçalhos e rodapés.
+* Adicionar diferentes formas no PDF.
+* Adicionar parágrafos, bullets e listas.
+* Abrir, modificar e salvar PDFs existentes.
+* Criptografar e descriptografar PDFs com padrões avançados.
+* Adicionar, modificar e remover elementos interativos como bookmarks, anotações, hyperlinks e anexos.
+* Criar conformidades PDF/A-1B, PDF/A-2B, PDF/A-3B.
+* Assinar digitalmente documentos PDF.
+* Usar em plataformas mobile e web.
 
-## Other useful links
 
-Take a look at the following to learn more about Insinfo<sup>&reg;</sup> Flutter PDF:
+<a id="getting-started"></a>
 
-* [Insinfo<sup>&reg;</sup> Flutter PDF product page](https://www.insinfo.com/flutter-widgets/pdf-library)
-* [User guide documentation](https://help.insinfo.com/flutter/pdf/overview)
-* [Knowledge base](https://www.insinfo.com/kb)
+## Primeiros passos
 
-## Installation
-
-Install the latest version from [pub.dev](https://pub.dartlang.org/packages/insinfo_flutter_pdf#-installing-tab-).
-
-## Getting started
-
-Import the following package to your project to create a PDF document from scratch.
+Importe o pacote abaixo no seu projeto para criar um PDF do zero.
 
 ```dart
 import 'package:dart_pdf/pdf.dart';
@@ -93,16 +68,16 @@ import 'package:dart_pdf/pdf.dart';
 Add the following code to create a simple PDF document.
 
 ```dart
-// Create a new PDF document.
+
 final PdfDocument document = PdfDocument();
-// Add a PDF page and draw text.
+
 document.pages.add().graphics.drawString(
     'Hello World!', PdfStandardFont(PdfFontFamily.helvetica, 12),
     brush: PdfSolidBrush(PdfColor(0, 0, 0)),
     bounds: const Rect.fromLTWH(0, 0, 150, 20));
-// Save the document.
+
 File('HelloWorld.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+
 document.dispose();
 ```
 
@@ -111,18 +86,18 @@ document.dispose();
 Use the following code to add a Unicode text to the PDF document.
 
 ```dart
-//Create a new PDF document.
+
 final PdfDocument document = PdfDocument();
-//Read font data.
+
 final Uint8List fontData = File('arial.ttf').readAsBytesSync();
-//Create a PDF true type font object.
+
 final PdfFont font = PdfTrueTypeFont(fontData, 12);
-//Draw text using ttf font.
+
 document.pages.add().graphics.drawString('Hello World!!!', font,
     bounds: const Rect.fromLTWH(0, 0, 200, 50));
-// Save the document.
+
 File('TrueType.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+
 document.dispose();
 ```
 
@@ -131,20 +106,20 @@ document.dispose();
 The PdfBitmap class is used to draw images in a PDF document. Insinfo<sup>&reg;</sup> Flutter PDF supports PNG and JPEG images. Refer to the following code to draw images in a PDF document. 
 
 ```dart
-//Create a new PDF document.
+
 final PdfDocument document = PdfDocument();
-//Read image data.
+
 final Uint8List imageData = File('input.png').readAsBytesSync();
-//Load the image using PdfBitmap.
+
 final PdfBitmap image = PdfBitmap(imageData);
-//Draw the image to the PDF page.
+
 document.pages
     .add()
     .graphics
     .drawImage(image, const Rect.fromLTWH(0, 0, 500, 200));
-// Save the document.
+
 File('ImageToPDF.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+
 document.dispose();
 ```
 
@@ -592,11 +567,11 @@ document.dispose();
 
 
 
-### Digital signature
+### Assinatura digital
 
-PDF digital signature is the best way to protect your PDF files from being forged. Using this package, we can digitally sign a PDF document using X509 certificates (.pfx file with private key).
+A assinatura digital em PDF é uma forma robusta de proteger seus documentos contra adulteração. Com este pacote, é possível assinar um PDF usando certificados X.509 (arquivo .pfx contendo a chave privada).
 
-Add the following code to sign the PDF document.
+Use o exemplo abaixo para assinar um PDF novo.
 
 ```dart
 //Create a new PDF document.
@@ -620,7 +595,7 @@ document.form.fields.add(signatureField);
 File('signed.pdf').writeAsBytes(await document.save());
 document.dispose();
 ```
-Add the following code to sign the existing PDF document.
+Use o exemplo abaixo para assinar um PDF existente.
 
 ```dart
 //Load the existing PDF document.
@@ -642,41 +617,92 @@ File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
-## Signature validation (PAdES / server-side)
+## Validação de assinaturas (PAdES / server-side)
 
-This repository includes a server-side validation helper that can inspect **all** signatures in a PDF and report:
+Este repositório inclui um helper de validação server-side que consegue inspecionar **todas** as assinaturas de um PDF e reportar:
 
-- CMS signature validity
-- ByteRange digest match
-- Document integrity (`documentIntact`)
-- Chain trust (when trusted roots are provided)
-- Revocation status (best-effort or strict)
-- Policy status (when SignaturePolicyId is present and LPA is provided)
-- Timestamp status (RFC 3161, when present)
-- Aggregated issues (warnings/errors) in `PdfSignatureValidationItem.issues`
+- Validade da assinatura CMS
+- Conferência do digest do ByteRange
+- Integridade do documento (`documentIntact`)
+- Confiança de cadeia (quando roots confiáveis são fornecidas)
+- Status de revogação (best-effort ou estrito)
+- Status de policy (quando `SignaturePolicyId` está presente e `Lpa` foi fornecido)
+- Status de timestamp (RFC 3161, quando presente)
+- Issues agregadas (warnings/errors) em `PdfSignatureValidationItem.issues`
 
-Note on timestamp severity (ICP-Brasil / Gov.br):
+Nota sobre severidade de timestamp (ICP-Brasil / Gov.br):
 
-- If the signature policy OID indicates ICP-Brasil/Gov.br (`2.16.76.1.7.1.*`) and no RFC3161 timestamp token is present, this is reported as a **warning** issue (`timestamp_missing`) by default.
-- If a timestamp token is present but deterministically invalid (e.g. token CMS signature invalid or message imprint mismatch), this is reported as an **error** issue (`timestamp_invalid`).
+- Se o OID de policy indicar ICP-Brasil/Gov.br (`2.16.76.1.7.1.*`) e **não** houver token de timestamp RFC3161, isso é reportado como issue **warning** (`timestamp_missing`) por padrão.
+- Se você fornecer o XML da policy via `policyXmlByOid` e esse XML exigir `SignatureTimeStamp`, então a ausência de RFC3161 é reportada como issue **error** (`timestamp_missing`).
+- Se existir token de timestamp, mas ele for deterministicamente inválido (ex.: assinatura CMS do token inválida ou message imprint não confere), isso é reportado como issue **error** (`timestamp_invalid`).
 
-### What is validated (high level)
+### Scripts de teste (ICP-Brasil / policy exige timestamp)
 
-This validation path is designed to be robust for ICP-Brasil-style PAdES/CMS flows.
+Para evitar dependências de pastas removíveis (ex.: `test/assets/12`) e ter um caso de teste determinístico, este repositório inclui um gerador de PDF assinado que:
 
-- PDF parsing is done using the internal PDF parser (no regex scan) to extract `/ByteRange` and `/Contents`.
-- CMS/PKCS#7 is validated, and common signed attributes are checked (algorithm compatibility, signingTime when present, SKI/issuer/serial coherence, etc.).
-- Chain trust can be evaluated using embedded roots and/or custom trust stores.
-- Revocation can run in best-effort mode or strict mode (signature + time window checks on OCSP/CRL evidence).
-- LTV (DSS/VRI) is audited with a best-effort self-check to estimate whether offline validation should be possible.
+- Cria uma cadeia de certificados (Root → Intermediate → Leaf) via OpenSSL.
+- Assina um PDF com CMS detached.
+- Embute `SignaturePolicyId` (OID ICP-Brasil/Gov.br) nos signed attributes.
+- **Não** embute RFC3161 (PAdES-T ausente de propósito), para exercitar `timestamp_missing`.
 
-Relevant code entry points:
+Gerar/atualizar o PDF de teste:
 
-- PDF extraction: `pdf_signature_utils.dart`
-- CMS validation: `pdf_signature_validation.dart`
-- Orchestration/reporting: `pdf_signature_validator.dart`
+```bash
+dart run scripts/generate_policy_mandated_timestamp_missing_pdf.dart
+```
 
-### Validate all signatures
+Arquivo gerado (deve ser versionado no repo para CI):
+
+- `test/assets/generated_policy_mandated_timestamp_missing.pdf`
+
+Rodar o teste de integração que valida o “flip” warning→error ao fornecer `policyXmlByOid`:
+
+```bash
+dart test test/policy_timestamp_integration_test.dart
+```
+
+### Scripts auxiliares (debug)
+
+- Inspecionar rapidamente uma assinatura (policy OID + timestamp status):
+
+```bash
+dart run scripts/inspect_pdf_signature_brief.dart test/assets/generated_policy_mandated_timestamp_missing.pdf
+```
+
+- Extrair o PKCS#7 (/Contents) para DER e inspecionar com OpenSSL:
+
+```bash
+dart run scripts/extract_pdf_pkcs7.dart test/assets/generated_policy_mandated_timestamp_missing.pdf .dart_tool/generated_sig.der
+openssl cms -inform DER -in .dart_tool/generated_sig.der -cmsout -print -noout
+```
+
+### Curadoria de PDFs de teste (opcional)
+
+Se você tiver uma pasta com muitos PDFs e quiser copiar exemplos “bons” para `test/assets`, use:
+
+```bash
+dart run scripts/curate_policy_timestamp_test_pdfs.dart --source test/assets/12 --target test/assets policy-oid 3 1
+```
+
+Modos suportados: `policy-mandated-ts-missing`, `policy-oid`, `signed-any`, `multi-sig`.
+
+### O que é validado (visão geral)
+
+Este caminho de validação foi desenhado para ser robusto em fluxos PAdES/CMS no estilo ICP-Brasil.
+
+- O parsing do PDF usa o parser interno (sem varredura por regex) para extrair `/ByteRange` e `/Contents`.
+- O CMS/PKCS#7 é validado e atributos comuns são checados (compatibilidade de algoritmo, `signingTime` quando presente, coerência SKI/issuer/serial, etc.).
+- A confiança de cadeia pode ser avaliada usando roots embutidas e/ou trust stores customizadas.
+- A revogação pode rodar em modo best-effort ou estrito (assinatura + janela de tempo em evidências OCSP/CRL).
+- LTV (DSS/VRI) é auditado com self-check best-effort para estimar se validação offline pode ser possível.
+
+Entradas de código relevantes:
+
+- Extração do PDF: `pdf_signature_utils.dart`
+- Validação CMS: `pdf_signature_validation.dart`
+- Orquestração/relatório: `pdf_signature_validator.dart`
+
+### Validar todas as assinaturas
 
 ```dart
 import 'dart:io';
@@ -689,30 +715,30 @@ Future<void> main() async {
 
   final PdfSignatureValidationReport report = await PdfSignatureValidator().validateAllSignatures(
     pdfBytes,
-    // Adds the built-in ICP-Brasil / ITI / SERPRO roots as trust anchors.
+    // Adiciona roots embutidas (ICP-Brasil / ITI / SERPRO) como trust anchors.
     useEmbeddedIcpBrasil: true,
 
-    // Downloads OCSP/CRL using certificate URLs (slower).
+    // Baixa OCSP/CRL via URLs dos certificados (mais lento).
     fetchCrls: false,
 
-    // When true, only returns revocation status "good" if evidence is validated
-    // (signature + time window).
+    // Quando true, só retorna revogação "good" se a evidência for validada
+    // (assinatura + janela de tempo).
     strictRevocation: false,
 
-    // When true, requires SignaturePolicyId hash when policyOid is present.
+    // Quando true, exige o digest de SignaturePolicyId quando policyOid está presente.
     strictPolicyDigest: false,
   );
 
-  print('PDF intact: ${report.allDocumentsIntact}');
+  print('PDF íntegro: ${report.allDocumentsIntact}');
   for (final s in report.signatures) {
     print('${s.fieldName}: cms=${s.validation.cmsSignatureValid} digest=${s.validation.byteRangeDigestOk} intact=${s.validation.documentIntact}');
   }
 }
 ```
 
-### Validate a single signature field
+### Validar um único campo de assinatura
 
-If you already know the field name and only want the result for that signature:
+Se você já sabe o nome do campo e quer apenas o resultado daquela assinatura:
 
 ```dart
 import 'dart:io';
@@ -728,27 +754,28 @@ Future<void> main() async {
     fieldName: 'Signature1',
     useEmbeddedIcpBrasil: true,
     strictRevocation: true,
-    strictPolicyDigest: true,
   );
 
   if (item == null) {
-    print('Signature field not found');
+    print('Campo de assinatura não encontrado');
     return;
   }
 
-  print('Trusted chain: ${item.validation.chainTrusted}');
-  print('Revocation: ${item.validation.revocationStatus}');
+  print('Cadeia confiável: ${item.validation.chainTrusted}');
+  print('Revogação: ${item.validation.revocationStatus}');
 }
 ```
 
+Observação: `validateSignature(...)` é um atalho e expõe um subconjunto das opções. Se você precisar de `strictPolicyDigest`, `policyXmlByOid` ou `trustedRootsProviders`, use `validateAllSignatures(...)` e filtre pelo `fieldName`.
+
 ### Trust stores (ICP-Brasil / ITI / Serpro / Gov.br)
 
-The validator can evaluate `chainTrusted` if you provide trust anchors.
+O validador consegue avaliar `chainTrusted` quando você fornece trust anchors.
 
-- ICP-Brasil / ITI / Serpro: enable `useEmbeddedIcpBrasil: true`
-- Gov.br: use the embedded provider `GovBrProvider()`
+- ICP-Brasil / ITI / Serpro: habilite `useEmbeddedIcpBrasil: true`
+- Gov.br: use o provider embutido `GovBrProvider()`
 
-Example:
+Exemplo:
 
 ```dart
 import 'dart:io';
@@ -771,69 +798,66 @@ Future<void> main() async {
 }
 ```
 
-#### Updating embedded trust stores
+#### Atualizando trust stores embutidas
 
-Trust stores are embedded for AOT/Wasm support and are generated from `assets/truststore/**`.
-To regenerate:
+As trust stores são embutidas para suportar AOT/Wasm e são geradas a partir de `assets/truststore/**`.
+Para regenerar:
 
 ```bash
 dart run scripts/embed_certificates.dart
 ```
 
-This will update the generated files under `lib/src/security/chain/generated/`.
+Isso atualiza os arquivos gerados em `lib/src/security/chain/generated/`.
 
-### CLI helper
+### Helper de CLI
 
-For quick validation from the command line, use:
+Para validar rapidamente via linha de comando:
 
 ```bash
 dart run scripts/validate_pdf_signatures.dart input.pdf
 ```
 
-By default, the CLI enables auto-trust (embedded ICP-Brasil roots + Gov.br roots), so it can print `Cadeia confiável: SIM/NÃO`.
+Por padrão, a CLI habilita auto-trust (roots ICP-Brasil embutidas + roots Gov.br), então ela consegue imprimir `Cadeia confiável: SIM/NÃO`.
 
-Useful flags:
+Flags úteis:
 
-- `--no-auto-trust`: disables automatic trust roots loading
-- `--embedded-icpbrasil`: explicitly enable ICP-Brasil roots (useful with `--no-auto-trust`)
-- `--embedded-govbr`: explicitly enable Gov.br roots (useful with `--no-auto-trust`)
-- `--fetch-crls`: enables network fetching of OCSP/CRL via URLs (slower)
-- `--strict-revocation`: requires validated OCSP/CRL evidence (signature + time window)
-- `--strict-policy-digest`: requires SignaturePolicyId digest match when policy is present
+- `--no-auto-trust`: desabilita carregamento automático de trust roots
+- `--embedded-icpbrasil`: habilita explicitamente roots ICP-Brasil (útil com `--no-auto-trust`)
+- `--embedded-govbr`: habilita explicitamente roots Gov.br (útil com `--no-auto-trust`)
+- `--fetch-crls`: habilita busca via rede de OCSP/CRL por URLs (mais lento)
+- `--strict-revocation`: exige evidência validada (assinatura + janela de tempo)
+- `--strict-policy-digest`: exige match do digest de SignaturePolicyId quando policy está presente
 
-The script prints PDF integrity, per-signature validity, and a best-effort provider label (serpro/gov.br/certisign).
+O script imprime integridade do PDF, validade por assinatura e um rótulo de provedor best-effort (serpro/gov.br/certisign).
 
-### ICP-Brasil / PAdES status (implemented vs remaining gaps)
+### Status ICP-Brasil / PAdES (implementado vs lacunas)
 
-Implemented (current state):
+Implementado (estado atual):
 
-- Parser-based extraction of `/ByteRange` and `/Contents` for validation (avoids regex)
-- CMS/PKCS#7 validation, including signed-attributes sanity checks
-- Embedded trust stores: ICP-Brasil / ITI / Serpro, plus Gov.br provider (`GovBrProvider`)
-- Chain building + trust evaluation (`chainTrusted`) using providers/trust stores
-- Revocation: OCSP/CRL fetching + strict validation option (signature + time window)
-- Policy engine: deterministic validation when LPA and SignaturePolicyId digest are available
-- LTV: DSS/VRI construction scaffolding and best-effort “self-check” audit
-- Public validation APIs: validate all signatures or validate a single signature
+- Extração baseada em parser de `/ByteRange` e `/Contents` (evita regex)
+- Validação CMS/PKCS#7, incluindo sanity checks de signed attributes
+- Trust stores embutidas: ICP-Brasil / ITI / Serpro, + provider Gov.br (`GovBrProvider`)
+- Construção de cadeia + avaliação de trust (`chainTrusted`) via providers/trust stores
+- Revogação: busca OCSP/CRL + opção de validação estrita (assinatura + janela de tempo)
+- Policy engine: validação determinística quando LPA e digest de SignaturePolicyId estão disponíveis
+- LTV: scaffolding de DSS/VRI + auditoria best-effort de "self-check"
+- APIs públicas de validação: validar todas as assinaturas ou um campo de assinatura
 
-Gaps that can still impact “strong legal robustness” depending on your compliance bar:
+Lacunas que ainda podem impactar robustez (dependendo do seu nível de compliance):
 
-- External signing injection still uses a regex scan in one path (see `external_pdf_signature.dart` TODO); ideally this should be fully parser-based
-- Policy validation can fall back to heuristics when full LPA/policy data is not available
-- Timestamp validation is reported via `timestampStatus` and `issues`, but you may want stricter local rules depending on your compliance target (e.g. enforce PAdES-T/LTV as hard requirements)
-- Full offline-LTV proof (strict verification that DSS/VRI contains *all* required evidence for each signature across all scenarios) is best-effort and may need stricter rules per your use case
+- A injeção de assinatura externa ainda usa regex em um caminho (veja o TODO em `external_pdf_signature.dart`); o ideal é ser totalmente parser-based
+- A validação de policy pode cair em heurísticas quando LPA/policy completos não estão disponíveis
+- A validação de timestamp é reportada via `timestampStatus` e `issues`, mas você pode querer regras locais mais estritas dependendo do seu alvo (ex.: exigir PAdES-T/LTV como requisito duro)
+- Prova offline-LTV completa (verificação estrita de que DSS/VRI contém *todas* as evidências exigidas em todos os cenários) é best-effort e pode exigir regras mais estritas no seu caso
 
-## Gov.br external signature (server-side)
+## Assinatura externa Gov.br (server-side)
 
-This library now supports a robust external signing flow compatible with the Gov.br API.
-The flow has two phases: prepare the PDF and compute the ByteRange hash, then inject the
-PKCS#7 returned by the signing service.
+Esta biblioteca suporta um fluxo robusto de assinatura externa compatível com a API do Gov.br.
+O fluxo tem duas fases: preparar o PDF e computar o hash do ByteRange; depois, injetar o PKCS#7 retornado pelo serviço de assinatura.
 
-### 1) Prepare PDF and hash (server-side)
+### 1) Preparar o PDF e calcular o hash (server-side)
 
-Use `PdfExternalSigning.preparePdf` to add the signature field, reserve space, and compute
-the Base64 hash to send to Gov.br. You can provide a custom visual appearance using
-`drawAppearance`.
+Use `PdfExternalSigning.preparePdf` para adicionar o campo de assinatura, reservar espaço e calcular o hash Base64 para enviar ao Gov.br. Você pode customizar a aparência visual usando `drawAppearance`.
 
 ```dart
 final prepared = await PdfExternalSigning.preparePdf(
@@ -859,10 +883,9 @@ final String hashBase64 = prepared.hashBase64;
 final Uint8List preparedPdfBytes = prepared.preparedPdfBytes;
 ```
 
-### 2) Call Gov.br and inject the PKCS#7
+### 2) Chamar o Gov.br e injetar o PKCS#7
 
-Use `GovBrSignatureApi` to fetch the certificate and to sign the hash, then embed the
-PKCS#7 bytes into the prepared PDF.
+Use `GovBrSignatureApi` para obter o certificado e assinar o hash; depois, embuta os bytes PKCS#7 no PDF preparado.
 
 ```dart
 final api = GovBrSignatureApi();
@@ -879,10 +902,9 @@ final signedPdf = PdfExternalSigning.embedSignature(
 );
 ```
 
-### 3) OAuth (Gov.br login)
+### 3) OAuth (login Gov.br)
 
-`GovBrOAuthClient` provides helpers to build the authorization URL and exchange the token
-using the Gov.br CAS endpoints. Use it in your backend controller to drive the OAuth flow.
+`GovBrOAuthClient` oferece helpers para montar a URL de autorização e trocar o token usando os endpoints CAS do Gov.br. Use-o no seu controller backend para conduzir o fluxo OAuth.
 
 ```dart
 final oauth = GovBrOAuthClient();
@@ -905,47 +927,44 @@ final token = await oauth.exchangeToken(body: {
 });
 ```
 
-### Integration with your current controller
+### Integração com seu controller atual
 
-Map your current flow to the new helpers:
+Mapeie seu fluxo atual para os helpers:
 
-- `start`: call `PdfExternalSigning.preparePdf` and send `hashBase64` to Gov.br.
-- `assinar`: receive `pkcs7` bytes from Gov.br and call `PdfExternalSigning.embedSignature`.
-- Keep your existing DocMDP and visual layout logic; you can replace your custom placeholder
-  logic with `drawAppearance` if desired.
+- `start`: chame `PdfExternalSigning.preparePdf` e envie `hashBase64` ao Gov.br.
+- `assinar`: receba os bytes `pkcs7` do Gov.br e chame `PdfExternalSigning.embedSignature`.
+- Mantenha sua lógica atual de DocMDP e layout visual; se quiser, substitua sua lógica customizada de placeholder por `drawAppearance`.
 
-### Demo script
+### Script de demo
 
-This repo includes a demo that generates a certificate chain, signs a PDF with OpenSSL,
-installs the certs in Windows, and opens the PDF in Foxit:
+Este repo inclui uma demo que gera uma cadeia de certificados, assina um PDF com OpenSSL, instala os certs no Windows e abre o PDF no Foxit:
 
 ```bash
 dart run scripts/govbr_pdf_sign_demo.dart
 ```
 
-You can set `FOXIT_PATH` to point to a custom Foxit location.
+Você pode definir `FOXIT_PATH` para apontar para uma instalação customizada do Foxit.
 
-### Internal parser flags
+### Flags do parser interno
 
-When you need to avoid regex scanning, enable the internal parser flags:
+Quando você precisar evitar varredura por regex, habilite as flags do parser interno:
 
 ```dart
 PdfExternalSigning.useInternalByteRangeParser = true;
 PdfExternalSigning.useInternalContentsParser = true;
 ```
 
-## External signature without helpers (low-level)
+## Assinatura externa sem helpers (baixo nível)
 
-If you prefer not to use `PdfExternalSigning`, you can implement the same flow with
-low-level APIs. The steps are:
+Se você preferir não usar `PdfExternalSigning`, é possível implementar o mesmo fluxo com APIs de baixo nível. Os passos são:
 
-1) Load the PDF and add a `PdfSignatureField`.
-2) Attach a `PdfSignature` with `addExternalSigner` (placeholder).
-3) Save the PDF to create `/ByteRange` and `/Contents`.
-4) Extract the ByteRange, compute the Base64 SHA-256 hash, send to Gov.br.
-5) Inject the returned PKCS#7 into `/Contents`.
+1) Carregar o PDF e adicionar um `PdfSignatureField`.
+2) Anexar um `PdfSignature` com `addExternalSigner` (placeholder).
+3) Salvar o PDF para criar `/ByteRange` e `/Contents`.
+4) Extrair o ByteRange, calcular o hash SHA-256 em Base64 e enviar ao Gov.br.
+5) Injetar o PKCS#7 retornado dentro de `/Contents`.
 
-Minimal example:
+Exemplo mínimo:
 
 ```dart
 class _PlaceholderSigner extends IPdfExternalSigner {
@@ -1037,7 +1056,7 @@ Uint8List embedPkcs7LowLevel(Uint8List pdfBytes, List<int> pkcs7Bytes) {
 }
 ```
 
-This low-level flow mirrors the helper behavior but keeps full control in your app.
+Esse fluxo de baixo nível espelha o comportamento dos helpers, mas mantém controle total na sua aplicação.
 
 
 
