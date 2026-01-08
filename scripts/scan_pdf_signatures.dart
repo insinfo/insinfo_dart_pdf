@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_signature_validator.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   try {
-    final Directory dir = Directory(r'C:\MyDartProjects\insinfo_dart_pdf\test\assets\12');
+    final String dirPath = args.isNotEmpty ? args.first : 'test/assets';
+    final Directory dir = Directory(dirPath);
     if (!dir.existsSync()) {
       print('Directory not found: ${dir.path}');
+      print('Usage: dart run scripts/scan_pdf_signatures.dart [directory]');
       return;
     }
 

@@ -207,7 +207,7 @@ Future<List<CandidatePdf>> _findCandidatesInFolder({
 }
 
 Future<void> main(List<String> args) async {
-  String sourceDirPath = 'test/assets/12';
+  String sourceDirPath = 'test/assets';
   String targetDirPath = 'test/assets';
   bool dryRun = false;
   bool recursive = false;

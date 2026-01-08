@@ -7,13 +7,17 @@ import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/x509_name.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/asn1/der.dart';
 
-Future<void> main() async {
-  final targetSigners = ['leonardo', 'mauricio', 'maurício'];
+Future<void> main(List<String> args) async {
+  final String dirPath = args.isNotEmpty ? args.first : 'test/assets';
+  final List<String> targetSigners = args.length >= 2
+      ? args.skip(1).map((s) => s.toLowerCase()).toList(growable: false)
+      : ['leonardo', 'mauricio', 'maurício'];
   
   try {
-    final Directory dir = Directory(r'C:\MyDartProjects\insinfo_dart_pdf\test\assets\12');
+    final Directory dir = Directory(dirPath);
     if (!dir.existsSync()) {
       print('Directory not found: ${dir.path}');
+      print('Usage: dart run scripts/scan_pdf_specific_signers.dart [directory] [signerSubstr...]');
       return;
     }
 

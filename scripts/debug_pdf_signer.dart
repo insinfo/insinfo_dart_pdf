@@ -7,12 +7,14 @@ import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/x509_name.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/asn1/der.dart';
 
-Future<void> main() async {
-  final filePath = r'C:\MyDartProjects\insinfo_dart_pdf\test\assets\12\abeab9d6-3e8e-419e-9e3f-8f6cf813bb36.pdf';
+Future<void> main(List<String> args) async {
+  final String filePath =
+      args.isNotEmpty ? args.first : 'test/assets/generated_policy_mandated_timestamp_missing.pdf';
   final file = File(filePath);
 
   if (!file.existsSync()) {
     print('File not found: $filePath');
+    print('Usage: dart run scripts/debug_pdf_signer.dart [pdfPath]');
     return;
   }
 

@@ -29,8 +29,6 @@ O pacote PDF é uma biblioteca Flutter reutilizável (sem UI) para criar relató
   - [Assinatura digital](#assinatura-digital)
 - [Validação de assinaturas (PAdES / server-side)](#validação-de-assinaturas-pades--server-side)
 - [Assinatura externa Gov.br (server-side)](#assinatura-externa-govbr-server-side)
-- [Suporte e feedback](#support-and-feedback)
-- [Sobre a Insinfo<sup>&reg;</sup>](#about-insinfo)
 
 <a id="key-features"></a>
 
@@ -63,9 +61,11 @@ Importe o pacote abaixo no seu projeto para criar um PDF do zero.
 import 'package:dart_pdf/pdf.dart';
 ```
 
-### Create a PDF document from simple text
+<a id="create-a-pdf-document-from-simple-text"></a>
 
-Add the following code to create a simple PDF document.
+### Criar um documento PDF com texto simples
+
+Adicione o código abaixo para criar um documento PDF simples.
 
 ```dart
 
@@ -81,9 +81,11 @@ File('HelloWorld.pdf').writeAsBytes(await document.save());
 document.dispose();
 ```
 
-### Add text using TrueType fonts
+<a id="add-text-using-truetype-fonts"></a>
 
-Use the following code to add a Unicode text to the PDF document.
+### Adicionar texto usando fontes TrueType
+
+Use o código abaixo para adicionar texto Unicode ao documento PDF.
 
 ```dart
 
@@ -101,9 +103,11 @@ File('TrueType.pdf').writeAsBytes(await document.save());
 document.dispose();
 ```
 
-### Add images to a PDF document
+<a id="add-images-to-a-pdf-document"></a>
 
-The PdfBitmap class is used to draw images in a PDF document. Insinfo<sup>&reg;</sup> Flutter PDF supports PNG and JPEG images. Refer to the following code to draw images in a PDF document. 
+### Adicionar imagens a um documento PDF
+
+A classe `PdfBitmap` é usada para desenhar imagens em um documento PDF. O Insinfo<sup>&reg;</sup> Flutter PDF suporta imagens PNG e JPEG. Veja o código abaixo para desenhar imagens em um PDF.
 
 ```dart
 
@@ -123,23 +127,24 @@ File('ImageToPDF.pdf').writeAsBytes(await document.save());
 document.dispose();
 ```
 
-### PDF document with flow layout
+<a id="pdf-document-with-flow-layout"></a>
 
-Add the following code to create a PDF document with flow layout.
+### Documento PDF com layout fluido (flow)
+
+Adicione o código abaixo para criar um documento PDF com layout fluido (flow).
 
 ```dart
 const String paragraphText =
-    'Adobe Systems Incorporated\'s Portable Document Format (PDF) is the de facto'
-    'standard for the accurate, reliable, and platform-independent representation of a paged'
-    'document. It\'s the only universally accepted file format that allows pixel-perfect layouts.'
-    'In addition, PDF supports user interaction and collaborative workflows that are not'
-    'possible with printed documents.';
+  'O Portable Document Format (PDF) é um padrão de fato para a representação precisa, '
+  'confiável e independente de plataforma de documentos paginados. Ele é um dos formatos '
+  'mais aceitos para layouts fiéis ao pixel. Além disso, o PDF oferece suporte a interação '
+  'do usuário e fluxos colaborativos que não são possíveis em documentos impressos.';
 
-// Create a new PDF document.
+// Cria um novo documento PDF.
 final PdfDocument document = PdfDocument();
-// Add a new page to the document.
+// Adiciona uma nova página ao documento.
 final PdfPage page = document.pages.add();
-// Create a new PDF text element class and draw the flow layout text.
+// Cria um elemento de texto PDF e desenha o texto em layout fluido.
 final PdfLayoutResult layoutResult = PdfTextElement(
         text: paragraphText,
         font: PdfStandardFont(PdfFontFamily.helvetica, 12),
@@ -149,27 +154,29 @@ final PdfLayoutResult layoutResult = PdfTextElement(
         bounds: Rect.fromLTWH(
             0, 0, page.getClientSize().width, page.getClientSize().height),
         format: PdfLayoutFormat(layoutType: PdfLayoutType.paginate))!;
-// Draw the next paragraph/content.
+// Desenha o próximo parágrafo/conteúdo.
 page.graphics.drawLine(
     PdfPen(PdfColor(255, 0, 0)),
     Offset(0, layoutResult.bounds.bottom + 10),
     Offset(page.getClientSize().width, layoutResult.bounds.bottom + 10));
-// Save the document.
+// Salva o documento.
 File('TextFlow.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-### Add bullets and lists
+<a id="add-bullets-and-lists"></a>
 
-Add the following code to create bullets and lists in a PDF document.
+### Adicionar bullets e listas
+
+Adicione o código abaixo para criar bullets e listas em um documento PDF.
 
 ```dart
-// Create a new PDF document.
+// Cria um novo documento PDF.
 final PdfDocument document = PdfDocument();
-// Add a new page to the document.
+// Adiciona uma nova página ao documento.
 final PdfPage page = document.pages.add();
-// Create a PDF ordered list.
+// Cria uma lista ordenada.
 final PdfOrderedList orderedList = PdfOrderedList(
     items: PdfListItemCollection(<String>[
       'Mammals',
@@ -184,7 +191,7 @@ final PdfOrderedList orderedList = PdfOrderedList(
     markerHierarchy: true,
     format: PdfStringFormat(lineSpacing: 10),
     textIndent: 10);
-// Create a un ordered list and add it as a sublist.
+// Cria uma lista não ordenada e adiciona como sublista.
 orderedList.items[0].subList = PdfUnorderedList(
     marker: PdfUnorderedMarker(
         font: PdfStandardFont(PdfFontFamily.helvetica, 10),
@@ -198,369 +205,389 @@ orderedList.items[0].subList = PdfUnorderedList(
     ]),
     textIndent: 10,
     indent: 20);
-// Draw the list to the PDF page.
+// Desenha a lista na página PDF.
 orderedList.draw(
     page: page,
     bounds: Rect.fromLTWH(
         0, 0, page.getClientSize().width, page.getClientSize().height));
-// Save the document.
+// Salva o documento.
 File('BulletandList.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-### Add tables
+<a id="add-tables"></a>
 
-Add the following code to create a PDF table.
+### Adicionar tabelas
+
+Adicione o código abaixo para criar uma tabela em PDF.
 
 ```dart
-// Create a new PDF document.
+// Cria um novo documento PDF.
 final PdfDocument document = PdfDocument();
-// Add a new page to the document.
+// Adiciona uma nova página ao documento.
 final PdfPage page = document.pages.add();
-// Create a PDF grid class to add tables.
+// Cria um grid PDF para adicionar tabelas.
 final PdfGrid grid = PdfGrid();
-// Specify the grid column count.
+// Define o número de colunas do grid.
 grid.columns.add(count: 3);
-// Add a grid header row.
+// Adiciona uma linha de cabeçalho.
 final PdfGridRow headerRow = grid.headers.add(1)[0];
 headerRow.cells[0].value = 'Customer ID';
 headerRow.cells[1].value = 'Contact Name';
 headerRow.cells[2].value = 'Country';
-// Set header font.
+// Define a fonte do cabeçalho.
 headerRow.style.font =
     PdfStandardFont(PdfFontFamily.helvetica, 10, style: PdfFontStyle.bold);
-// Add rows to the grid.
+// Adiciona linhas ao grid.
 PdfGridRow row = grid.rows.add();
 row.cells[0].value = 'ALFKI';
 row.cells[1].value = 'Maria Anders';
 row.cells[2].value = 'Germany';
-// Add next row.
+// Adiciona a próxima linha.
 row = grid.rows.add();
 row.cells[0].value = 'ANATR';
 row.cells[1].value = 'Ana Trujillo';
 row.cells[2].value = 'Mexico';
-// Add next row.
+// Adiciona a próxima linha.
 row = grid.rows.add();
 row.cells[0].value = 'ANTON';
 row.cells[1].value = 'Antonio Mereno';
 row.cells[2].value = 'Mexico';
-// Set grid format.
+// Ajusta o formato do grid.
 grid.style.cellPadding = PdfPaddings(left: 5, top: 5);
-// Draw table in the PDF page.
+// Desenha a tabela na página PDF.
 grid.draw(
     page: page,
     bounds: Rect.fromLTWH(
         0, 0, page.getClientSize().width, page.getClientSize().height));
-// Save the document.
+// Salva o documento.
 File('PDFTable.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-### Add headers and footers
+<a id="add-headers-and-footers"></a>
 
-Use the following code to add headers and footers to a PDF document.
+### Adicionar cabeçalhos e rodapés
+
+Use o código abaixo para adicionar cabeçalho e rodapé a um documento PDF.
 
 ```dart
-//Create a new PDF document.
+// Cria um novo documento PDF.
 final PdfDocument document = PdfDocument();
-//Create a PDF page template and add header content.
+// Cria um template de página e adiciona o conteúdo do cabeçalho.
 final PdfPageTemplateElement headerTemplate =
     PdfPageTemplateElement(const Rect.fromLTWH(0, 0, 515, 50));
-//Draw text in the header.
+// Desenha texto no cabeçalho.
 headerTemplate.graphics.drawString(
-    'This is page header', PdfStandardFont(PdfFontFamily.helvetica, 12),
+  'Este é o cabeçalho da página', PdfStandardFont(PdfFontFamily.helvetica, 12),
     bounds: const Rect.fromLTWH(0, 15, 200, 20));
-//Add the header element to the document.
+// Adiciona o elemento de cabeçalho ao documento.
 document.template.top = headerTemplate;
-//Create a PDF page template and add footer content.
+// Cria um template de página e adiciona o conteúdo do rodapé.
 final PdfPageTemplateElement footerTemplate =
     PdfPageTemplateElement(const Rect.fromLTWH(0, 0, 515, 50));
-//Draw text in the footer.
+// Desenha texto no rodapé.
 footerTemplate.graphics.drawString(
-    'This is page footer', PdfStandardFont(PdfFontFamily.helvetica, 12),
+  'Este é o rodapé da página', PdfStandardFont(PdfFontFamily.helvetica, 12),
     bounds: const Rect.fromLTWH(0, 15, 200, 20));
-//Set footer in the document.
+// Define o rodapé no documento.
 document.template.bottom = footerTemplate;
-//Now create pages.
+// Agora cria páginas.
 document.pages.add();
 document.pages.add();
-// Save the document.
+// Salva o documento.
 File('HeaderandFooter.pdf').writeAsBytes(await document.save());
-// Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-### Load and modify an existing PDF document
+<a id="load-and-modify-an-existing-pdf-document"></a>
 
-Add the following code to load and modify the existing PDF document.
+### Carregar e modificar um documento PDF existente
+
+Adicione o código abaixo para carregar e modificar um documento PDF existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Get the existing PDF page.
+// Obtém a página existente.
 final PdfPage page = document.pages[0];
-//Draw text in the PDF page.
+// Desenha texto na página do PDF.
 page.graphics.drawString(
     'Hello World!', PdfStandardFont(PdfFontFamily.helvetica, 12),
     brush: PdfSolidBrush(PdfColor(0, 0, 0)),
     bounds: const Rect.fromLTWH(0, 0, 150, 20));
-//Save the document.
+// Salva o documento.
 File('output.pdf').writeAsBytes(await document.save());
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-Add the following code to add or remove a page from the existing PDF document.
+Adicione o código abaixo para adicionar ou remover uma página de um documento PDF existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Remove the page from the document.
+// Remove a página do documento.
 document.pages.removeAt(0);
-//Add new page and draw text.
+// Adiciona uma nova página e desenha texto.
 document.pages.add().graphics.drawString(
     'Hello World!', PdfStandardFont(PdfFontFamily.helvetica, 12),
     brush: PdfSolidBrush(PdfColor(0, 0, 0)),
     bounds: const Rect.fromLTWH(0, 0, 150, 20));
-//Save the document.
+// Salva o documento.
 File('output.pdf').writeAsBytes(await document.save());
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-### Create and load annotations
+<a id="create-and-load-annotations"></a>
 
-Using this package, we can create and load annotations in a new or existing PDF document.
+### Criar e carregar anotações
 
-Add the following code to create a new annotation in a PDF document.
+Com este pacote, é possível criar e carregar anotações em um documento PDF novo ou existente.
+
+Adicione o código abaixo para criar uma nova anotação em um PDF.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Create a new rectangle annotation and add to the PDF page.
+// Cria uma anotação retangular e adiciona à página do PDF.
 document.pages[0].annotations.add(PdfRectangleAnnotation(
       Rect.fromLTWH(0, 0, 150, 100), 'Rectangle',
       color: PdfColor(255, 0, 0), setAppearance: true));
-//Save the document.
+// Salva o documento.
 File('annotations.pdf').writeAsBytes(await document.save());
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-Add the following code to load the annotation and modify it.
+Adicione o código abaixo para carregar a anotação e modificá-la.
 
 ```dart
-//Load and modify the existing annotation.
+// Carrega e modifica a anotação existente.
 final PdfRectangleAnnotation rectangleAnnotation =
     document.pages[0].annotations[0] as PdfRectangleAnnotation;
-//Change the annotation text.
+// Altera o texto da anotação.
 rectangleAnnotation.text = 'Changed';
 ```
 
 
 
-### Add bookmarks
+<a id="add-bookmarks"></a>
 
-Add the following code to create bookmarks in a PDF document.
+### Adicionar bookmarks
+
+Adicione o código abaixo para criar bookmarks em um documento PDF.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Create a document bookmark.
-final PdfBookmark bookmark = document.bookmarks.add('Page 1');
-//Set the destination page and location.
+// Cria um bookmark no documento.
+final PdfBookmark bookmark = document.bookmarks.add('Página 1');
+// Define a página de destino e a posição.
 bookmark.destination = PdfDestination(document.pages[1], Offset(20, 20));
-//Set the bookmark color.
+// Define a cor do bookmark.
 bookmark.color = PdfColor(255, 0, 0);
-//Save the document.
+// Salva o documento.
 File('bookmark.pdf').writeAsBytes(await document.save());
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
 
 
-### Extract text
+<a id="extract-text"></a>
 
-Using this package, we can extract text from an existing PDF document along with its bounds.
+### Extrair texto
 
-Add the following code to extract text from a PDF document.
+Com este pacote, é possível extrair texto de um documento PDF existente, junto com suas coordenadas (bounds).
+
+Adicione o código abaixo para extrair texto de um documento PDF.
 
 ```dart
-//Load an existing PDF document.
+// Carrega um documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Extract the text from all the pages.
+// Extrai texto de todas as páginas.
 String text = PdfTextExtractor(document).extractText();
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
-The following code sample explains how to extract text from a specific page.
+O exemplo abaixo mostra como extrair texto de uma página específica.
 
 ```dart
-//Load an existing PDF document.
+// Carrega um documento PDF existente.
 PdfDocument document =
    PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Extract the text from page 1.
+// Extrai o texto da página 1.
 String text = PdfTextExtractor(document).extractText(startPageIndex: 0);
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
 
 
-### Find text
+<a id="find-text"></a>
 
-Using this package, we can find text in an existing PDF document along with its bounds and page index.
+### Buscar texto
 
-Add the following code to find text in a PDF document.
+Com este pacote, é possível buscar texto em um documento PDF existente, junto com coordenadas (bounds) e índice da página.
+
+Adicione o código abaixo para buscar texto em um documento PDF.
 
 ```dart
-//Load an existing PDF document.
+// Carrega um documento PDF existente.
 PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
-//Find the text and get matched items.
+// Busca o texto e obtém os itens correspondentes.
 List<MatchedItem> textCollection =
     PdfTextExtractor(document).findText(['text1', 'text2']); 
-//Get the matched item in the collection using index.
+// Obtém o item correspondente na coleção usando o índice.
 MatchedItem matchedText = textCollection[0];
-//Get the text bounds.
+// Obtém as coordenadas (bounds) do texto.
 Rect textBounds = matchedText.bounds;  
-//Get the page index.
+// Obtém o índice da página.
 int pageIndex = matchedText.pageIndex; 
-//Get the text.
+// Obtém o texto.
 String text = matchedText.text;
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
 
 
-### Encryption and decryption
+<a id="encryption-and-decryption"></a>
 
-Encrypt new or existing PDF documents with encryption standards like 40-bit RC4, 128-bit RC4, 128-bit AES, and 256-bit AES, and the advanced encryption standard 256-bit AES Revision 6 (PDF 2.0) to protect documents against unauthorized access. Using this package, you can also decrypt existing encrypted documents.
+### Criptografia e descriptografia
 
-Add the following code to encrypt an existing PDF document.
+Criptografe documentos PDF novos ou existentes com padrões como RC4 40-bit, RC4 128-bit, AES 128-bit e AES 256-bit, incluindo AES 256-bit Revision 6 (PDF 2.0), para proteger documentos contra acesso não autorizado. Com este pacote, você também pode descriptografar documentos já criptografados.
+
+Adicione o código abaixo para criptografar um documento PDF existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
 
-//Add security to the document.
+// Adiciona segurança ao documento.
 final PdfSecurity security = document.security;
 
-//Set password.
+// Define senhas.
 security.userPassword = 'userpassword@123';
 security.ownerPassword = 'ownerpassword@123';
 
-//Set the encryption algorithm.
+// Define o algoritmo de criptografia.
 security.algorithm = PdfEncryptionAlgorithm.aesx256Bit;
 
-//Save the document.
+// Salva o documento.
 File('secured.pdf').writeAsBytes(await document.save());
 
-//Dispose the document.
+// Libera o documento.
 document.dispose();
 ```
 
 
 
-### PDF conformance
+<a id="pdf-conformance"></a>
 
-Using this package, we can create PDF conformance documents, such as:
+### Conformidade PDF
+
+Com este pacote, é possível criar documentos PDF em conformidade com padrões como:
 
 * PDF/A-1B
 * PDF/A-2B
 * PDF/A-3B
 
-Add the following code to create a PDF conformance document.
+Adicione o código abaixo para criar um documento PDF em conformidade.
 
 ```dart
-//Create a PDF conformance document.
+// Cria um documento PDF em conformidade.
 final PdfDocument document = PdfDocument(conformanceLevel: PdfConformanceLevel.a1b)
   ..pages.add().graphics.drawString('Hello World',
       PdfTrueTypeFont(File('Roboto-Regular.ttf').readAsBytesSync(), 12),
       bounds: Rect.fromLTWH(20, 20, 200, 50), brush: PdfBrushes.black);
-//Save and dispose the document.
+// Salva e libera o documento.
 File('conformance.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
 
 
-### PDF form
+<a id="pdf-form"></a>
 
-PDF forms provide the best way to collect information from users. Using this package, we can create, modify, fill, and flatten PDF forms.
+### Formulários PDF
 
-Add the following code to create PDF form.
+Formulários PDF são uma forma prática de coletar informações de usuários. Com este pacote, é possível criar, modificar, preencher e “achatar” (flatten) formulários PDF.
+
+Adicione o código abaixo para criar um formulário PDF.
 
 ```dart
-//Create a new PDF document.
+// Cria um novo documento PDF.
 PdfDocument document = PdfDocument();
 
-//Create a new page to add form fields.
+// Cria uma nova página para adicionar campos.
 PdfPage page = document.pages.add();
 
-//Create text box field and add to the forms collection.
+// Cria um campo de texto e adiciona ao formulário.
 document.form.fields.add(PdfTextBoxField(
     page, 'firstname', Rect.fromLTWH(0, 0, 100, 20),
     text: 'John'));
 
-//Create check box field and add to the form.
+// Cria um checkbox e adiciona ao formulário.
 document.form.fields.add(PdfCheckBoxField(
     page, 'checkbox', Rect.fromLTWH(150, 0, 30, 30),
     isChecked: true));
 
-//Save and dispose the document.
+// Salva e libera o documento.
 File('form.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
-Add the following code to fill the existing PDF form.
+Adicione o código abaixo para preencher um formulário PDF existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
 
-//Get the form.
+// Obtém o formulário.
 PdfForm form = document.form;
 
-//Get text box and fill value.
+// Obtém o campo de texto e preenche o valor.
 PdfTextBoxField name = document.form.fields[0] as PdfTextBoxField;
 name.text = 'John';
 
-//Get the radio button and select.
+// Obtém o radio button e seleciona.
 PdfRadioButtonListField gender = form.fields[1] as PdfRadioButtonListField;
 gender.selectedIndex = 1;
 
-//Save and dispose the document.
+// Salva e libera o documento.
 File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
-Add the following code to flatten the existing form.
+Adicione o código abaixo para achatar (flatten) um formulário existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
 
-//Get the form.
+// Obtém o formulário.
 PdfForm form = document.form;
 
-//Flatten all the form fields.
+// Achata todos os campos do formulário.
 form.flattenAllFields();
 
-//Save and dispose the document.
+// Salva e libera o documento.
 File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
@@ -574,13 +601,13 @@ A assinatura digital em PDF é uma forma robusta de proteger seus documentos con
 Use o exemplo abaixo para assinar um PDF novo.
 
 ```dart
-//Create a new PDF document.
+// Cria um novo documento PDF.
 PdfDocument document = PdfDocument();
 
-//Add a new PDF page.
+// Adiciona uma nova página PDF.
 PdfPage page = document.pages.add();
 
-//Create signature field.
+// Cria o campo de assinatura.
 PdfSignatureField signatureField = PdfSignatureField(page, 'Signature',
     bounds: Rect.fromLTWH(0, 0, 200, 50),
     signature: PdfSignature(
@@ -588,31 +615,31 @@ PdfSignatureField signatureField = PdfSignatureField(page, 'Signature',
           PdfCertificate(File('certificate.pfx').readAsBytesSync(), 'password@123')
     ));
   
-//Add the signature field to the document.
+// Adiciona o campo de assinatura ao documento.
 document.form.fields.add(signatureField);
 
-//Save and dispose the PDF document
+// Salva e libera o documento PDF
 File('signed.pdf').writeAsBytes(await document.save());
 document.dispose();
 ```
 Use o exemplo abaixo para assinar um PDF existente.
 
 ```dart
-//Load the existing PDF document.
+// Carrega o documento PDF existente.
 final PdfDocument document =
     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync());
 
-//Get the signature field.
+// Obtém o campo de assinatura.
 PdfSignatureField signatureField =
     document.form.fields[0] as PdfSignatureField;
 
-//Get signature field and sign.
+// Configura a assinatura no campo e assina.
 signatureField.signature = PdfSignature(
   certificate:
       PdfCertificate(File('certificate.pfx').readAsBytesSync(), 'password@123'),
 );
 
-//Save and dispose the document.
+// Salva e libera o documento.
 File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
@@ -638,7 +665,7 @@ Nota sobre severidade de timestamp (ICP-Brasil / Gov.br):
 
 ### Scripts de teste (ICP-Brasil / policy exige timestamp)
 
-Para evitar dependências de pastas removíveis (ex.: `test/assets/12`) e ter um caso de teste determinístico, este repositório inclui um gerador de PDF assinado que:
+Para evitar dependências de pastas removíveis (ex.: uma pasta local grande de PDFs) e ter um caso de teste determinístico, este repositório inclui um gerador de PDF assinado que:
 
 - Cria uma cadeia de certificados (Root → Intermediate → Leaf) via OpenSSL.
 - Assina um PDF com CMS detached.
@@ -678,10 +705,10 @@ openssl cms -inform DER -in .dart_tool/generated_sig.der -cmsout -print -noout
 
 ### Curadoria de PDFs de teste (opcional)
 
-Se você tiver uma pasta com muitos PDFs e quiser copiar exemplos “bons” para `test/assets`, use:
+Se você tiver uma pasta com muitos PDFs e quiser copiar exemplos “bons” para `test/assets`, use (ajuste `--source` para sua pasta local):
 
 ```bash
-dart run scripts/curate_policy_timestamp_test_pdfs.dart --source test/assets/12 --target test/assets policy-oid 3 1
+dart run scripts/curate_policy_timestamp_test_pdfs.dart --source test/assets --target test/assets policy-oid 3 1
 ```
 
 Modos suportados: `policy-mandated-ts-missing`, `policy-oid`, `signed-any`, `multi-sig`.
