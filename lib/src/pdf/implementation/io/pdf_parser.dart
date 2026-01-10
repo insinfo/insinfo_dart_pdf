@@ -21,6 +21,16 @@ import 'pdf_cross_table.dart';
 import 'pdf_lexer.dart';
 import 'pdf_reader.dart';
 
+const bool _debugXref =
+    bool.fromEnvironment('PDF_DEBUG_XREF', defaultValue: false);
+
+void _debugXrefLog(String message) {
+  if (_debugXref) {
+    // ignore: avoid_print
+    print('[pdf][parser] $message');
+  }
+}
+
 /// internal class
 class PdfParser {
   //Constructor
@@ -206,10 +216,13 @@ class PdfParser {
     CrossTable cTable,
   ) {
     IPdfPrimitive? obj;
+    _debugXrefLog('parseCrossReferenceTable at readerPos=${_reader.position}');
     advance();
     if (_next == PdfTokenType.xRef) {
+      _debugXrefLog('xref table (old style)');
       _parseOldXRef(cTable, objects);
       obj = trailer();
+      _debugXrefLog('trailer parsed (old style)');
       final PdfDictionary trailerDic = obj as PdfDictionary;
       if (trailerDic.containsKey('Size')) {
         final int size = (trailerDic['Size']! as PdfNumber).value!.toInt();
@@ -236,12 +249,14 @@ class PdfParser {
         }
       }
     } else {
+      _debugXrefLog('xref stream');
       obj = _parse();
       objects = cTable.parseNewTable(obj as PdfStream?, objects);
     }
     if (obj is PdfDictionary &&
         _crossTable != null &&
         obj.containsKey('XRefStm')) {
+      _debugXrefLog('XRefStm present in trailer');
       try {
         int xrefStreamPosition = 0;
         final PdfDictionary trailerDictionary = obj;
@@ -251,6 +266,7 @@ class PdfParser {
         if (pdfNumber != null && pdfNumber is PdfNumber) {
           xrefStreamPosition = pdfNumber.value!.toInt();
         }
+        _debugXrefLog('XRefStm offset=$xrefStreamPosition');
         cTable.parser.setOffset(xrefStreamPosition);
         final IPdfPrimitive? xrefStream = cTable.parser.parseOffset(
           xrefStreamPosition,
@@ -260,6 +276,7 @@ class PdfParser {
         }
       } catch (e) {
         //exception may occurs if offest is not correct/crosstable is corrupted.
+        _debugXrefLog('XRefStm parse failed: $e');
       }
     }
     return <String, dynamic>{'object': obj, 'objects': objects};

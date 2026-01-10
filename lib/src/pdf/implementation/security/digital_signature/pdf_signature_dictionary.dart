@@ -551,14 +551,18 @@ class PdfSignatureDictionary implements IPdfWrapper {
       final KeyEntry pk = PdfCertificateHelper.getPkcsCertificate(
         _cert!,
       ).getKey(certificateAlias)!;
-      final List<X509Certificates> certificates =
+      List<X509Certificates>? certificates =
           PdfCertificateHelper.getPkcsCertificate(
         _cert!,
-      ).getCertificateChain(certificateAlias)!;
-      // ignore: avoid_function_literals_in_foreach_calls
-      certificates.forEach((X509Certificates c) {
-        chain!.add(c.certificate);
-      });
+      ).getCertificateChain(certificateAlias);
+      if (certificates == null || certificates.isEmpty) {
+        certificates = PdfCertificateHelper.getPkcsCertificate(
+          _cert!,
+        ).getChainCertificates();
+      }
+      for (final X509Certificates c in certificates) {
+        chain.add(c.certificate);
+      }
       final RsaPrivateKeyParam? parameters = pk.key as RsaPrivateKeyParam?;
       final String digest = _sig != null
           ? getDigestAlgorithm(_sig!.digestAlgorithm)
@@ -669,10 +673,14 @@ class PdfSignatureDictionary implements IPdfWrapper {
         ).getCertificateChainAsync(certificateAlias).then((
           List<X509Certificates>? certificates,
         ) {
-          // ignore: avoid_function_literals_in_foreach_calls
-          certificates!.forEach((X509Certificates c) {
+          if (certificates == null || certificates.isEmpty) {
+            certificates = PdfCertificateHelper.getPkcsCertificate(
+              _cert!,
+            ).getChainCertificates();
+          }
+          for (final X509Certificates c in certificates) {
             chain!.add(c.certificate);
-          });
+          }
           final RsaPrivateKeyParam? parameters = pk.key as RsaPrivateKeyParam?;
           final String digest = _sig != null
               ? getDigestAlgorithm(_sig!.digestAlgorithm)

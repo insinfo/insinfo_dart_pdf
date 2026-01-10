@@ -41,6 +41,7 @@ example/windows/
 pubspec.lock
 
 
+
 changes_isaque.md
 riodasostras_rj_gov_br_chained.crt
 riodasostras_rj_gov_br.csr
@@ -51,4 +52,4 @@ estampa1382141175514466498.png
 example2/
 merged_dart_pdf_code.dart.txt
 referencias/
-
+test/tmp/

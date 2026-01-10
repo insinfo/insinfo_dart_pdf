@@ -14,6 +14,16 @@ import 'pdf_cross_table.dart';
 import 'pdf_parser.dart';
 import 'pdf_reader.dart';
 
+const bool _debugXref =
+    bool.fromEnvironment('PDF_DEBUG_XREF', defaultValue: false);
+
+void _debugXrefLog(String message) {
+  if (_debugXref) {
+    // ignore: avoid_print
+    print('[pdf][xref] $message');
+  }
+}
+
 /// internal class
 class CrossTable {
   //Constructor
@@ -121,6 +131,7 @@ class CrossTable {
     _readersTable = <PdfStream, PdfParser>{};
     _allTables = <int, List<ObjectInformation>>{};
     final int startingOffset = _checkJunk();
+    _debugXrefLog('startingOffset=$startingOffset dataLen=${_data.length}');
     if (startingOffset < 0) {
       throw ArgumentError.value(
         startingOffset,
@@ -157,9 +168,11 @@ class CrossTable {
     }
     position = reader.searchBack(PdfOperators.startCrossReference);
     bool isForwardSearch = false;
+    _debugXrefLog('startxref searchBack position=$position');
     if (position >= 0) {
       parser.setOffset(position);
       position = parser.startCrossReference();
+      _debugXrefLog('startxref value=$position');
       startCrossReference = position;
       _parser!.setOffset(position);
       if (_whiteSpace != 0) {
@@ -175,6 +188,9 @@ class CrossTable {
           parser.setOffset(position);
           isForwardSearch = true;
         }
+        _debugXrefLog(
+          'xref forwardSearch=$isForwardSearch position=$position whiteSpace=$_whiteSpace',
+        );
       }
     }
     String tempString = reader.readLine();
@@ -206,6 +222,7 @@ class CrossTable {
     }
     reader.position = position;
     try {
+      _debugXrefLog('parseCrossReferenceTable offset=$position');
       final Map<String, dynamic> tempResult = parser.parseCrossReferenceTable(
         objects,
         this,
@@ -216,6 +233,8 @@ class CrossTable {
       throw ArgumentError.value(trailer, 'Invalid cross reference table.');
     }
     PdfDictionary trailerObj = trailer!;
+    _debugXrefLog('trailer keys=${trailerObj.items?.keys.length ?? 0}');
+    final Set<int> visitedPrevOffsets = <int>{};
     while (trailerObj.containsKey(PdfDictionaryProperties.prev)) {
       if (_whiteSpace != 0) {
         final PdfNumber number =
@@ -226,9 +245,22 @@ class CrossTable {
       position =
           (trailerObj[PdfDictionaryProperties.prev]! as PdfNumber).value!
               .toInt();
+      _debugXrefLog('prev=$position');
+      if (position <= 0 || position >= _reader!.length!) {
+        _debugXrefLog('prev out of range, breaking');
+        break;
+      }
+      if (!visitedPrevOffsets.add(position)) {
+        _debugXrefLog('prev loop detected at $position, breaking');
+        break;
+      }
       final PdfReader tokenReader = PdfReader(_reader!.streamReader.data);
       tokenReader.position = position;
       String? token = tokenReader.getNextToken();
+      while (token == '%') {
+        tokenReader.readLine();
+        token = tokenReader.getNextToken();
+      }
       if (token != PdfDictionaryProperties.crossReference) {
         token = tokenReader.getNextToken();
         //check the coditon for valid object number

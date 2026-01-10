@@ -590,7 +590,6 @@ class PdfPKCSCertificate {
     X509Certificates? certificates = getCertificate(key);
     if (certificates != null) {
       final List<X509Certificates> certificateList = <X509Certificates>[];
-      bool isContinue = true;
       while (certificates != null) {
         final X509Certificate x509Certificate = certificates.certificate!;
         X509Certificates? nextCertificate;
@@ -616,32 +615,25 @@ class PdfPKCSCertificate {
           if (!(issuer == subject)) {
             final List<_CertificateIdentifier> keys =
                 _chainCertificates.keys.toList();
-            // ignore: avoid_function_literals_in_foreach_calls
-            keys.forEach((_CertificateIdentifier certId) {
-              X509Certificates? x509CertEntry;
-              if (_chainCertificates.containsKey(certId)) {
-                x509CertEntry = _chainCertificates[certId];
+            for (final _CertificateIdentifier certId in keys) {
+              final X509Certificates? x509CertEntry =
+                  _chainCertificates[certId];
+              if (x509CertEntry == null) {
+                continue;
               }
-              final X509Certificate certificate = x509CertEntry!.certificate!;
+              final X509Certificate certificate = x509CertEntry.certificate!;
               if (certificate.c!.subject == issuer) {
-                try {
-                  // x509Certificate.verify(certificate.getPublicKey());
-                  // nextCertificate = x509CertEntry;
-                  isContinue = false;
-                } catch (e) {
-                  //
-                }
+                nextCertificate = x509CertEntry;
+                break;
               }
-            });
+            }
           }
         }
-        if (isContinue) {
-          certificateList.add(certificates);
-          certificates =
-              nextCertificate != null && nextCertificate != certificates
-                  ? nextCertificate
-                  : null;
-        }
+        certificateList.add(certificates);
+        certificates =
+            nextCertificate != null && nextCertificate != certificates
+                ? nextCertificate
+                : null;
       }
       return List<X509Certificates>.generate(
         certificateList.length,
@@ -660,7 +652,6 @@ class PdfPKCSCertificate {
     await getCertificateAsync(key).then((X509Certificates? certificates) {
       if (certificates != null) {
         final List<X509Certificates> certificateList = <X509Certificates>[];
-        bool isContinue = true;
         while (certificates != null) {
           final X509Certificate x509Certificate = certificates.certificate!;
           X509Certificates? nextCertificate;
@@ -686,32 +677,26 @@ class PdfPKCSCertificate {
             if (!(issuer == subject)) {
               final List<_CertificateIdentifier> keys =
                   _chainCertificates.keys.toList();
-              // ignore: avoid_function_literals_in_foreach_calls
-              keys.forEach((_CertificateIdentifier certId) {
-                X509Certificates? x509CertEntry;
-                if (_chainCertificates.containsKey(certId)) {
-                  x509CertEntry = _chainCertificates[certId];
+              for (final _CertificateIdentifier certId in keys) {
+                final X509Certificates? x509CertEntry =
+                    _chainCertificates[certId];
+                if (x509CertEntry == null) {
+                  continue;
                 }
-                final X509Certificate certificate = x509CertEntry!.certificate!;
+                final X509Certificate certificate =
+                    x509CertEntry.certificate!;
                 if (certificate.c!.subject == issuer) {
-                  try {
-                    // x509Certificate.verify(certificate.getPublicKey());
-                    // nextCertificate = x509CertEntry;
-                    isContinue = false;
-                  } catch (e) {
-                    //
-                  }
+                  nextCertificate = x509CertEntry;
+                  break;
                 }
-              });
+              }
             }
           }
-          if (isContinue) {
-            certificateList.add(certificates);
-            certificates =
-                nextCertificate != null && nextCertificate != certificates
-                    ? nextCertificate
-                    : null;
-          }
+          certificateList.add(certificates);
+          certificates =
+              nextCertificate != null && nextCertificate != certificates
+                  ? nextCertificate
+                  : null;
         }
         x509Certificates = List<X509Certificates>.generate(
           certificateList.length,

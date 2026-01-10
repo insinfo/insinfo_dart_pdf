@@ -646,6 +646,102 @@ document.dispose();
 
 ## Validação de assinaturas (PAdES / server-side)
 
+### Testes com Certificados de Desenvolvimento
+
+Para testar assinaturas digitais em ambiente de desenvolvimento, a biblioteca inclui ferramentas para gerar uma cadeia de certificados de teste completa (4 níveis) no estilo ICP-Brasil:
+
+```
+Root CA (Autoridade Certificadora Raiz)
+ └── AC Intermediária
+      └── AC Final
+           └── Certificado do Usuário (Assinante)
+```
+
+#### Gerando a cadeia de certificados de teste
+
+Execute o teste para gerar os certificados:
+
+```bash
+dart test test/pki_simulation/expanded_scenarios_test.dart --name "Scenario 1"
+```
+
+Isso gera os seguintes arquivos em `test/tmp/`:
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `Cadeia_Test-der.p7b` | Cadeia completa em formato PKCS#7 |
+| `AC_Raiz_Test.pem` / `.cer` | Certificado Root CA |
+| `AC_Intermediaria_Test.pem` | Certificado AC Intermediária |
+| `AC_Final_Test.pem` | Certificado AC Final |
+| `Cert_Usuario_Isaque.pem` | Certificado do usuário (assinante) |
+| `out_scenario1_govbr_chain.pdf` | PDF assinado com a cadeia de 4 níveis |
+
+#### Instalando certificados de teste no Windows
+
+**⚠️ IMPORTANTE:** Sempre remova certificados de teste antigos antes de instalar novos! Certificados com o mesmo DN (Distinguished Name) mas chaves diferentes causam erros de validação como "Este certificado tem uma assinatura digital inválida".
+
+```powershell
+# Instalar certificados (remove automaticamente versões antigas)
+.\scripts\install_test_chain_windows.ps1
+
+# Instalar no store da máquina (requer admin)
+.\scripts\install_test_chain_windows.ps1 -Machine
+
+# Remover certificados de teste manualmente
+.\scripts\install_test_chain_windows.ps1 -Remove
+
+# Instalar sem limpar antigos (NÃO RECOMENDADO)
+.\scripts\install_test_chain_windows.ps1 -SkipCleanup
+```
+
+O script:
+1. **Remove automaticamente** certificados de teste antigos do Windows Certificate Store
+2. Instala o Root CA em "Autoridades de Certificação Raiz Confiáveis"
+3. Instala certificados intermediários em "Autoridades de Certificação Intermediárias"
+
+#### Configurando o Foxit Reader / Adobe Reader
+
+Após instalar os certificados no Windows, configure o visualizador:
+
+**Foxit Reader:**
+1. Vá em **Arquivo** → **Preferências** → **Trust Manager**
+2. Habilite **"Usar certificados confiáveis do Windows"**
+3. Ou importe manualmente `AC_Raiz_Test.cer` em **Proteger** → **Identidades Confiáveis**
+
+**Adobe Reader:**
+1. Vá em **Editar** → **Preferências** → **Assinaturas**
+2. Em **Identidades e Certificados Confiáveis** → **Mais...**
+3. Importe `AC_Raiz_Test.cer` como certificado confiável
+
+#### Estrutura dos certificados gerados
+
+Os certificados incluem as extensões necessárias para validação correta:
+
+- **Subject Key Identifier (SKI)**: Identifica a chave pública do certificado
+- **Authority Key Identifier (AKI)**: Aponta para o SKI do emissor (exceto Root CA)
+- **Basic Constraints**: `CA:TRUE` para CAs, `CA:FALSE` para usuários
+- **Key Usage**: `Certificate Sign, CRL Sign` para CAs
+
+**RFC 5280 Compliance:** O Root CA (auto-assinado) **não** inclui AKI, conforme especificação.
+
+#### Verificação com OpenSSL
+
+```bash
+# Verificar cadeia completa
+openssl verify -CAfile test/tmp/AC_Raiz_Test.pem \
+  -untrusted test/tmp/AC_Intermediaria_Test.pem \
+  -untrusted test/tmp/AC_Final_Test.pem \
+  test/tmp/Cert_Usuario_Isaque.pem
+
+# Ver detalhes de um certificado
+openssl x509 -in test/tmp/Cert_Usuario_Isaque.pem -text -noout
+
+# Verificar extensões SKI/AKI
+openssl x509 -in test/tmp/Cert_Usuario_Isaque.pem -noout -text | grep -A1 "Key Identifier"
+```
+
+---
+
 Este repositório inclui um helper de validação server-side que consegue inspecionar **todas** as assinaturas de um PDF e reportar:
 
 - Validade da assinatura CMS
