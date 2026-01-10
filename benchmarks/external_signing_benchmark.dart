@@ -37,8 +37,9 @@ void main() {
       const int iterations = 10; // Significantly reduced for performance
       final stopwatch = Stopwatch();
 
-      // 1. Regex Approach (Default)
+      // 1. Regex Approach (String+RegExp)
       PdfExternalSigning.useInternalByteRangeParser = false;
+      PdfExternalSigning.useFastByteRangeParser = false;
       
       // Warmup
       try {
@@ -55,8 +56,28 @@ void main() {
         print('extractByteRange (Regex): ${regexTime / 1000} ms for $iterations iterations');
         print('  Average: ${regexTime / iterations} µs/op');
 
-        // 2. Parser Approach
+        // 2. Fast Bytes Approach
+        PdfExternalSigning.useInternalByteRangeParser = false;
+        PdfExternalSigning.useFastByteRangeParser = true;
+        stopwatch.reset();
+
+        // Warmup
+        for (var i = 0; i < 10; i++) {
+          PdfExternalSigning.extractByteRange(pdfBytes);
+        }
+
+        stopwatch.start();
+        for (var i = 0; i < iterations; i++) {
+          PdfExternalSigning.extractByteRange(pdfBytes);
+        }
+        stopwatch.stop();
+        final fastTime = stopwatch.elapsedMicroseconds;
+        print('extractByteRange (FastBytes): ${fastTime / 1000} ms for $iterations iterations');
+        print('  Average: ${fastTime / iterations} µs/op');
+
+        // 3. Internal Parser Approach (full PdfDocument parse)
         PdfExternalSigning.useInternalByteRangeParser = true;
+        PdfExternalSigning.useFastByteRangeParser = false;
         stopwatch.reset();
 
         // Warmup
@@ -70,12 +91,16 @@ void main() {
         }
         stopwatch.stop();
         final parserTime = stopwatch.elapsedMicroseconds;
-        print('extractByteRange (Parser): ${parserTime / 1000} ms for $iterations iterations');
+        print('extractByteRange (InternalDoc): ${parserTime / 1000} ms for $iterations iterations');
         print('  Average: ${parserTime / iterations} µs/op');
 
         if (regexTime > 0) {
-            final ratio = parserTime / regexTime;
-            print('Result: Parser is ${ratio.toStringAsFixed(2)}x slower than Regex');
+          final ratio = parserTime / regexTime;
+          print('Result: InternalDoc is ${ratio.toStringAsFixed(2)}x slower than Regex');
+        }
+        if (fastTime > 0) {
+          final ratio = parserTime / fastTime;
+          print('Result: InternalDoc is ${ratio.toStringAsFixed(2)}x slower than FastBytes');
         }
       } catch (e) {
          print('Benchmark skipped due to error: $e');
@@ -91,10 +116,12 @@ void main() {
       final stopwatch = Stopwatch();
 
       try {
-        // 1. String Search Approach (Default)
+        // 1. String Search Approach (latin1 string scan)
         PdfExternalSigning.useInternalContentsParser = false;
+        PdfExternalSigning.useFastContentsParser = false;
         // Ensure ByteRange parser is also default as it might affect internal calls depending on impl
         PdfExternalSigning.useInternalByteRangeParser = false; 
+        PdfExternalSigning.useFastByteRangeParser = false;
 
         // Warmup
         for (var i = 0; i < 10; i++) {
@@ -112,11 +139,36 @@ void main() {
         print('findContentsRange (String Search): ${stringSearchTime / 1000} ms for $iterations iterations');
         print('  Average: ${stringSearchTime / iterations} µs/op');
 
-        // 2. Parser Approach
+        // 2. Fast Bytes Approach
+        PdfExternalSigning.useInternalContentsParser = false;
+        PdfExternalSigning.useFastContentsParser = true;
+        PdfExternalSigning.useInternalByteRangeParser = false;
+        PdfExternalSigning.useFastByteRangeParser = true;
+
+        stopwatch.reset();
+
+        // Warmup
+        for (var i = 0; i < 10; i++) {
+          // ignore: unused_local_variable
+          dynamic _ = PdfExternalSigning.findContentsRange(pdfBytes);
+        }
+
+        stopwatch.start();
+        for (var i = 0; i < iterations; i++) {
+          // ignore: unused_local_variable
+          dynamic _ = PdfExternalSigning.findContentsRange(pdfBytes);
+        }
+        stopwatch.stop();
+        final fastTime = stopwatch.elapsedMicroseconds;
+        print('findContentsRange (FastBytes): ${fastTime / 1000} ms for $iterations iterations');
+        print('  Average: ${fastTime / iterations} µs/op');
+
+        // 3. Internal Parser Approach (full PdfDocument parse)
         PdfExternalSigning.useInternalContentsParser = true;
-        // The internal contents parser relies on extractByteRangeInternal, so we should arguably enable that too
-        // or just let it use its own logic. The implementation calls extractByteRangeInternal directly.
-        PdfExternalSigning.useInternalByteRangeParser = true; 
+        PdfExternalSigning.useFastContentsParser = false;
+        // The internal contents parser relies on extractByteRangeInternal.
+        PdfExternalSigning.useInternalByteRangeParser = true;
+        PdfExternalSigning.useFastByteRangeParser = false;
 
         stopwatch.reset();
 
@@ -133,12 +185,16 @@ void main() {
         }
         stopwatch.stop();
         final parserTime = stopwatch.elapsedMicroseconds;
-        print('findContentsRange (Parser): ${parserTime / 1000} ms for $iterations iterations');
+        print('findContentsRange (InternalDoc): ${parserTime / 1000} ms for $iterations iterations');
         print('  Average: ${parserTime / iterations} µs/op');
 
         if (stringSearchTime > 0) {
-            final ratio = parserTime / stringSearchTime;
-            print('Result: Parser is ${ratio.toStringAsFixed(2)}x slower than String Search');
+          final ratio = parserTime / stringSearchTime;
+          print('Result: InternalDoc is ${ratio.toStringAsFixed(2)}x slower than String Search');
+        }
+        if (fastTime > 0) {
+          final ratio = parserTime / fastTime;
+          print('Result: InternalDoc is ${ratio.toStringAsFixed(2)}x slower than FastBytes');
         }
       } catch (e) {
           print('Benchmark skipped due to error: $e');
