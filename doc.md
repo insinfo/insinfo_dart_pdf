@@ -786,6 +786,28 @@ dart test test/policy_timestamp_integration_test.dart
 
 ### Scripts auxiliares (debug)
 
+#### Sanitizar comentários `%` (header)
+
+Alguns PDFs podem conter comentários `%...` no início do arquivo com informações de debug/"verbose" do gerador (ex.: `% Verbose ...`, `% Producer ...`). Comentários são permitidos pela sintaxe do PDF, mas você pode querer removê-los para reduzir ruído.
+
+Este repositório expõe um utilitário de baixo nível que **sanitiza somente os comentários `%` do cabeçalho** (antes do primeiro `N N obj`), preservando o tamanho do arquivo e os separadores de linha:
+
+```dart
+import 'dart:typed_data';
+
+import 'package:dart_pdf/pdf.dart';
+
+Uint8List sanitize(Uint8List pdfBytes) {
+  final result = sanitizePdfLeadingPercentComments(pdfBytes);
+  return result.bytes;
+}
+```
+
+**Riscos / limitações**
+
+- Se o PDF estiver assinado, qualquer alteração de byte invalida a assinatura (mesmo que seja só comentário).
+- O utilitário não remove `%` “estranhos” que aparecem no meio do arquivo (ex.: dentro de streams comprimidos), porque mexer nisso pode corromper o PDF.
+
 - Inspecionar rapidamente uma assinatura (policy OID + timestamp status):
 
 ```bash
