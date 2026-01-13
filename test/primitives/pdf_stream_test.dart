@@ -1,7 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:test/test.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_stream.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_dictionary.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_number.dart';
+import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_name.dart';
 
 void main() {
   group('PdfStream', () {
@@ -36,6 +39,24 @@ void main() {
       final stream = PdfStream();
       stream['key'] = PdfNumber(10);
       expect(stream.count, 1);
+    });
+
+    test('Decompress FlateDecode', () {
+      final String originalText = 'Hello World';
+      final List<int> originalBytes = utf8.encode(originalText);
+      final List<int> compressedBytes = zlib.encode(originalBytes);
+      
+      final stream = PdfStream();
+      // PdfStream initialization sets default values.
+      // We manually set data and Filter to simulate reading a compressed stream.
+      stream.data = compressedBytes;
+      stream[PdfName('Filter')] = PdfName('FlateDecode');
+      
+      stream.decompress();
+      
+      expect(stream.data, equals(originalBytes));
+      // decompress method usually removes the Filter entry
+      expect(stream.containsKey('Filter'), isFalse);
     });
   });
 }

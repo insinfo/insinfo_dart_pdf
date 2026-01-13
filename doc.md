@@ -786,6 +786,28 @@ dart test test/policy_timestamp_integration_test.dart
 
 ### Scripts auxiliares (debug)
 
+#### Sanitizar comentários `%` (header)
+
+Alguns PDFs podem conter comentários `%...` no início do arquivo com informações de debug/"verbose" do gerador (ex.: `% Verbose ...`, `% Producer ...`). Comentários são permitidos pela sintaxe do PDF, mas você pode querer removê-los para reduzir ruído.
+
+Este repositório expõe um utilitário de baixo nível que **sanitiza somente os comentários `%` do cabeçalho** (antes do primeiro `N N obj`), preservando o tamanho do arquivo e os separadores de linha:
+
+```dart
+import 'dart:typed_data';
+
+import 'package:dart_pdf/pdf.dart';
+
+Uint8List sanitize(Uint8List pdfBytes) {
+  final result = sanitizePdfLeadingPercentComments(pdfBytes);
+  return result.bytes;
+}
+```
+
+**Riscos / limitações**
+
+- Se o PDF estiver assinado, qualquer alteração de byte invalida a assinatura (mesmo que seja só comentário).
+- O utilitário não remove `%` “estranhos” que aparecem no meio do arquivo (ex.: dentro de streams comprimidos), porque mexer nisso pode corromper o PDF.
+
 - Inspecionar rapidamente uma assinatura (policy OID + timestamp status):
 
 ```bash
@@ -957,7 +979,7 @@ O script imprime integridade do PDF, validade por assinatura e um rótulo de pro
 
 Implementado (estado atual):
 
-- Extração baseada em parser de `/ByteRange` e `/Contents` (evita regex)
+- Extração híbrida e otimizada de `/ByteRange` e `/Contents` (FastBytes xref-independente, com fallback para StringSearch e, por último, parser interno)
 - Validação CMS/PKCS#7, incluindo sanity checks de signed attributes
 - Trust stores embutidas: ICP-Brasil / ITI / Serpro, + provider Gov.br (`GovBrProvider`)
 - Construção de cadeia + avaliação de trust (`chainTrusted`) via providers/trust stores
@@ -968,7 +990,6 @@ Implementado (estado atual):
 
 Lacunas que ainda podem impactar robustez (dependendo do seu nível de compliance):
 
-- A injeção de assinatura externa ainda usa regex em um caminho (veja o TODO em `external_pdf_signature.dart`); o ideal é ser totalmente parser-based
 - A validação de policy pode cair em heurísticas quando LPA/policy completos não estão disponíveis
 - A validação de timestamp é reportada via `timestampStatus` e `issues`, mas você pode querer regras locais mais estritas dependendo do seu alvo (ex.: exigir PAdES-T/LTV como requisito duro)
 - Prova offline-LTV completa (verificação estrita de que DSS/VRI contém *todas* as evidências exigidas em todos os cenários) é best-effort e pode exigir regras mais estritas no seu caso
@@ -1070,12 +1091,65 @@ Você pode definir `FOXIT_PATH` para apontar para uma instalação customizada d
 
 ### Flags do parser interno
 
-Quando você precisar evitar varredura por regex, habilite as flags do parser interno:
+#### Parser otimizado (recomendado)
+
+Por padrão, a extração de `/ByteRange` e `/Contents` usa uma estratégia **híbrida, correction-first**:
+
+1) **FastBytes**: varredura em nível de bytes (xref-independente; não faz `latin1.decode` do PDF inteiro)
+2) **StringSearch**: varredura `latin1 + RegExp` (compatibilidade)
+3) **InternalDoc**: parse completo via `PdfDocument` (mais robusto semanticamente, porém bem mais lento)
+
+Você pode controlar isso com as flags estáticas em `PdfExternalSigning`:
 
 ```dart
+// Recomendado (default): rápido e robusto contra xref quebrado.
+PdfExternalSigning.useFastByteRangeParser = true;
+PdfExternalSigning.useFastContentsParser = true;
+PdfExternalSigning.useInternalByteRangeParser = false;
+PdfExternalSigning.useInternalContentsParser = false;
+
+// (Opcional) Forçar o parser interno (InternalDoc) — use só quando necessário.
 PdfExternalSigning.useInternalByteRangeParser = true;
 PdfExternalSigning.useInternalContentsParser = true;
+
+// (Opcional) Desabilitar FastBytes e usar apenas StringSearch (debug/compatibilidade).
+PdfExternalSigning.useInternalByteRangeParser = false;
+PdfExternalSigning.useInternalContentsParser = false;
+PdfExternalSigning.useFastByteRangeParser = false;
+PdfExternalSigning.useFastContentsParser = false;
 ```
+
+#### Validações (anti falso-positivo)
+
+O modo híbrido valida o resultado antes de aceitar:
+
+- **ByteRange**: checagem de bounds/ordem (`start/len` dentro do arquivo e segunda faixa após a primeira)
+- **Contents**: checagem de plausibilidade de hex (`[0-9A-Fa-f]` + whitespace, número par de dígitos e mínimo de tamanho)
+
+Se o FastBytes encontrar algo inconsistente, ele cai automaticamente para StringSearch e só então para InternalDoc.
+
+#### Teste de integração (assets)
+
+Existe um teste que percorre todos os PDFs em `test/assets/**` e valida o comportamento dos parsers (com e sem `/ByteRange`).
+
+```bash
+dart test test/security/external_signing_assets_integration_test.dart
+```
+
+Esse teste força a estratégia híbrida (FastBytes → StringSearch → InternalDoc) e garante que:
+
+- PDFs com `/ByteRange` sejam parseados sem exceção
+- PDFs sem `/ByteRange` lancem `StateError('ByteRange not found')` (erro claro, sem “travamentos”)
+
+#### Benchmark (comparativo)
+
+Para comparar performance entre Regex/String, FastBytes e InternalDoc:
+
+```bash
+dart test benchmarks/external_signing_benchmark.dart
+```
+
+Em geral, **FastBytes** deve ser ordens de grandeza mais rápido que **InternalDoc**, especialmente em PDFs maiores.
 
 ## Assinatura externa sem helpers (baixo nível)
 

@@ -40,7 +40,7 @@ class PdfSubmitAction extends PdfFormAction {
     _url = url;
     helper.dictionary.setProperty(PdfDictionaryProperties.f, PdfString(_url));
     _initValues(
-      httpMethod = HttpMethod.post,
+      httpMethod,
       dataFormat,
       canonicalDateTimeFormat,
       submitCoordinates,
