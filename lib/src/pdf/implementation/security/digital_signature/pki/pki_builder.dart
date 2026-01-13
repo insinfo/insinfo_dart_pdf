@@ -39,6 +39,7 @@ class PkiBuilder {
   static const String oidExtKeyUsage = '2.5.29.37';
   static const String oidCrlDistributionPoints = '2.5.29.31';
   static const String oidAuthorityInfoAccess = '1.3.6.1.5.5.7.1.1';
+  static const String oidSubjectAltName = '2.5.29.17';
   
   /// Algorithms
   static const String sha256WithRSAEncryption = '1.2.840.113549.1.1.11';
@@ -127,6 +128,7 @@ class PkiBuilder {
     bool isCa = false,
     List<String>? crlUrls,
     List<String>? ocspUrls,
+    List<PkiOtherName>? subjectAltNameOtherNames,
   }) {
     // 1. Create TBSCertificate
     final tbs = ASN1Sequence();
@@ -213,6 +215,14 @@ class PkiBuilder {
         oidAuthorityInfoAccess,
         _createAuthorityInfoAccess(ocspUrls),
        ));
+    }
+
+    if (subjectAltNameOtherNames != null &&
+        subjectAltNameOtherNames.isNotEmpty) {
+      extensions.add(createExtension(
+        oidSubjectAltName,
+        createSubjectAltName(subjectAltNameOtherNames),
+      ));
     }
 
     // Wrap extensions in [3] Explicit
@@ -353,11 +363,37 @@ class PkiBuilder {
     return seq;
   }
 
+  static ASN1Sequence createSubjectAltName(List<PkiOtherName> otherNames) {
+    final seq = ASN1Sequence();
+    for (final otherName in otherNames) {
+      final otherNameSeq = ASN1Sequence();
+      otherNameSeq
+          .add(ASN1ObjectIdentifier.fromComponentString(otherName.oid));
+
+      final value = ASN1UTF8String(otherName.value);
+      final valueWrapper = ASN1Sequence(tag: 0xA0);
+      valueWrapper.add(value);
+      otherNameSeq.add(valueWrapper);
+
+      final generalNameWrapper = ASN1Sequence(tag: 0xA0);
+      generalNameWrapper.add(otherNameSeq);
+      seq.add(generalNameWrapper);
+    }
+    return seq;
+  }
+
   static Uint8List signData(Uint8List data, RSAPrivateKey key) {
     final signer = Signer('SHA-256/RSA');
     signer.init(true, PrivateKeyParameter<RSAPrivateKey>(key)); 
     final sig = signer.generateSignature(data);
     return (sig as RSASignature).bytes;
   }
+}
+
+class PkiOtherName {
+  const PkiOtherName(this.oid, this.value);
+
+  final String oid;
+  final String value;
 }
 
