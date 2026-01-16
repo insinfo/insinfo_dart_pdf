@@ -185,6 +185,24 @@ class X509Name extends Asn1Encode {
     _defaultSymbols[telephoneNumber] = 'TelephoneNumber';
   }
 
+  /// Returns all values for the given [oid] in the order found in the DN.
+  List<String> getValuesByOid(DerObjectID oid) {
+    final List<String> values = <String>[];
+    for (int i = 0; i < _ordering.length; i++) {
+      if (_ordering[i] == oid) {
+        final dynamic value = _values[i];
+        values.add(value?.toString() ?? '');
+      }
+    }
+    return values.where((v) => v.isNotEmpty).toList(growable: false);
+  }
+
+  /// Returns the first value for the given [oid], or null if not present.
+  String? getFirstValueByOid(DerObjectID oid) {
+    final List<String> values = getValuesByOid(oid);
+    return values.isEmpty ? null : values.first;
+  }
+
   @override
   Asn1? getAsn1() {
     if (_sequence == null) {

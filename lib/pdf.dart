@@ -251,6 +251,8 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature_validato
         PdfLtvSelfCheckResult,
         PdfRevocationResult,
         PdfPolicyStatus;
+export 'src/pdf/implementation/security/digital_signature/icp_brasil/lpa.dart'
+    show Lpa;
 export 'src/pdf/implementation/security/digital_signature/x509/x509_utils.dart'
     show X509Utils, X509ChainValidationResult;
 export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
@@ -266,6 +268,13 @@ export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
 export 'src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart' show PdfCmsSigner;
 export 'src/pdf/implementation/security/digital_signature/pdf_crypto_utils.dart'
     show PdfCryptoUtils;
+export 'src/security/pdf_signature_info.dart'
+    show
+        PdfSignatureInspector,
+        PdfSignatureInspectionReport,
+        PdfSignatureSummary,
+        PdfSignerInfo,
+        IcpBrasilOtherNameOids;
 export 'src/pdf/implementation/security/digital_signature/cryptography/cipher_block_chaining_mode.dart'
     show RsaPrivateKeyParam;
 export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'

@@ -6,7 +6,7 @@ import 'package:asn1lib/asn1lib.dart';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:dart_pdf/pdf.dart';
-import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pki/pki_builder.dart';
+import 'package:dart_pdf/src/pki/pki_builder.dart';
 import 'package:pointycastle/export.dart';
 import 'package:test/test.dart';
 

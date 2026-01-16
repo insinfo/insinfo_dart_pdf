@@ -5,8 +5,8 @@ import 'package:dart_pdf/pdf.dart';
 import 'package:pointycastle/export.dart';
 import 'package:test/test.dart';
 
-import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pki/pki_builder.dart';
-import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pki/pki_server.dart';
+import 'package:dart_pdf/src/pki/pki_builder.dart';
+import 'package:dart_pdf/src/pki/pki_server.dart';
 
 // Adapter to use pure Dart PkiBuilder keys with IPdfExternalSigner
 class RawRsaSigner implements IPdfExternalSigner {
