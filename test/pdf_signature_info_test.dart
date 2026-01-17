@@ -106,4 +106,25 @@ void main() {
     expect(sig2.signer!.certNotBefore!.isBefore(sig2.signer!.certNotAfter!),
         isTrue);
   });
+
+  test('Inspect DocMDP allow signatures PDF', () async {
+    final File file =
+        File('test/assets/generated_doc_mdp_allow_signatures.pdf');
+    expect(file.existsSync(), isTrue,
+        reason: 'Arquivo não encontrado: ${file.path}');
+
+    final Uint8List bytes = file.readAsBytesSync();
+
+    final PdfSignatureValidationReport report =
+        await PdfSignatureValidator().validateAllSignatures(
+      bytes,
+      fetchCrls: false,
+    );
+
+    expect(report.signatures.length, 1);
+    final PdfSignatureValidationItem sig = report.signatures.first;
+
+    expect(sig.docMdp.isCertificationSignature, isTrue);
+    expect(sig.docMdp.permissionP, 2);
+  });
 }

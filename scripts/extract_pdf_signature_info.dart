@@ -23,6 +23,7 @@ Future<void> main(List<String> args) async {
   final String hashSha256 = _toHex(crypto.sha256.convert(bytes).bytes);
 
   final Map<String, String> policyXmlByOid = _loadPolicyXmlByOid();
+  final Map<String, String> policyNameByOid = _loadPolicyNameByOid();
 
   final PdfSignatureValidator validator = PdfSignatureValidator();
   final PdfSignatureValidationReport report =
@@ -38,6 +39,10 @@ Future<void> main(List<String> args) async {
       report.signatures.map((PdfSignatureValidationItem item) {
     final PdfSignerInfo? signer =
         PdfSignerInfo.fromCertificatesPem(item.validation.certsPem);
+    final String? oid = item.validation.policyOid;
+    final String? policyName =
+        oid == null ? null : (policyNameByOid[oid] ?? oid);
+    final PdfDocMdpInfo? docMdp = item.docMdp;
 
     return <String, dynamic>{
       'field_name': item.fieldName,
@@ -51,14 +56,20 @@ Future<void> main(List<String> args) async {
       'certificate_not_before': signer?.certNotBefore?.toIso8601String(),
       'certificate_not_after': signer?.certNotAfter?.toIso8601String(),
       'signing_time': item.validation.signingTime?.toIso8601String(),
-      'policy_oid': item.validation.policyOid,
+      'policy_oid': oid,
+      'policy_name': policyName,
       'policy_present': item.validation.policyPresent,
       'policy_valid': item.policyStatus?.valid,
+      'policy_error': item.policyStatus?.error,
+      'policy_warning': item.policyStatus?.warning,
       'policy_digest_ok': item.validation.policyDigestOk,
       'document_intact': item.validation.documentIntact,
       'cms_signature_valid': item.validation.cmsSignatureValid,
       'byte_range_digest_ok': item.validation.byteRangeDigestOk,
       'chain_trusted': item.chainTrusted,
+      'doc_mdp_is_certification': docMdp?.isCertificationSignature,
+      'doc_mdp_permission_p': docMdp?.permissionP,
+      'doc_mdp_permissions_text': _formatDocMdpPermissions(docMdp),
       'timestamp_present': item.timestampStatus?.present,
       'timestamp_valid': item.timestampStatus?.valid,
       'issues': item.issues.map((i) => i.toMap()).toList(growable: false),
@@ -109,4 +120,50 @@ Map<String, String> _loadPolicyXmlByOid() {
     }
   }
   return out;
+}
+
+Map<String, String> _loadPolicyNameByOid() {
+  final Directory artifactsDir = Directory('assets/policy/engine/artifacts');
+  if (!artifactsDir.existsSync()) return <String, String>{};
+
+  final RegExp oidRe = RegExp(r'urn:oid:([0-9.]+)');
+  final Map<String, String> out = <String, String>{};
+  for (final FileSystemEntity e in artifactsDir.listSync()) {
+    if (e is! File) continue;
+    if (!e.path.toLowerCase().endsWith('.xml')) continue;
+    try {
+      final String xml = e.readAsStringSync();
+      final Match? match = oidRe.firstMatch(xml);
+      final String? oid = match?.group(1);
+      if (oid == null || oid.isEmpty) continue;
+      final String name = _basenameWithoutExtension(e.path);
+      out[oid] = name;
+    } catch (_) {
+      // ignore
+    }
+  }
+  return out;
+}
+
+String _basenameWithoutExtension(String path) {
+  final String name = path.split(Platform.pathSeparator).last;
+  final int dot = name.lastIndexOf('.');
+  if (dot <= 0) return name;
+  return name.substring(0, dot);
+}
+
+String _formatDocMdpPermissions(PdfDocMdpInfo? docMdp) {
+  if (docMdp == null || docMdp.isCertificationSignature != true) {
+    return 'Não informado';
+  }
+  switch (docMdp.permissionP) {
+    case 1:
+      return 'Nenhuma alteração permitida';
+    case 2:
+      return 'Formulários e assinaturas';
+    case 3:
+      return 'Anotações, formulários e assinaturas';
+    default:
+      return 'Desconhecido';
+  }
 }
