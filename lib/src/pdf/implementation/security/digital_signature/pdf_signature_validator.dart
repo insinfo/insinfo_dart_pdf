@@ -436,13 +436,19 @@ class PdfSignatureValidator {
       }
 
       for (final _ParsedSignature sig in sigs) {
-        final PdfSignatureValidationResult res =
+        PdfSignatureValidationResult res =
             cmsValidator.validateDetachedSignature(
           pdfBytes,
           signatureName: sig.fieldName,
           byteRange: sig.byteRange,
           pkcs7DerBytes: sig.pkcs7Der,
         );
+
+        final DateTime? dictSigningTime =
+            _extractSignatureDictionarySigningTime(sig.signatureDict);
+        if (res.signingTime == null && dictSigningTime != null) {
+          res = res.copyWith(signingTime: dictSigningTime);
+        }
 
         bool? chainTrusted;
         List<String>? chainErrors;
@@ -509,6 +515,22 @@ class PdfSignatureValidator {
             policyHashValue: res.policyHashValue,
             strictDigest: strictPolicyDigest,
           );
+
+          bool? policyDigestOk;
+          if (lpa != null) {
+            if (res.policyHashAlgorithmOid == null ||
+                res.policyHashValue == null) {
+              policyDigestOk = strictPolicyDigest ? false : null;
+            } else {
+              final bool digestError = polEval.issues.any(
+                (i) =>
+                    i.code.startsWith('policy_digest_') &&
+                    i.severity == PolicyIssueSeverity.error,
+              );
+              policyDigestOk = !digestError;
+            }
+          }
+          res = res.copyWith(policyDigestOk: policyDigestOk);
 
           if (polEval.valid && res.digestAlgorithmOid != null) {
             final PolicyEvaluation algoEval = engine.evaluateAlgorithm(
@@ -589,8 +611,7 @@ class PdfSignatureValidator {
                 signerChainPem: res.certsPem,
               );
 
-              timestampRequiredByPolicy =
-                  enforcement.timestampRequiredByPolicy;
+              timestampRequiredByPolicy = enforcement.timestampRequiredByPolicy;
 
               for (final PolicyIssue i in enforcement.issues) {
                 issues.add(
@@ -751,15 +772,15 @@ class PdfSignatureValidator {
     }
 
     if (!timestamp.valid) {
-      final bool deterministicInvalid =
-          timestamp.messageImprintOk == false ||
-              timestamp.tokenSignatureValid == false ||
-              timestamp.errors.contains('timestamp_token_signature_invalid');
+      final bool deterministicInvalid = timestamp.messageImprintOk == false ||
+          timestamp.tokenSignatureValid == false ||
+          timestamp.errors.contains('timestamp_token_signature_invalid');
 
       return <PdfValidationIssue>[
         PdfValidationIssue(
-          severity:
-              deterministicInvalid ? PdfIssueSeverity.error : PdfIssueSeverity.warning,
+          severity: deterministicInvalid
+              ? PdfIssueSeverity.error
+              : PdfIssueSeverity.warning,
           code: 'timestamp_invalid',
           message: deterministicInvalid
               ? 'RFC3161 timestamp token is present but cryptographically invalid'
@@ -1490,6 +1511,20 @@ Uint8List? _readContentsPkcs7(PdfDictionary sigDict) {
     return null;
   }
   return Uint8List.fromList(decoded);
+}
+
+DateTime? _extractSignatureDictionarySigningTime(PdfDictionary sigDict) {
+  if (!sigDict.containsKey(PdfDictionaryProperties.m)) return null;
+  final dynamic mPrim =
+      PdfCrossTable.dereference(sigDict[PdfDictionaryProperties.m]);
+  if (mPrim is! PdfString) return null;
+  final String? raw = mPrim.value;
+  if (raw == null || raw.trim().isEmpty) return null;
+  try {
+    return sigDict.getDateTime(mPrim);
+  } catch (_) {
+    return null;
+  }
 }
 
 bool _sameReference(PdfReference a, PdfReference b) {

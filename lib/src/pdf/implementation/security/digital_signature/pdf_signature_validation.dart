@@ -62,6 +62,14 @@ class PdfSignatureValidationResult {
   /// The digest algorithm OID (e.g. "2.16.840.1.101.3.4.2.1" for SHA-256).
   final String? digestAlgorithmOid;
 
+  /// True when a policy OID is present in signed attributes.
+  final bool policyPresent;
+
+  /// True when the policy digest matches LPA (when available).
+  ///
+  /// Null when digest check is not applicable (e.g., no LPA or missing digest).
+  final bool? policyDigestOk;
+
   PdfSignatureValidationResult({
     this.signatureName,
     required this.cmsSignatureValid,
@@ -74,7 +82,43 @@ class PdfSignatureValidationResult {
     this.policyHashValue,
     this.signingTime,
     this.digestAlgorithmOid,
-  });
+    bool? policyPresent,
+    this.policyDigestOk,
+  }) : policyPresent =
+            policyPresent ?? (policyOid != null && policyOid.isNotEmpty);
+
+  PdfSignatureValidationResult copyWith({
+    String? signatureName,
+    bool? cmsSignatureValid,
+    bool? byteRangeDigestOk,
+    bool? documentIntact,
+    bool? coversWholeDocument,
+    List<String>? certsPem,
+    String? policyOid,
+    String? policyHashAlgorithmOid,
+    Uint8List? policyHashValue,
+    DateTime? signingTime,
+    String? digestAlgorithmOid,
+    bool? policyPresent,
+    bool? policyDigestOk,
+  }) {
+    return PdfSignatureValidationResult(
+      signatureName: signatureName ?? this.signatureName,
+      cmsSignatureValid: cmsSignatureValid ?? this.cmsSignatureValid,
+      byteRangeDigestOk: byteRangeDigestOk ?? this.byteRangeDigestOk,
+      documentIntact: documentIntact ?? this.documentIntact,
+      coversWholeDocument: coversWholeDocument ?? this.coversWholeDocument,
+      certsPem: certsPem ?? this.certsPem,
+      policyOid: policyOid ?? this.policyOid,
+      policyHashAlgorithmOid:
+          policyHashAlgorithmOid ?? this.policyHashAlgorithmOid,
+      policyHashValue: policyHashValue ?? this.policyHashValue,
+      signingTime: signingTime ?? this.signingTime,
+      digestAlgorithmOid: digestAlgorithmOid ?? this.digestAlgorithmOid,
+      policyPresent: policyPresent ?? this.policyPresent,
+      policyDigestOk: policyDigestOk ?? this.policyDigestOk,
+    );
+  }
 }
 
 /// Result of validating a CMS SignedData object (signature only).
@@ -218,7 +262,8 @@ class PdfSignatureValidation {
             '2.16.840.1.101.3.4.2.1' || _ => 'SHA-256withRSA',
           };
         }
-        if (signMode == null && cms.signatureAlgorithmOid == '1.2.840.10045.2.1') {
+        if (signMode == null &&
+            cms.signatureAlgorithmOid == '1.2.840.10045.2.1') {
           // id-ecPublicKey: infer hash from digestAlgorithmOid.
           signMode = switch (cms.digestAlgorithmOid) {
             '1.3.14.3.2.26' => 'SHA-1withECDSA',

@@ -45,6 +45,8 @@ class PdfSignerInfo {
     this.serialNumberDecimal,
     this.cpf,
     this.dateOfBirth,
+    this.certNotBefore,
+    this.certNotAfter,
     this.otherNames = const <String, String>{},
   });
 
@@ -72,6 +74,12 @@ class PdfSignerInfo {
   /// Data de nascimento, se presente e parseável.
   final DateTime? dateOfBirth;
 
+  /// Início da validade do certificado do signatário (notBefore).
+  final DateTime? certNotBefore;
+
+  /// Fim da validade do certificado do signatário (notAfter).
+  final DateTime? certNotAfter;
+
   /// OtherNames completos extraídos do SubjectAltName (oid -> valor).
   final Map<String, String> otherNames;
 
@@ -84,13 +92,16 @@ class PdfSignerInfo {
         'serial_number_decimal': serialNumberDecimal,
         'cpf': cpf,
         'date_of_birth': dateOfBirth?.toIso8601String(),
+        'cert_not_before': certNotBefore?.toIso8601String(),
+        'cert_not_after': certNotAfter?.toIso8601String(),
         'other_names': otherNames,
       };
 
   static PdfSignerInfo? fromCertificatesPem(List<String> certsPem) {
     if (certsPem.isEmpty) return null;
     try {
-      final X509Certificate cert = X509Utils.parsePemCertificate(certsPem.first);
+      final X509Certificate cert =
+          X509Utils.parsePemCertificate(certsPem.first);
       final String? subject = cert.c?.subject?.toString();
       final String? issuer = cert.c?.issuer?.toString();
       final BigInt? serial = cert.c?.serialNumber?.value;
@@ -103,6 +114,8 @@ class PdfSignerInfo {
 
       final String? cpf = _extractCpf(cert, otherNames);
       final DateTime? dob = _extractDateOfBirth(otherNames);
+      final DateTime? notBefore = cert.c?.startDate?.toDateTime();
+      final DateTime? notAfter = cert.c?.endDate?.toDateTime();
 
       return PdfSignerInfo(
         subject: subject,
@@ -113,6 +126,8 @@ class PdfSignerInfo {
         serialNumberDecimal: _serialToDecimal(serial),
         cpf: cpf,
         dateOfBirth: dob,
+        certNotBefore: notBefore,
+        certNotAfter: notAfter,
         otherNames: otherNames,
       );
     } catch (_) {
@@ -132,6 +147,7 @@ class PdfSignatureSummary {
     required this.signingTime,
     required this.policyOid,
     required this.policyPresent,
+    required this.policyDigestOk,
     required this.signer,
   });
 
@@ -143,6 +159,7 @@ class PdfSignatureSummary {
   final DateTime? signingTime;
   final String? policyOid;
   final bool policyPresent;
+  final bool? policyDigestOk;
   final PdfSignerInfo? signer;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
@@ -154,6 +171,7 @@ class PdfSignatureSummary {
         'signing_time': signingTime?.toIso8601String(),
         'policy_oid': policyOid,
         'policy_present': policyPresent,
+        'policy_digest_ok': policyDigestOk,
         'signer': signer?.toMap(),
       };
 
@@ -168,8 +186,8 @@ class PdfSignatureSummary {
       chainTrusted: item.chainTrusted,
       signingTime: item.validation.signingTime,
       policyOid: item.validation.policyOid,
-      policyPresent:
-          item.validation.policyOid != null && item.validation.policyOid!.isNotEmpty,
+      policyPresent: item.validation.policyPresent,
+      policyDigestOk: item.validation.policyDigestOk,
       signer: PdfSignerInfo.fromCertificatesPem(item.validation.certsPem),
     );
   }

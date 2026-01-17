@@ -253,6 +253,8 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature_validato
         PdfPolicyStatus;
 export 'src/pdf/implementation/security/digital_signature/icp_brasil/lpa.dart'
     show Lpa;
+export 'src/pdf/implementation/security/digital_signature/icp_brasil/etsi_policy.dart'
+    show EtsiPolicyConstraints;
 export 'src/pdf/implementation/security/digital_signature/x509/x509_utils.dart'
     show X509Utils, X509ChainValidationResult;
 export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
@@ -265,7 +267,8 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
 export 'src/security/chain/trusted_roots_provider.dart'
     show TrustedRootsProvider, CompositeTrustedRootsProvider;
 export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
-export 'src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart' show PdfCmsSigner;
+export 'src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart'
+    show PdfCmsSigner;
 export 'src/pdf/implementation/security/digital_signature/pdf_crypto_utils.dart'
     show PdfCryptoUtils;
 export 'src/security/pdf_signature_info.dart'

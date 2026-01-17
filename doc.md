@@ -753,6 +753,37 @@ Este repositório inclui um helper de validação server-side que consegue inspe
 - Status de timestamp (RFC 3161, quando presente)
 - Issues agregadas (warnings/errors) em `PdfSignatureValidationItem.issues`
 
+### Novidades de API (assinatura/validação)
+
+Foram expostos na API pública campos que antes só estavam nos tipos internos de validação. Isso facilita gerar relatórios consistentes com Acrobat/Validar.gov.br:
+
+- **Data/hora da assinatura** em `PdfSignatureValidationResult.signingTime`.
+  - Fonte principal: `CMS signedAttributes / id-signingTime`.
+  - Fallback: campo `/M` do dicionário de assinatura quando o CMS não traz `signingTime`.
+- **Validade do certificado do signatário** em `PdfSignerInfo.certNotBefore` e `PdfSignerInfo.certNotAfter`.
+- **Informações do certificado** em `PdfSignerInfo` (subject, issuer, serial hex/dec, `commonName`, `issuerCommonName`).
+- **Resultado de policy**:
+  - `PdfSignatureValidationResult.policyPresent`
+  - `PdfSignatureValidationResult.policyDigestOk` (quando há LPA/SignaturePolicyId)
+  - `PdfSignatureValidationResult.policyOid`
+- **Integridade/autenticidade do PDF** (já público): `cmsSignatureValid`, `byteRangeDigestOk`, `documentIntact`.
+- **Cadeia validada por assinatura** (já público): `PdfSignatureValidationItem.chainTrusted`.
+
+#### Script utilitário de extração
+
+O script [scripts/extract_pdf_signature_info.dart](scripts/extract_pdf_signature_info.dart) foi atualizado para imprimir:
+
+- `signing_time`
+- validade do certificado (`certificate_not_before`, `certificate_not_after`)
+- `policy_present` e `policy_digest_ok`
+- `subject`, `issuer`, `certificate_serial_hex`/`certificate_serial_decimal`
+
+Execute:
+
+```bash
+dart run scripts/extract_pdf_signature_info.dart test/assets/2\ ass\ leonardo\ e\ mauricio.pdf
+```
+
 Nota sobre severidade de timestamp (ICP-Brasil / Gov.br):
 
 - Se o OID de policy indicar ICP-Brasil/Gov.br (`2.16.76.1.7.1.*`) e **não** houver token de timestamp RFC3161, isso é reportado como issue **warning** (`timestamp_missing`) por padrão.
@@ -846,6 +877,37 @@ Entradas de código relevantes:
 - Extração do PDF: `pdf_signature_utils.dart`
 - Validação CMS: `pdf_signature_validation.dart`
 - Orquestração/relatório: `pdf_signature_validator.dart`
+
+### Metadados do assinante (PdfSignatureInspector)
+
+O helper `PdfSignatureInspector` encapsula a validação e também extrai metadados
+do certificado do assinante, retornando `PdfSignerInfo` dentro de cada
+`PdfSignatureSummary`.
+
+**Extração ICP-Brasil (SAN / otherName)**
+
+- PF (e-CPF): o OID `2.16.76.1.3.1` carrega um bloco que **começa** com
+  **DDMMAAAA + CPF**.
+- PJ: o OID `2.16.76.1.3.4` carrega **DDMMAAAA + CPF** do responsável.
+- **Importante:** `2.16.76.1.3.5` é **Título de Eleitor**, não data de nascimento.
+
+O mapa `otherNames` guarda os valores crus dos `otherName` encontrados, e o
+parser tenta “desembrulhar” `OCTET STRING` e ASN.1 interno quando aplicável.
+
+Uso típico:
+
+```dart
+final report = await PdfSignatureInspector().inspect(
+  pdfBytes,
+  useEmbeddedIcpBrasil: true,
+);
+
+for (final s in report.signatures) {
+  final signer = s.signer;
+  print('CPF: ${signer?.cpf}');
+  print('DOB: ${signer?.dateOfBirth}');
+}
+```
 
 ### Validar todas as assinaturas
 
