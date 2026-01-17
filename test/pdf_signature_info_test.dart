@@ -88,6 +88,9 @@ void main() {
     expect(sig1.chainTrusted, isTrue);
     expect(sig2.chainTrusted, isTrue);
 
+    expect(sig1.docMdp, isNotNull);
+    expect(sig2.docMdp, isNotNull);
+
     expect(sig1.signer?.subject, isNotNull);
     expect(sig1.signer?.issuer, isNotNull);
     expect(sig1.signer?.serialNumberHex, isNotNull);
