@@ -29,6 +29,11 @@ class PdfQuickInfo {
     required this.docMdpPermissionP,
   });
 
+  bool get isPdf15OrAbove =>
+      versionMajor != null &&
+      versionMinor != null &&
+      (versionMajor! > 1 || (versionMajor == 1 && versionMinor! >= 5));
+
   /// Parte maior da versão (ex.: 1 em "1.7"), ou `null` se ausente.
   ///
   /// Extraída do header `%PDF-x.y`.
