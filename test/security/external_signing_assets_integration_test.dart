@@ -36,7 +36,6 @@ void main() {
 
         if (containsByteRange) {
           // Expected: should parse without throwing.
-          print('containsByteRange Expected: should parse without throwing');
           final range = PdfExternalSigning.extractByteRange(bytes);
           expect(range.length, equals(4), reason: 'Invalid ByteRange length for ${file.path}');
 

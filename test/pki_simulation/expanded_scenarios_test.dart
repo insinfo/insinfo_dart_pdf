@@ -27,7 +27,7 @@ void main() {
         validityYears: 20,
       );
       final rootCertPem = _certToPem(rootCertDer);
-      print('Level 1 - Root CA: $rootDn');
+      // print('Level 1 - Root CA: $rootDn');
       
       // ============================================
       // Level 2: Intermediate CA (issued by Root)
@@ -43,7 +43,7 @@ void main() {
         validityYears: 10,
       );
       final intermediateCertPem = _certToPem(intermediateCertDer);
-      print('Level 2 - Intermediate CA: $intermediateDn');
+      // print('Level 2 - Intermediate CA: $intermediateDn');
       
       // ============================================
       // Level 3: AC Final (End Entity CA, issued by Intermediate)
@@ -59,7 +59,7 @@ void main() {
         validityYears: 5,
       );
       final acFinalCertPem = _certToPem(acFinalCertDer);
-      print('Level 3 - AC Final: $acFinalDn');
+      // print('Level 3 - AC Final: $acFinalDn');
       
       // ============================================
       // Level 4: User Certificate (issued by AC Final) - THIS IS THE SIGNER!
@@ -76,7 +76,7 @@ void main() {
       );
       final userCertPem = _certToPem(userCertDer);
       final userKeyPem = _rsaPrivateKeyToPem(userKeyPair.privateKey as RSAPrivateKey);
-      print('Level 4 - User (Signer): $userDn');
+      // print('Level 4 - User (Signer): $userDn');
 
       // Export the chain as P7B file (like Cadeia_GovBr-der.p7b)
       // Order: from leaf to root
@@ -91,7 +91,7 @@ void main() {
       await File('test/tmp/AC_Final_Test.pem').writeAsString(acFinalCertPem);
       await File('test/tmp/Cert_Usuario_Isaque.pem').writeAsString(userCertPem);
       await File('test/tmp/Cert_Usuario_Isaque.key').writeAsString(userKeyPem);
-      print('Certificate chain exported to test/tmp/');
+      // print('Certificate chain exported to test/tmp/');
 
       // Validate chain linkage before signing
       _validateChainLinkageFromDerList([userCertDer, acFinalCertDer, intermediateCertDer, rootCertDer]);
@@ -141,8 +141,8 @@ void main() {
         await file.parent.create(recursive: true);
       }
       await file.writeAsBytes(signedBytes);
-      print('\nScenario 1: Signed PDF saved to ${file.path}');
-      print('Chain: Root -> Intermediate -> AC Final -> Isaque (4 levels)');
+      // print('\nScenario 1: Signed PDF saved to ${file.path}');
+      // print('Chain: Root -> Intermediate -> AC Final -> Isaque (4 levels)');
 
       final doc2 = PdfDocument(inputBytes: signedBytes);
       expect(doc2.form.fields.count, 1);
@@ -205,12 +205,12 @@ void main() {
 
         final file = File('test/tmp/out_scenario2_simple.pdf');
         await file.writeAsBytes(signedBytes);
-        print('Scenario 2: Signed PDF saved to ${file.path}');
+        // print('Scenario 2: Signed PDF saved to ${file.path}');
     });
 
     // --- DIAGNOSTIC TEST ---
     test('Diagnostic: Verify Chain Linkage (DN and KeyID)', () {
-      print('--- DIAGNOSTIC START ---');
+      // print('--- DIAGNOSTIC START ---');
       final rootKeyPair = PkiUtils.generateRsaKeyPair(bitStrength: 2048);
       final rootCertDer = PkiBuilder.createRootCertificate(
         keyPair: rootKeyPair,
@@ -258,8 +258,8 @@ void main() {
       final rootSubjectRaw = rootTbs.elements[5].encodedBytes;
       final userIssuerRaw = userTbs.elements[3].encodedBytes;
       
-      print('Root Subject: ${_bytesToHex(rootSubjectRaw)}');
-      print('User Issuer : ${_bytesToHex(userIssuerRaw)}');
+      // print('Root Subject: ${_bytesToHex(rootSubjectRaw)}');
+      // print('User Issuer : ${_bytesToHex(userIssuerRaw)}');
       
       expect(
           _bytesToHex(userIssuerRaw), 
@@ -274,8 +274,8 @@ void main() {
       final rootSKI = _getExtensionValue(rootExts, '2.5.29.14'); // SubjectKeyIdentifier
       final userAKI = _getExtensionValue(userExts, '2.5.29.35'); // AuthorityKeyIdentifier
       
-      print('Root SKI: ${_bytesToHex(rootSKI)}');
-      print('User AKI: ${_bytesToHex(userAKI)}');
+      // print('Root SKI: ${_bytesToHex(rootSKI)}');
+      // print('User AKI: ${_bytesToHex(userAKI)}');
 
       expect(rootSKI, isNotNull, reason: 'Root must have SKI');
       expect(userAKI, isNotNull, reason: 'User must have AKI');
@@ -308,8 +308,8 @@ void main() {
       final skiObj = skiParser.nextObject(); // Should be ASN1OctetString (04)
       final keyIdFromSki = skiObj.valueBytes();
       
-      print('KeyID from Root SKI: ${_bytesToHex(Uint8List.fromList(keyIdFromSki))}');
-      print('KeyID from User AKI: ${_bytesToHex(Uint8List.fromList(keyIdFromAki))}');
+      // print('KeyID from Root SKI: ${_bytesToHex(Uint8List.fromList(keyIdFromSki))}');
+      // print('KeyID from User AKI: ${_bytesToHex(Uint8List.fromList(keyIdFromAki))}');
       
       expect(
           _bytesToHex(Uint8List.fromList(keyIdFromAki)), 
@@ -323,7 +323,7 @@ void main() {
         final initialPdfFile = File('test/tmp/out_scenario1_internal.pdf');
         if (!await initialPdfFile.exists()) {
              // If scenario 1 failed or didn't run, create a mock one or skip
-             print('Skipping Scenario 3 because Scenario 1 output not found.');
+             // print('Skipping Scenario 3 because Scenario 1 output not found.');
              return;
         }
         final initialPdfBytes = await initialPdfFile.readAsBytes();
@@ -374,7 +374,7 @@ void main() {
         
         final file = File('test/tmp/out_scenario3_multi.pdf');
         await file.writeAsBytes(finalBytes);
-        print('Scenario 3: Multi-Signed PDF saved to ${file.path}');
+        // print('Scenario 3: Multi-Signed PDF saved to ${file.path}');
         
         final doc = PdfDocument(inputBytes: finalBytes);
         var sigCount = 0;
@@ -425,7 +425,7 @@ Future<void> _exportChainAsP7b(List<Uint8List> certsDer, String filePath) async 
         await file.parent.create(recursive: true);
     }
     await file.writeAsBytes(contentInfo.encodedBytes);
-    print('P7B chain exported to $filePath');
+    // print('P7B chain exported to $filePath');
 }
 
 String _bytesToHex(Uint8List? bytes) {
@@ -651,10 +651,10 @@ void _validateChainLinkage(ASN1Object certsTagged) {
         ));
     }
     
-    print('=== CHAIN VALIDATION ===');
-    for (final cert in certs) {
-        print('Cert: ${cert.cn}, SKI: ${cert.ski}, AKI: ${cert.aki}');
-    }
+    // print('=== CHAIN VALIDATION ===');
+    // for (final cert in certs) {
+    //    print('Cert: ${cert.cn}, SKI: ${cert.ski}, AKI: ${cert.aki}');
+    // }
     
     // Validate linkage
     int nonSelfSignedCount = 0;
@@ -672,10 +672,10 @@ void _validateChainLinkage(ASN1Object certsTagged) {
                     reason: 'Cert "${cert.cn}" with AKI=${cert.aki} has no matching issuer SKI in chain. '
                             'Available SKIs: ${certs.map((c) => '${c.cn}:${c.ski}').toList()}');
                 linkedCount++;
-                print('✓ Cert "${cert.cn}" -> linked to "${issuerCert.first.cn}"');
+                // print('✓ Cert "${cert.cn}" -> linked to "${issuerCert.first.cn}"');
             }
         } else {
-            print('✓ Cert "${cert.cn}" is self-signed (Root CA)');
+            // print('✓ Cert "${cert.cn}" is self-signed (Root CA)');
         }
     }
     
@@ -684,7 +684,7 @@ void _validateChainLinkage(ASN1Object certsTagged) {
         expect(linkedCount, equals(nonSelfSignedCount),
             reason: 'Not all non-self-signed certs have valid AKI linkage');
     }
-    print('=== CHAIN VALID ===');
+    // print('=== CHAIN VALID ===');
 }
 
 /// Validates chain linkage from a list of DER-encoded certificates.
@@ -767,12 +767,12 @@ void _validateChainLinkageFromDerList(List<Uint8List> certsDer) {
         ));
     }
     
-    print('=== PRE-SIGNING CHAIN VALIDATION ===');
-    for (final cert in certs) {
-        print('Cert: ${cert.cn}');
-        print('  SKI: ${cert.ski}');
-        print('  AKI: ${cert.aki}');
-    }
+    // print('=== PRE-SIGNING CHAIN VALIDATION ===');
+    // for (final cert in certs) {
+    //     print('Cert: ${cert.cn}');
+    //     print('  SKI: ${cert.ski}');
+    //     print('  AKI: ${cert.aki}');
+    // }
     
     // Validate linkage
     int nonSelfSignedCount = 0;
@@ -789,10 +789,10 @@ void _validateChainLinkageFromDerList(List<Uint8List> certsDer) {
                     reason: 'Cert "${cert.cn}" with AKI=${cert.aki} has no matching issuer SKI in chain. '
                             'Available SKIs: ${certs.map((c) => '${c.cn}:${c.ski}').toList()}');
                 linkedCount++;
-                print('✓ Cert "${cert.cn}" -> linked to "${issuerCert.first.cn}"');
+                // print('✓ Cert "${cert.cn}" -> linked to "${issuerCert.first.cn}"');
             }
         } else {
-            print('✓ Cert "${cert.cn}" is self-signed (Root CA)');
+            // print('✓ Cert "${cert.cn}" is self-signed (Root CA)');
         }
     }
     
@@ -800,7 +800,7 @@ void _validateChainLinkageFromDerList(List<Uint8List> certsDer) {
         expect(linkedCount, equals(nonSelfSignedCount),
             reason: 'Not all non-self-signed certs have valid AKI linkage');
     }
-    print('=== CHAIN VALID ===\n');
+    // print('=== CHAIN VALID ===\n');
 }
 
 class _CertInfo {

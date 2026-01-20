@@ -237,6 +237,23 @@ class X509Certificate extends X509ExtensionBase {
   /// internal field
   X509CertificateStructure? c;
   List<bool>? _keyUsage;
+
+  //Properties
+  /// Gets the subject of the certificate.
+  X509Name? get subject => c?.subject;
+
+  /// Gets the issuer of the certificate.
+  X509Name? get issuer => c?.issuer;
+
+  /// Gets the serial number of the certificate.
+  BigInt? get serialNumber => c?.serialNumber?.value;
+
+  /// Gets the start date of the certificate validity.
+  DateTime? get startDate => c?.startDate?.toDateTime();
+
+  /// Gets the end date of the certificate validity.
+  DateTime? get endDate => c?.endDate?.toDateTime();
+
   //Implementation
   @override
   X509Extensions? getX509Extensions() {

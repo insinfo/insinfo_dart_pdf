@@ -28,7 +28,7 @@ class PkiServer {
 
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
-    print('PKI Server listening on port $port');
+    // print('PKI Server listening on port $port');
     _server!.listen(_handleRequest);
   }
 

@@ -15,12 +15,11 @@ void main() {
 
       final stopwatch = Stopwatch()..start();
       final doc = PdfDocument(inputBytes: bytes);
+      // Ensure pages are counted (loading them)
+      // ignore: unused_local_variable
       final pageCount = doc.pages.count;
       stopwatch.stop();
 
-      print('Test PDF size: ${bytes.length} bytes');
-      print('Page count: $pageCount');
-      print('Total time to load and count pages: \${stopwatch.elapsed}');
 
       // The user reported ~1 minute. We expect a significant improvement.
       // Let's set a generous threshold for now.

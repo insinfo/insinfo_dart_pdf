@@ -148,7 +148,6 @@ void main() {
        expect(report.signatures, hasLength(1));
        final sig = report.signatures.first;
        
-       print('Certificates inside PDF: ${sig.validation.certsPem.length}');
        // Expect at least 3 (User, Inter, Root) or 2 (User, Inter) depending on implementation details of PdfSignature
        // Our implementation passed [user, inter, root] to addExternalSigner, so they should be there.
        expect(sig.validation.certsPem.length, greaterThanOrEqualTo(2));
@@ -246,15 +245,13 @@ void main() {
         if (!sigReport.validation.cmsSignatureValid || 
             sigReport.chainTrusted != true || 
             sigReport.revocationStatus.status != 'good') {
-              print('Bad validation for $index: Intact=${sigReport.validation.documentIntact} CMS=${sigReport.validation.cmsSignatureValid} Trusted=${sigReport.chainTrusted} Rev=${sigReport.revocationStatus.status}');
-              throw Exception('Validation failed for document $index');
+              throw Exception('Validation failed for document $index: Intact=${sigReport.validation.documentIntact} CMS=${sigReport.validation.cmsSignatureValid} Trusted=${sigReport.chainTrusted} Rev=${sigReport.revocationStatus.status}');
             }
         
         return bytes.length;
       });
       
       final results = await Future.wait(futures);
-      print('Signed ${results.length} PDFs in parallel. Sizes: $results');
       expect(results.length, 3);
       expect(results.every((size) => size > 0), isTrue);
     });

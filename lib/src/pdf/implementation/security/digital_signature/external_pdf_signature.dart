@@ -154,8 +154,8 @@ class PdfExternalSigning {
     );
   }
 
-  /// Computes the Base64 SHA-256 hash of the provided ByteRange.
-  static String computeByteRangeHashBase64(
+  /// Computes the SHA-256 digest (raw bytes) of the provided ByteRange.
+  static Uint8List computeByteRangeDigest(
     Uint8List pdfBytes,
     List<int> byteRange,
   ) {
@@ -175,8 +175,15 @@ class PdfExternalSigning {
     input.add(pdfBytes.sublist(start2, start2 + len2));
     input.close();
 
-    final List<int> digestBytes = output.events.single.bytes;
-    return base64Encode(digestBytes);
+    return Uint8List.fromList(output.events.single.bytes);
+  }
+
+  /// Computes the Base64 SHA-256 hash of the provided ByteRange.
+  static String computeByteRangeHashBase64(
+    Uint8List pdfBytes,
+    List<int> byteRange,
+  ) {
+    return base64Encode(computeByteRangeDigest(pdfBytes, byteRange));
   }
 
   /// Computes the Base64 SHA-256 hash of the entire file (detached mode).

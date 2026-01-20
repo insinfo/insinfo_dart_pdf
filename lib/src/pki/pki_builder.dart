@@ -382,6 +382,186 @@ class PkiBuilder {
     return seq;
   }
 
+  static Uint8List createCRL({
+    required AsymmetricKeyPair<PublicKey, PrivateKey> issuerKeyPair,
+    required String issuerDn,
+    required List<RevokedCertificate> revokedCertificates,
+    required DateTime thisUpdate,
+    required DateTime nextUpdate,
+    required int crlNumber,
+  }) {
+    final tbs = ASN1Sequence();
+    tbs.add(ASN1Integer(BigInt.from(1))); // Version 2
+    tbs.add(createAlgorithmIdentifier(sha256WithRSAEncryption));
+    tbs.add(createName(issuerDn));
+    tbs.add(ASN1UtcTime(thisUpdate));
+    tbs.add(ASN1UtcTime(nextUpdate));
+
+    if (revokedCertificates.isNotEmpty) {
+      final revSeq = ASN1Sequence();
+      for (final rev in revokedCertificates) {
+        final entry = ASN1Sequence();
+        entry.add(ASN1Integer(rev.serialNumber));
+        entry.add(ASN1UtcTime(rev.revocationDate));
+        if (rev.reasonCode != null) {
+          final extSeq = ASN1Sequence();
+          final reasonExt = ASN1Sequence();
+          reasonExt.add(ASN1ObjectIdentifier.fromComponentString('2.5.29.21'));
+          final enumVal = ASN1Integer(BigInt.from(rev.reasonCode!), tag: 0x0A);
+          reasonExt.add(ASN1OctetString(enumVal.encodedBytes));
+          extSeq.add(reasonExt);
+          entry.add(extSeq);
+        }
+        revSeq.add(entry);
+      }
+      tbs.add(revSeq);
+    }
+
+    final extCrl = ASN1Sequence();
+    final crlNumExt = ASN1Sequence();
+    crlNumExt.add(ASN1ObjectIdentifier.fromComponentString('2.5.29.20'));
+    final numInt = ASN1Integer(BigInt.from(crlNumber));
+    crlNumExt.add(ASN1OctetString(numInt.encodedBytes));
+    extCrl.add(crlNumExt);
+
+    final extWrapper = ASN1Sequence(tag: 0xA0);
+    extWrapper.add(extCrl);
+    tbs.add(extWrapper);
+
+    final signature = signData(tbs.encodedBytes, issuerKeyPair.privateKey as RSAPrivateKey);
+
+    final crl = ASN1Sequence();
+    crl.add(tbs);
+    crl.add(createAlgorithmIdentifier(sha256WithRSAEncryption));
+    crl.add(ASN1BitString(signature));
+
+    return crl.encodedBytes;
+  }
+
+  static Uint8List createOCSPResponse({
+    required AsymmetricKeyPair<PublicKey, PrivateKey> responderKeyPair,
+    required AsymmetricKeyPair<PublicKey, PrivateKey> issuerKeyPair,
+    required Uint8List requestBytes,
+    required OcspEntryStatus Function(BigInt serial) checkStatus,
+  }) {
+    final parser = ASN1Parser(requestBytes);
+    final reqSeq = parser.nextObject() as ASN1Sequence;
+    final tbsReq = reqSeq.elements[0] as ASN1Sequence;
+    
+    var reqListIndex = 0;
+    while(reqListIndex < tbsReq.elements.length && tbsReq.elements[reqListIndex] is! ASN1Sequence) {
+        reqListIndex++;
+    }
+    final requestList = tbsReq.elements[reqListIndex] as ASN1Sequence;
+
+    Uint8List? nonce;
+    for(final el in tbsReq.elements) {
+        if (el.tag == 0xA2) { // [2] explicit Extensions
+           final extSeq = el as ASN1Sequence;
+           if (extSeq.elements.isNotEmpty) {
+               final inner = extSeq.elements[0] as ASN1Sequence;
+               for(final ext in inner.elements) {
+                  final seq = ext as ASN1Sequence;
+                  final oidObj = seq.elements[0] as ASN1ObjectIdentifier;
+                  final nonceOid = ASN1ObjectIdentifier.fromComponentString('1.3.6.1.5.5.7.48.1.2');
+                  
+                  bool match = true;
+                  if (oidObj.encodedBytes.length != nonceOid.encodedBytes.length) {
+                      match = false;
+                  } else {
+                      for(int i=0; i<oidObj.encodedBytes.length; i++) {
+                          if (oidObj.encodedBytes[i] != nonceOid.encodedBytes[i]) {
+                              match = false;
+                              break;
+                          }
+                      }
+                  }
+
+                  if (match) {
+                      nonce = (seq.elements[1] as dynamic).valueBytes();
+                  }
+               }
+           }
+        }
+    }
+
+    final responses = ASN1Sequence();
+    for (final req in requestList.elements) {
+       final reqSeq = req as ASN1Sequence;
+       final certId = reqSeq.elements[0] as ASN1Sequence;
+       final serialC = certId.elements[3] as ASN1Integer;
+       final serial = serialC.valueAsBigInteger;
+
+       final statusInfo = checkStatus(serial);
+
+       final singleResp = ASN1Sequence();
+       singleResp.add(certId);
+
+       if (statusInfo.status == 0) { // Good
+          singleResp.add(ASN1Null(tag: 0x80));
+       } else if (statusInfo.status == 1) { // Revoked
+           final revInfo = ASN1Sequence(tag: 0xA1);
+           revInfo.add(ASN1GeneralizedTime(statusInfo.revocationTime ?? DateTime.now(), tag: 0x18));
+           if (statusInfo.revocationReason != null) {
+              final enumVal = ASN1Integer(BigInt.from(statusInfo.revocationReason!), tag: 0xA0);
+              revInfo.add(enumVal);
+           }
+           singleResp.add(revInfo);
+       } else { // Unknown
+           singleResp.add(ASN1Null(tag: 0x82));
+       }
+
+       singleResp.add(ASN1GeneralizedTime(statusInfo.thisUpdate ?? DateTime.now().toUtc()));
+       if (statusInfo.nextUpdate != null) {
+          final nextWrapper = ASN1Sequence(tag: 0xA0);
+          nextWrapper.add(ASN1GeneralizedTime(statusInfo.nextUpdate!));
+          singleResp.add(nextWrapper);
+       }
+       
+       responses.add(singleResp);
+    }
+    
+    final responseData = ASN1Sequence();
+    
+    final responderKeyHash = _calculateSha1(_encodePublicKeyInfo(responderKeyPair.publicKey as RSAPublicKey));
+    final rid = ASN1OctetString(responderKeyHash, tag: 0x82);
+    responseData.add(rid); 
+    
+    responseData.add(ASN1GeneralizedTime(DateTime.now().toUtc()));
+    responseData.add(responses);
+    
+    if (nonce != null) {
+       final extSeq = ASN1Sequence();
+       final nonceExt = ASN1Sequence();
+       nonceExt.add(ASN1ObjectIdentifier.fromComponentString('1.3.6.1.5.5.7.48.1.2'));
+       nonceExt.add(ASN1OctetString(nonce));
+       extSeq.add(nonceExt);
+       
+       final extWrapper = ASN1Sequence(tag: 0xA1);
+       extWrapper.add(extSeq);
+       responseData.add(extWrapper);
+    }
+
+    final signature = signData(responseData.encodedBytes, responderKeyPair.privateKey as RSAPrivateKey);
+    
+    final basicResp = ASN1Sequence();
+    basicResp.add(responseData);
+    basicResp.add(createAlgorithmIdentifier(sha256WithRSAEncryption));
+    basicResp.add(ASN1BitString(signature));
+    
+    final ocspResp = ASN1Sequence();
+    final successful = ASN1Integer(BigInt.zero, tag: 0x0A); // successful(0)
+    ocspResp.add(successful);
+    
+    final responseBytes = ASN1Sequence(tag: 0xA0);
+    responseBytes.add(ASN1ObjectIdentifier.fromComponentString('1.3.6.1.5.5.7.48.1.1'));
+    responseBytes.add(ASN1OctetString(basicResp.encodedBytes));
+    
+    ocspResp.add(responseBytes);
+    
+    return ocspResp.encodedBytes;
+  }
+
   static Uint8List signData(Uint8List data, RSAPrivateKey key) {
     final signer = Signer('SHA-256/RSA');
     signer.init(true, PrivateKeyParameter<RSAPrivateKey>(key)); 
@@ -395,5 +575,35 @@ class PkiOtherName {
 
   final String oid;
   final String value;
+}
+
+/// Represents a revoked certificate entry for CRL generation.
+class RevokedCertificate {
+  final BigInt serialNumber;
+  final DateTime revocationDate;
+  final int? reasonCode;
+
+  const RevokedCertificate({
+    required this.serialNumber,
+    required this.revocationDate,
+    this.reasonCode,
+  });
+}
+
+/// Helper for OCSP status.
+class OcspEntryStatus {
+  final int status; // 0=good, 1=revoked, 2=unknown
+  final DateTime? revocationTime;
+  final int? revocationReason;
+  final DateTime? thisUpdate;
+  final DateTime? nextUpdate;
+
+  const OcspEntryStatus({
+    this.status = 0,
+    this.revocationTime,
+    this.revocationReason,
+    this.thisUpdate,
+    this.nextUpdate,
+  });
 }
 

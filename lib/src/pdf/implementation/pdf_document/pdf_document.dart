@@ -177,6 +177,13 @@ class PdfDocument {
   //Properties
   /// Gets a value indicating whether the document contains any digital signatures.
   bool get hasSignatures {
+    if (_form == null &&
+        _helper.isLoadedDocument &&
+        _helper.catalog.containsKey(PdfDictionaryProperties.acroForm)) {
+      // Force loading of the form if it exists in the catalog
+      // ignore: unnecessary_statements
+      form;
+    }
     if (_form != null) {
       for (int i = 0; i < _form!.fields.count; i++) {
         final PdfField field = _form!.fields[i];

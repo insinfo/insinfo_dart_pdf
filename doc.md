@@ -644,6 +644,77 @@ File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
+## Novas APIs de Assinatura e PKI
+
+### Parsing de Certificados (X509Utils)
+
+Para manipular certificados PEM sem depender de bibliotecas externas:
+
+```dart
+import 'package:dart_pdf/pdf.dart';
+
+// Parsing
+final cert = X509Utils.parsePemCertificate(pemString);
+print(cert.subject); // "CN=..., O=..."
+```
+
+### Geração de Chaves e CSR (X509GeneratorUtils)
+
+Utilitários para geração de chaves RSA e solicitações de assinatura de certificado (CSR):
+
+```dart
+// Generation
+final pair = X509GeneratorUtils.generateRsaKeyPair();
+final csr = X509GeneratorUtils.generateRsaCsrPem(
+  {'CN': 'My User', 'O': 'My Org'}, 
+  pair.privateKey, 
+  pair.publicKey
+);
+```
+
+### Assinatura com PdfSigningSession
+
+A classe `PdfSigningSession` simplifica o fluxo de assinatura ("Prepare" -> "Digest" -> "Sign" -> "Embed"), eliminando boilerplate.
+
+Exemplo usando `PdfLocalSigner` (chaves locais PEM):
+
+```dart
+final signer = PdfLocalSigner(
+  privateKeyPem: myPrivateKeyPem,
+  certificatePem: myCertificatePem,
+);
+
+final signedBytes = await PdfSigningSession.signPdf(
+  pdfBytes: myPdfBytes,
+  signer: signer,
+  pageNumber: 1,
+  bounds: Rect.fromLTWH(50, 50, 200, 50),
+  fieldName: 'Signature1',
+  signature: PdfSignature(reason: 'Teste', locationInfo: 'BR'),
+);
+```
+
+Para assinaturas externas (Gov.br, HSM), basta implementar `IPdfSigner`:
+
+```dart
+class MyRemoteSigner implements IPdfSigner {
+  @override
+  Future<Uint8List> signDigest(Uint8List digest) async {
+    // Chame sua API remota aqui enviando o digest
+    // Retorne a assinatura PKCS#7 (DER)
+    return myRemoteApi.sign(digest);
+  }
+}
+```
+
+### Utilitário ByteRange
+
+Para fluxos manuais de baixo nível, o cálculo do hash do ByteRange agora é exposto:
+
+```dart
+final hashBytes = PdfExternalSigning.computeByteRangeDigest(pdfBytes, byteRange);
+```
+
 ## Validação de assinaturas (PAdES / server-side)
 
 ### Testes com Certificados de Desenvolvimento
@@ -1316,6 +1387,61 @@ Uint8List embedPkcs7LowLevel(Uint8List pdfBytes, List<int> pkcs7Bytes) {
 ```
 
 Esse fluxo de baixo nível espelha o comportamento dos helpers, mas mantém controle total na sua aplicação.
+
+
+## Geração de CRL e OCSP (PKI Low-Level)
+
+A biblioteca oferece utilitários para geração de artefatos PKI (Public Key Infrastructure) inteiramente em Dart, removendo dependências externas como OpenSSL.
+
+### Geração de CRL (Certificate Revocation List)
+
+Gera uma CRL X.509 v2 assinada.
+
+```dart
+final crlDer = PkiBuilder.createCRL(
+  issuerKeyPair: caKeyPair, // Utils.generateRsaKeyPair() ou carregar PEM
+  issuerDn: 'CN=Minha CA, O=Minha Org, C=BR',
+  revokedCertificates: [
+    RevokedCertificate(
+      serialNumber: BigInt.parse('12345'),
+      revocationDate: DateTime.now().subtract(Duration(days: 1)),
+      reasonCode: 0, // 0=unspecified, 1=keyCompromise, etc.
+    ),
+  ],
+  thisUpdate: DateTime.now(),
+  nextUpdate: DateTime.now().add(Duration(days: 7)),
+  crlNumber: 1,
+);
+
+File('ca.crl').writeAsBytesSync(crlDer);
+```
+
+### Geração de Resposta OCSP
+
+Gera uma resposta OCSP assinada (RFC 6960) a partir de um request (DER). Útil para implementar responders OCSP customizados.
+
+```dart
+final responseDer = PkiBuilder.createOCSPResponse(
+  responderKeyPair: responderKeyPair, // Geralmente a mesma da CA
+  issuerKeyPair: caKeyPair,
+  requestBytes: requestBytes, // Bytes do OCSP Request recebido
+  checkStatus: (serial) {
+    // Callback para verificar status do certificado no banco de dados
+    if (isRevoked(serial)) {
+       return OcspEntryStatus(
+         status: 1, // 1=revoked
+         revocationTime: getRevocationDate(serial),
+         revocationReason: 0,
+       );
+    }
+    return OcspEntryStatus(status: 0); // 0=good
+  },
+);
+
+// Enviar responseDer de volta ao cliente
+```
+
+Essas funções permitem criar Autoridades Certificadoras (CA) e Responders OCSP completos em Dart puro.
 
 
 
