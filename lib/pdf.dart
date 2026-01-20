@@ -8,6 +8,7 @@ export 'src/utils/pdf_percent_comments.dart'
     show PdfPercentCommentLine, extractPdfPercentCommentLines;
 export 'src/utils/pdf_comment_sanitizer.dart'
     show PdfCommentSanitizerResult, sanitizePdfLeadingPercentComments;
+export 'src/utils/pdf_quick_info.dart' show PdfQuickInfo;
 export 'src/pdf/implementation/actions/pdf_action.dart' show PdfAction;
 export 'src/pdf/implementation/actions/pdf_annotation_action.dart'
     show PdfAnnotationActions;
