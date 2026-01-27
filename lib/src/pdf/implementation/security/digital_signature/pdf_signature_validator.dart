@@ -34,6 +34,7 @@ import '../../../../security/chain/icp_brasil_provider.dart';
 import '../../../../security/chain/iti_provider.dart';
 import '../../../../security/chain/serpro_provider.dart';
 import '../../../../security/chain/trusted_roots_provider.dart';
+import '../../../../security/pdf_signer_info.dart';
 
 class PdfLtvInfo {
   const PdfLtvInfo({
@@ -268,6 +269,10 @@ class PdfSignatureValidationItem {
   /// This is additive metadata; consumers should not assume it exists in older
   /// versions.
   final List<PdfValidationIssue> issues;
+
+  /// Best-effort extraction of signer info from embedded CMS certificates.
+  PdfSignerInfo? get signerInfo =>
+      PdfSignerInfo.fromCertificatesPem(validation.certsPem);
 
   Map<String, dynamic> toMap() => <String, dynamic>{
         'field_name': fieldName,

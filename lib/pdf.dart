@@ -285,9 +285,9 @@ export 'src/security/pdf_signature_info.dart'
     show
         PdfSignatureInspector,
         PdfSignatureInspectionReport,
-        PdfSignatureSummary,
-        PdfSignerInfo,
-        IcpBrasilOtherNameOids;
+        PdfSignatureSummary;
+export 'src/security/pdf_signer_info.dart'
+    show PdfSignerInfo, IcpBrasilOtherNameOids;
 export 'src/pdf/implementation/security/digital_signature/cryptography/cipher_block_chaining_mode.dart'
     show RsaPrivateKeyParam;
 export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'

@@ -717,6 +717,16 @@ final hashBytes = PdfExternalSigning.computeByteRangeDigest(pdfBytes, byteRange)
 
 ## Validação de assinaturas (PAdES / server-side)
 
+### Metadados do certificado do signatário
+
+Para extrair dados do certificado diretamente do resultado da validação (ex.: validade notAfter), use o getter `signerInfo` em `PdfSignatureValidationItem`:
+
+```dart
+final report = await PdfSignatureValidator().validateAllSignatures(bytes);
+final sig = report.signatures.first;
+final notAfter = sig.signerInfo?.certNotAfter;
+```
+
 ### Testes com Certificados de Desenvolvimento
 
 Para testar assinaturas digitais em ambiente de desenvolvimento, a biblioteca inclui ferramentas para gerar uma cadeia de certificados de teste completa (4 níveis) no estilo ICP-Brasil:
