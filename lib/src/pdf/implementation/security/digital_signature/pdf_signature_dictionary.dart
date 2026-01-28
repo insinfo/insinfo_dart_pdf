@@ -93,6 +93,14 @@ class PdfSignatureDictionary implements IPdfWrapper {
   late List<int> _range;
   List<int>? _stream;
 
+  int _getEstimatedSize() {
+    final int? override = _sig?.contentsReserveSize;
+    if (override != null && override > 0) {
+      return override;
+    }
+    return _estimatedSize;
+  }
+
   //Implementations
   void _dictionaryBeginSave(Object sender, SavePdfPrimitiveArgs? args) {
     final bool state =
@@ -246,15 +254,16 @@ class PdfSignatureDictionary implements IPdfWrapper {
   }
 
   void _addContents(IPdfWriter writer) {
+    final int estimatedSize = _getEstimatedSize();
     writer.write(
       PdfOperators.slash +
           PdfDictionaryProperties.contents +
           PdfOperators.whiteSpace,
     );
     _firstRangeLength = writer.position;
-    int length = _estimatedSize * 2;
+    int length = estimatedSize * 2;
     if (_sig != null && _cert != null) {
-      length = _estimatedSize;
+      length = estimatedSize;
       if (_sig!.timestampServer != null) {
         length += 4192;
       }
@@ -609,7 +618,7 @@ class PdfSignatureDictionary implements IPdfWrapper {
           externalSignature.getEncryptionAlgorithm(),
         );
       } else {
-        return List<int>.filled(_estimatedSize, 0, growable: true);
+        return List<int>.filled(_getEstimatedSize(), 0, growable: true);
       }
     } else {
       extSignature = externalSignature.sign(sh!);
@@ -739,7 +748,7 @@ class PdfSignatureDictionary implements IPdfWrapper {
                 );
               } else {
                 pkcs7Content = List<int>.filled(
-                  _estimatedSize,
+                  _getEstimatedSize(),
                   0,
                   growable: true,
                 );

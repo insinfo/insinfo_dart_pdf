@@ -46,6 +46,7 @@ class PdfSignature {
     PdfCertificate? certificate,
     TimestampServer? timestampServer,
     DateTime? signedDate,
+    int? contentsReserveSize,
   }) {
     _helper = PdfSignatureHelper(this);
     if (documentPermissions != null && documentPermissions.isNotEmpty) {
@@ -62,6 +63,7 @@ class PdfSignature {
       certificate,
       signedDate,
       timestampServer,
+      contentsReserveSize,
     );
   }
 
@@ -174,6 +176,18 @@ class PdfSignature {
   /// ```
   TimestampServer? timestampServer;
 
+  /// Optional override for the reserved /Contents size (in bytes).
+  ///
+  /// When null, the library default is used.
+  int? get contentsReserveSize => _helper.contentsReserveSize;
+
+  set contentsReserveSize(int? value) {
+    if (value != null && value <= 0) {
+      throw RangeError.range(value, 1, null, 'contentsReserveSize');
+    }
+    _helper.contentsReserveSize = value;
+  }
+
   //Implementations
   void _init(
     String? signedName,
@@ -186,6 +200,7 @@ class PdfSignature {
     PdfCertificate? pdfCertificate,
     DateTime? signedDate,
     TimestampServer? timestampServer,
+    int? contentsReserveSize,
   ) {
     this.cryptographicStandard = cryptographicStandard;
     this.digestAlgorithm = digestAlgorithm;
@@ -212,6 +227,9 @@ class PdfSignature {
     }
     if (timestampServer != null) {
       this.timestampServer = timestampServer;
+    }
+    if (contentsReserveSize != null) {
+      this.contentsReserveSize = contentsReserveSize;
     }
   }
 
@@ -335,6 +353,9 @@ class PdfSignatureHelper {
   /// internal method
   List<X509Certificate?>? externalChain;
   List<int>? _nameData;
+
+  /// internal override for reserved /Contents size (in bytes)
+  int? contentsReserveSize;
 
   /// internal method
   /// To check annotation last elements have signature field

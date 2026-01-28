@@ -277,6 +277,10 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
 export 'src/security/chain/trusted_roots_provider.dart'
     show TrustedRootsProvider, CompositeTrustedRootsProvider;
 export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
+
+export 'src/pki/pki_builder.dart' show PkiUtils;
+export 'src/pki/pki_pem_utils.dart' show PkiPemUtils;
+
 export 'src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart'
     show PdfCmsSigner;
 export 'src/pdf/implementation/security/digital_signature/pdf_crypto_utils.dart'

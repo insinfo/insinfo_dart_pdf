@@ -644,6 +644,17 @@ File('output.pdf').writeAsBytesSync(await document.save());
 document.dispose();
 ```
 
+#### Ajuste do tamanho reservado do /Contents
+
+Se o provedor de assinatura gera PKCS#7 maior que o padrão, configure o tamanho reservado do `/Contents`:
+
+```dart
+final PdfSignature signature = PdfSignature(
+  certificate: PdfCertificate(File('certificate.pfx').readAsBytesSync(), 'password@123'),
+  contentsReserveSize: 12000, // bytes reservados
+);
+```
+
 ## Novas APIs de Assinatura e PKI
 
 ### Parsing de Certificados (X509Utils)
@@ -656,6 +667,44 @@ import 'package:dart_pdf/pdf.dart';
 // Parsing
 final cert = X509Utils.parsePemCertificate(pemString);
 print(cert.subject); // "CN=..., O=..."
+```
+
+### Utilitários PKI (produção)
+
+Os utilitários de PKI suportam cenários reais de CA:
+
+- Serial criptograficamente forte (`PkiUtils.generateSerialNumberBigInt`).
+- Validade automática com `UTCTime`/`GeneralizedTime`.
+- DN com `OU`, `L`, `ST`, `E`, `SERIALNUMBER`.
+- EKU configurável e `keyUsage` customizável.
+
+Exemplo com serial `BigInt` e EKU:
+
+```dart
+final serial = PkiUtils.generateSerialNumberBigInt(bytes: 16);
+final certDer = PkiBuilder.createUserCertificate(
+  keyPair: userKey,
+  issuerKeyPair: caKey,
+  subjectDn: 'CN=User,OU=Prod,O=MyOrg,L=Sao Paulo,ST=SP,C=BR',
+  issuerDn: 'CN=My CA,O=MyOrg,C=BR',
+  serialNumber: 1,
+  serialNumberBigInt: serial,
+  extendedKeyUsageOids: ['1.3.6.1.5.5.7.3.2'], // clientAuth
+);
+```
+
+### Exportação PEM (PkiPemUtils)
+
+Para exportar certificados DER e chaves RSA para PEM sem OpenSSL:
+
+```dart
+final certPem = PkiPemUtils.certificateDerToPem(certDer);
+final chainPem = PkiPemUtils.certificateChainDerToPemBundle([leaf, inter, root]);
+
+final keyPem = PkiPemUtils.rsaPrivateKeyToPem(
+  privateKey,
+  publicExponent: publicKey.exponent,
+);
 ```
 
 ### Geração de Chaves e CSR (X509GeneratorUtils)

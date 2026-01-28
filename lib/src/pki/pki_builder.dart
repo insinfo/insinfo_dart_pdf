@@ -24,6 +24,24 @@ class PkiUtils {
           _secureRandom));
     return keyGen.generateKeyPair();
   }
+
+  /// Generates a cryptographically strong random serial number.
+  ///
+  /// [bytes] should be between 8 and 20 for production use (RFC 5280).
+  static BigInt generateSerialNumberBigInt({int bytes = 16}) {
+    if (bytes < 4 || bytes > 20) {
+      throw RangeError.range(bytes, 4, 20, 'bytes');
+    }
+    final Uint8List serialBytes = _secureRandom.nextBytes(bytes);
+    // Ensure positive and non-zero by clearing MSB and setting LSB.
+    serialBytes[0] = serialBytes[0] & 0x7F;
+    serialBytes[serialBytes.length - 1] |= 0x01;
+    BigInt serial = BigInt.zero;
+    for (final int b in serialBytes) {
+      serial = (serial << 8) | BigInt.from(b);
+    }
+    return serial == BigInt.zero ? BigInt.one : serial;
+  }
 }
 
 /// A builder for creating X.509 certificates and PKI chains (Root, Intermediate, Leaf).
@@ -71,8 +89,10 @@ class PkiBuilder {
     required String subjectDn,
     required String issuerDn,
     required int serialNumber,
+    BigInt? serialNumberBigInt,
     List<String>? crlUrls,
     List<String>? ocspUrls,
+    List<String>? extendedKeyUsageOids,
     int validityYears = 5,
   }) {
     final now = DateTime.now();
@@ -82,11 +102,13 @@ class PkiBuilder {
       subjectDn: subjectDn,
       issuerDn: issuerDn,
       serialNumber: serialNumber,
+      serialNumberBigInt: serialNumberBigInt,
       notBefore: now,
       notAfter: now.add(Duration(days: 365 * validityYears)),
       isCa: true, // It is a CA
       crlUrls: crlUrls,
       ocspUrls: ocspUrls,
+      extendedKeyUsageOids: extendedKeyUsageOids,
     );
   }
 
@@ -97,8 +119,10 @@ class PkiBuilder {
     required String subjectDn,
     required String issuerDn,
     required int serialNumber,
+    BigInt? serialNumberBigInt,
     List<String>? crlUrls,
     List<String>? ocspUrls,
+    List<String>? extendedKeyUsageOids,
     int validityDays = 365,
   }) {
     final now = DateTime.now();
@@ -108,11 +132,13 @@ class PkiBuilder {
       subjectDn: subjectDn,
       issuerDn: issuerDn,
       serialNumber: serialNumber,
+      serialNumberBigInt: serialNumberBigInt,
       notBefore: now,
       notAfter: now.add(Duration(days: validityDays)),
       isCa: false, // End entity
       crlUrls: crlUrls,
       ocspUrls: ocspUrls,
+      extendedKeyUsageOids: extendedKeyUsageOids,
     );
   }
 
@@ -123,12 +149,15 @@ class PkiBuilder {
     required String subjectDn,
     required String issuerDn,
     required int serialNumber,
+    BigInt? serialNumberBigInt,
     required DateTime notBefore,
     required DateTime notAfter,
     bool isCa = false,
     List<String>? crlUrls,
     List<String>? ocspUrls,
     List<PkiOtherName>? subjectAltNameOtherNames,
+    List<String>? extendedKeyUsageOids,
+    int? keyUsageBits,
   }) {
     // 1. Create TBSCertificate
     final tbs = ASN1Sequence();
@@ -139,7 +168,8 @@ class PkiBuilder {
     tbs.add(versionWrapper);
 
     // Serial Number
-    tbs.add(ASN1Integer(BigInt.from(serialNumber)));
+    final BigInt serial = serialNumberBigInt ?? BigInt.from(serialNumber);
+    tbs.add(ASN1Integer(serial));
 
     // Algorithm ID
     tbs.add(createAlgorithmIdentifier(sha256WithRSAEncryption));
@@ -149,8 +179,8 @@ class PkiBuilder {
 
     // Validity
     final validity = ASN1Sequence();
-    validity.add(ASN1UtcTime(notBefore));
-    validity.add(ASN1UtcTime(notAfter));
+    validity.add(_encodeTime(notBefore));
+    validity.add(_encodeTime(notAfter));
     tbs.add(validity);
 
     // Subject
@@ -172,7 +202,7 @@ class PkiBuilder {
     // Key Usage
     extensions.add(createExtension(
       oidKeyUsage,
-      createKeyUsage(isCa),
+      createKeyUsage(isCa, keyUsageBits: keyUsageBits),
       critical: true,
     ));
 
@@ -222,6 +252,13 @@ class PkiBuilder {
       extensions.add(createExtension(
         oidSubjectAltName,
         createSubjectAltName(subjectAltNameOtherNames),
+      ));
+    }
+
+    if (extendedKeyUsageOids != null && extendedKeyUsageOids.isNotEmpty) {
+      extensions.add(createExtension(
+        oidExtKeyUsage,
+        createExtendedKeyUsage(extendedKeyUsageOids),
       ));
     }
 
@@ -275,12 +312,17 @@ class PkiBuilder {
       if (type == 'CN') oid = oidCommonName;
       else if (type == 'O') oid = oidOrganizationName;
       else if (type == 'C') oid = oidCountryName;
+      else if (type == 'OU') oid = '2.5.4.11';
+      else if (type == 'L') oid = '2.5.4.7';
+      else if (type == 'ST') oid = '2.5.4.8';
+      else if (type == 'E' || type == 'EMAIL') oid = '1.2.840.113549.1.9.1';
+      else if (type == 'SERIALNUMBER') oid = '2.5.4.5';
 
       if (oid != null) {
         final set = ASN1Set();
         final attrSeq = ASN1Sequence();
         attrSeq.add(ASN1ObjectIdentifier.fromComponentString(oid));
-        attrSeq.add(ASN1PrintableString(value));
+        attrSeq.add(_encodeDnValue(oid, value));
         set.add(attrSeq);
         seq.add(set);
       }
@@ -318,12 +360,9 @@ class PkiBuilder {
     return seq;
   }
 
-   static ASN1BitString createKeyUsage(bool isCa) {
-    if (isCa) {
-      return ASN1BitString(Uint8List.fromList([0x06])); 
-    } else {
-      return ASN1BitString(Uint8List.fromList([0xC0]));
-    }
+  static ASN1BitString createKeyUsage(bool isCa, {int? keyUsageBits}) {
+    final int bits = keyUsageBits ?? (isCa ? 0x06 : 0xC0);
+    return ASN1BitString(Uint8List.fromList([bits]));
   }
 
   static ASN1Sequence createCrlDistributionPoints(List<String> urls) {
@@ -361,6 +400,32 @@ class PkiBuilder {
       seq.add(accessDesc);
     }
     return seq;
+  }
+
+  static ASN1Sequence createExtendedKeyUsage(List<String> oids) {
+    final seq = ASN1Sequence();
+    for (final oid in oids) {
+      seq.add(ASN1ObjectIdentifier.fromComponentString(oid));
+    }
+    return seq;
+  }
+
+  static ASN1Object _encodeDnValue(String oid, String value) {
+    if (oid == oidCountryName) {
+      return ASN1PrintableString(value);
+    }
+    if (oid == '1.2.840.113549.1.9.1') {
+      return ASN1IA5String(value);
+    }
+    return ASN1UTF8String(value);
+  }
+
+  static ASN1Object _encodeTime(DateTime time) {
+    final int year = time.toUtc().year;
+    if (year >= 2050 || year < 1950) {
+      return ASN1GeneralizedTime(time.toUtc());
+    }
+    return ASN1UtcTime(time.toUtc());
   }
 
   static ASN1Sequence createSubjectAltName(List<PkiOtherName> otherNames) {
