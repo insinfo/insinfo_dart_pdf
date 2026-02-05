@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import '../../../../flutter/ui.dart';
+import '../../../../vector/ui.dart';
 import '../../graphics/pdf_graphics.dart';
 import 'external_pdf_signature.dart';
 import 'pdf_signature.dart';

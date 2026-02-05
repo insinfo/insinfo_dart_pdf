@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../../annotations/enum.dart';
 import '../../forms/pdf_signature_field.dart';

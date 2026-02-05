@@ -3,7 +3,7 @@
 /// and web platforms.
 library pdf;
 
-export 'src/flutter/ui.dart';
+export 'src/vector/ui.dart';
 export 'src/utils/pdf_percent_comments.dart'
     show PdfPercentCommentLine, extractPdfPercentCommentLines;
 export 'src/utils/pdf_comment_sanitizer.dart'
@@ -290,6 +290,15 @@ export 'src/security/pdf_signature_info.dart'
         PdfSignatureInspector,
         PdfSignatureInspectionReport,
         PdfSignatureSummary;
+export 'src/security/pdf_signature_extractor.dart'
+    show
+        PdfSignatureExtractor,
+        PdfSignatureExtractionReport,
+        PdfSignatureExtraction,
+        PdfSignatureFieldMapping,
+        PdfPageRef,
+        extractAllSignatureContents,
+        extractSignatureContentsAt;
 export 'src/security/pdf_signer_info.dart'
     show PdfSignerInfo, IcpBrasilOtherNameOids;
 export 'src/pdf/implementation/security/digital_signature/cryptography/cipher_block_chaining_mode.dart'

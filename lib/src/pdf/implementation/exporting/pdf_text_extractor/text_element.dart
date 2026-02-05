@@ -1,5 +1,5 @@
 import 'dart:collection';
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import 'package:intl/intl.dart' as bidi;
 

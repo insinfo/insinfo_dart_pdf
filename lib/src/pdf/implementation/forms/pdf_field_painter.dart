@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../annotations/enum.dart';
 import '../annotations/pdf_paintparams.dart';

@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../../drawing/drawing.dart';
 import '../brushes/pdf_solid_brush.dart';

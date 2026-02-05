@@ -8,6 +8,19 @@ import 'package:dart_pdf/src/security/chain/iti_provider.dart';
 import 'package:dart_pdf/src/security/chain/serpro_provider.dart';
 
 const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
+const bool _offline = bool.fromEnvironment('DART_PDF_OFFLINE');
+bool _internetAvailable = true;
+
+Future<bool> _hasInternet() async {
+  if (_offline) return false;
+  try {
+    final result = await InternetAddress.lookup('example.com')
+        .timeout(const Duration(seconds: 3));
+    return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
 
 String derToPem(Uint8List der) {
   final base64Cert = base64.encode(der);
@@ -26,6 +39,7 @@ void main() {
     List<String> trustedRoots = [];
 
     setUpAll(() async {
+      _internetAvailable = await _hasInternet();
       final icp = IcpBrasilProvider();
       final iti = ItiProvider();
       final serpro = SerproProvider();
@@ -116,10 +130,12 @@ void main() {
         }
       }
     },
-        skip: File('test/assets/sample_govbr_signature_assinado.pdf')
-                .existsSync()
-            ? false
-            : 'Missing test asset: test/assets/sample_govbr_signature_assinado.pdf');
+      skip: !_internetAvailable
+        ? 'Sem internet para validação de revogação (OCSP/CRL)'
+        : (File('test/assets/sample_govbr_signature_assinado.pdf')
+            .existsSync()
+          ? false
+          : 'Missing test asset: test/assets/sample_govbr_signature_assinado.pdf'));
 
     test(
         'Validate ICP-Brasil Token signed PDF (sample_token_icpbrasil_assinado.pdf)',
@@ -159,9 +175,12 @@ void main() {
             reason: 'CMS signature must be valid');
       }
     },
-        skip: File('test/assets/sample_token_icpbrasil_assinado.pdf')
-                .existsSync()
-            ? false
-            : 'Missing test asset: test/assets/sample_token_icpbrasil_assinado.pdf');
+      timeout: const Timeout(Duration(minutes: 2)),
+      skip: !_internetAvailable
+        ? 'Sem internet para validação de revogação (OCSP/CRL)'
+        : (File('test/assets/sample_token_icpbrasil_assinado.pdf')
+            .existsSync()
+          ? false
+          : 'Missing test asset: test/assets/sample_token_icpbrasil_assinado.pdf'));
   });
 }

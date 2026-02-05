@@ -20,6 +20,8 @@ class PdfSignatureSummary {
     required this.policyDigestOk,
     required this.signer,
     required this.docMdp,
+    this.pageIndex,
+    this.pageNumber,
   });
 
   final String fieldName;
@@ -33,6 +35,8 @@ class PdfSignatureSummary {
   final bool? policyDigestOk;
   final PdfSignerInfo? signer;
   final PdfDocMdpInfo? docMdp;
+  final int? pageIndex;
+  final int? pageNumber;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
         'field_name': fieldName,
@@ -46,6 +50,8 @@ class PdfSignatureSummary {
         'policy_digest_ok': policyDigestOk,
         'signer': signer?.toMap(),
         'doc_mdp': docMdp?.toMap(),
+        'page_index': pageIndex,
+        'page_number': pageNumber,
       };
 
   static PdfSignatureSummary fromValidationItem(
@@ -63,6 +69,8 @@ class PdfSignatureSummary {
       policyDigestOk: item.validation.policyDigestOk,
       signer: PdfSignerInfo.fromCertificatesPem(item.validation.certsPem),
       docMdp: item.docMdp,
+      pageIndex: item.pageIndex,
+      pageNumber: item.pageNumber,
     );
   }
 }

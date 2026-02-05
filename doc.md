@@ -776,6 +776,37 @@ final sig = report.signatures.first;
 final notAfter = sig.signerInfo?.certNotAfter;
 ```
 
+### Extração de assinaturas (sem validação)
+
+Para inspecionar assinaturas **sem** validação criptográfica (CMS/PKCS#7, ByteRange e mapeamento do campo no PDF), use o `PdfSignatureExtractor`.
+
+O extractor retorna:
+- `pkcs7Der`: blob CMS/PKCS#7 em DER.
+- `byteRange`: o ByteRange original.
+- `contentsStart` / `contentsEnd`: offsets no arquivo do payload `/Contents` (best-effort).
+- `field`: mapeamento do campo (nome, retângulo e página).
+
+Exemplo:
+
+```dart
+final bytes = File('input.pdf').readAsBytesSync();
+final report = PdfSignatureExtractor().extract(bytes);
+
+for (final sig in report.signatures) {
+  print(sig.field.fieldName);
+  print('pageIndex=${sig.field.pageIndex}, pageNumber=${sig.field.pageNumber}');
+  print('pkcs7Len=${sig.pkcs7Der.length}');
+  print('contentsStart=${sig.contentsStart}, contentsEnd=${sig.contentsEnd}');
+}
+```
+
+Helpers para extrair o CMS diretamente:
+
+```dart
+final allCms = extractAllSignatureContents(bytes);
+final firstCms = extractSignatureContentsAt(bytes, 0);
+```
+
 ### Testes com Certificados de Desenvolvimento
 
 Para testar assinaturas digitais em ambiente de desenvolvimento, a biblioteca inclui ferramentas para gerar uma cadeia de certificados de teste completa (4 níveis) no estilo ICP-Brasil:
@@ -896,6 +927,9 @@ Foram expostos na API pública campos que antes só estavam nos tipos internos d
   - `PdfSignatureValidationResult.policyPresent`
   - `PdfSignatureValidationResult.policyDigestOk` (quando há LPA/SignaturePolicyId)
   - `PdfSignatureValidationResult.policyOid`
+- **Metadados de página do campo**:
+  - `PdfSignatureValidationItem.pageIndex` e `PdfSignatureValidationItem.pageNumber`
+  - `PdfSignatureSummary.pageIndex` e `PdfSignatureSummary.pageNumber`
 - **Integridade/autenticidade do PDF** (já público): `cmsSignatureValid`, `byteRangeDigestOk`, `documentIntact`.
 - **Cadeia validada por assinatura** (já público): `PdfSignatureValidationItem.chainTrusted`.
 

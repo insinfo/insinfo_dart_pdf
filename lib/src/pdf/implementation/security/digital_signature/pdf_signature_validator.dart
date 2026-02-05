@@ -212,6 +212,8 @@ class PdfSignatureValidationItem {
     required this.byteRange,
     required this.signedRevisionLength,
     required this.coversCurrentFile,
+    this.pageIndex,
+    this.pageNumber,
     required this.contentsStart,
     required this.contentsEnd,
     required this.validation,
@@ -230,6 +232,8 @@ class PdfSignatureValidationItem {
   final List<int> byteRange;
   final int signedRevisionLength;
   final bool coversCurrentFile;
+  final int? pageIndex;
+  final int? pageNumber;
 
   /// Start index (inclusive) of the /Contents hex payload in the original PDF.
   ///
@@ -279,6 +283,8 @@ class PdfSignatureValidationItem {
         'byte_range': byteRange,
         'signed_revision_length': signedRevisionLength,
         'covers_current_file': coversCurrentFile,
+        'page_index': pageIndex,
+        'page_number': pageNumber,
         'contents_start': contentsStart,
         'contents_end': contentsEnd,
         'cms_signature_valid': validation.cmsSignatureValid,
@@ -710,6 +716,8 @@ class PdfSignatureValidator {
             coversCurrentFile: sig.byteRange.length == 4 &&
                 sig.byteRange[0] == 0 &&
                 (sig.byteRange[2] + sig.byteRange[3]) == pdfBytes.length,
+            pageIndex: sig.pageIndex,
+            pageNumber: sig.pageNumber,
             contentsStart: cStart,
             contentsEnd: cEnd,
             validation: res,
@@ -1378,6 +1386,8 @@ class _ParsedSignature {
     required this.pkcs7Der,
     required this.signatureDict,
     required this.signatureRef,
+    required this.pageIndex,
+    required this.pageNumber,
   });
 
   final String fieldName;
@@ -1385,6 +1395,8 @@ class _ParsedSignature {
   final Uint8List pkcs7Der;
   final PdfDictionary signatureDict;
   final PdfReference? signatureRef;
+  final int? pageIndex;
+  final int? pageNumber;
 
   int get signedRevisionLength =>
       byteRange.length == 4 ? byteRange[2] + byteRange[3] : -1;
@@ -1459,6 +1471,17 @@ List<_ParsedSignature> _extractAllSignatures(PdfDocument doc) {
     final Uint8List? pkcs7Der = _readContentsPkcs7(sigDict);
     if (byteRange == null || pkcs7Der == null) continue;
 
+    int? pageIndex;
+    int? pageNumber;
+    final page = field.page;
+    if (page != null) {
+      final int index = doc.pages.indexOf(page);
+      if (index >= 0) {
+        pageIndex = index;
+        pageNumber = index + 1;
+      }
+    }
+
     out.add(
       _ParsedSignature(
         fieldName: field.name ?? '',
@@ -1466,6 +1489,8 @@ List<_ParsedSignature> _extractAllSignatures(PdfDocument doc) {
         pkcs7Der: pkcs7Der,
         signatureDict: sigDict,
         signatureRef: sigRefHolder?.reference,
+        pageIndex: pageIndex,
+        pageNumber: pageNumber,
       ),
     );
   }

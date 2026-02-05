@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 import 'package:xml/xml.dart';
 
 import '../../interfaces/pdf_interface.dart';

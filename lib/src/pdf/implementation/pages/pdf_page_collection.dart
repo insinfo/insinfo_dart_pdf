@@ -1,4 +1,4 @@
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../../interfaces/pdf_interface.dart';
 import '../forms/pdf_form_field_collection.dart';

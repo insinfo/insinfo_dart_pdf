@@ -1,4 +1,4 @@
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../../graphics/brushes/pdf_solid_brush.dart';
 import '../../graphics/fonts/pdf_font.dart';

@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:dart_pdf/src/flutter/ui.dart';
+import 'package:dart_pdf/src/vector/ui.dart';
 
 import '../../interfaces/pdf_interface.dart';
 import '../annotations/pdf_annotation_border.dart';
