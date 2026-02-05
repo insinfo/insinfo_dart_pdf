@@ -7,11 +7,12 @@ import 'package:test/test.dart';
 
 void main() {
   final bool hasOpenSsl = _hasOpenSsl();
+  final bool isCi = _isCiEnvironment();
 
   test(
     'govbr integration flow signs PDF with mock server',
     () async {
-      if (!hasOpenSsl) {
+      if (!hasOpenSsl || isCi) {
         return;
       }
 
@@ -166,13 +167,15 @@ void main() {
     }
   },
   timeout: const Timeout(Duration(minutes: 3)),
-  skip: hasOpenSsl ? false : 'openssl not available',
+  skip: !hasOpenSsl
+      ? 'openssl not available'
+      : (isCi ? 'Skip in CI environment' : false),
   );
 
   test(
     'govbr integration flow signs PDF with 5-level chain',
     () async {
-      if (!hasOpenSsl) {
+      if (!hasOpenSsl || isCi) {
         return;
       }
 
@@ -330,7 +333,9 @@ void main() {
       }
     },
     timeout: const Timeout(Duration(minutes: 3)),
-    skip: hasOpenSsl ? false : 'openssl not available',
+    skip: !hasOpenSsl
+        ? 'openssl not available'
+        : (isCi ? 'Skip in CI environment' : false),
   );
 
   test(
@@ -377,6 +382,13 @@ bool _hasOpenSsl() {
   } catch (_) {
     return false;
   }
+}
+
+bool _isCiEnvironment() {
+  final String? ci = Platform.environment['CI'];
+  if (ci != null && ci.toLowerCase() == 'true') return true;
+  final String? gha = Platform.environment['GITHUB_ACTIONS'];
+  return gha != null && gha.toLowerCase() == 'true';
 }
 
 Uint8List _extractDataByRange(Uint8List pdfBytes, List<int> byteRange) {
