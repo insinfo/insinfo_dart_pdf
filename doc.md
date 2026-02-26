@@ -933,6 +933,112 @@ Foram expostos na API pública campos que antes só estavam nos tipos internos d
 - **Integridade/autenticidade do PDF** (já público): `cmsSignatureValid`, `byteRangeDigestOk`, `documentIntact`.
 - **Cadeia validada por assinatura** (já público): `PdfSignatureValidationItem.chainTrusted`.
 
+### Novas APIs (serial robusto + seleção inteligente de roots)
+
+As APIs abaixo foram adicionadas para suportar cenários ICP-Brasil com serial grande (sem overflow) e reduzir custo de validação de cadeia em alto volume.
+
+#### 1) `CertificateSerial` (value object imutável)
+
+Use `CertificateSerial` quando precisar manipular número de série de certificado sem conversão para `int/num`.
+
+- `CertificateSerial.fromHex(String)`
+- `CertificateSerial.fromDecimal(String)`
+- `CertificateSerial.fromDerInteger(Uint8List)`
+- propriedades: `hex`, `hexPrefixed`, `decimal`, `rawBytes`
+
+Utilitários:
+
+- `equalsSerial(String a, String b)`
+- `normalizeSerialToHex(String input)`
+- `normalizeSerialToDecimal(String input)`
+
+Exemplo:
+
+```dart
+final s1 = CertificateSerial.fromHex('0x66104A9B51E5B97173334CFF137C8A5F');
+final s2 = CertificateSerial.fromDecimal(s1.decimal);
+
+print(s1.hex);         // 66104a9b51e5b97173334cff137c8a5f
+print(s1.hexPrefixed); // 0x66104a9b51e5b97173334cff137c8a5f
+print(equalsSerial(s1.hex, s2.decimal)); // true
+```
+
+#### 2) Serial do signer/emissor em relatórios
+
+`PdfSignerInfo` agora inclui serial canônico do signatário e também do emissor (quando disponível na cadeia embutida):
+
+- `serialNumberHex`, `serialNumberDecimal`
+- `issuerSerialNumberHex`, `issuerSerialNumberDecimal`
+
+E `PdfSignatureValidationItem` também expõe esses campos no relatório final:
+
+- `signerSerialHex`, `signerSerialDecimal`
+- `issuerSerialHex`, `issuerSerialDecimal`
+
+#### 3) Preflight leve de assinaturas
+
+`preflightSignatures(Uint8List pdfBytes)` retorna metadados sem executar validação completa de cadeia/revogação.
+
+Campos por assinatura (`PdfSignaturePreflightItem`):
+
+- `fieldName`
+- `serialDecimal`
+- `issuerDn`
+- `authorityKeyIdentifier`
+- `subjectKeyIdentifier`
+- `policyOid`
+- `signingTime`
+
+#### 4) Índice de roots e validação por candidatos
+
+Para evitar parse repetido de truststore e reduzir tentativas de cadeia:
+
+- `buildTrustedRootsIndex(List<String> rootsPem)` cria índice reutilizável.
+- `validateAllSignatures(..., trustedRootsIndex: index)` reutiliza o índice.
+- `validateAllSignaturesWithCandidates(...)` tenta primeiro roots candidatas e faz fallback seguro para o conjunto completo.
+
+Assinatura relevante:
+
+```dart
+final report = await PdfSignatureValidator().validateAllSignaturesWithCandidates(
+  pdfBytes,
+  candidateTrustedRootsPem: candidateRoots,
+  fallbackToAllRoots: true,
+  allTrustedRootsPem: allRoots,
+  trustedRootsIndex: index,
+);
+```
+
+#### 5) Fluxo recomendado (alto volume)
+
+```dart
+final validator = PdfSignatureValidator();
+final index = buildTrustedRootsIndex(allRootsPem);
+
+final preflight = await validator.preflightSignatures(pdfBytes);
+
+final candidates = <String>{};
+for (final sig in preflight.signatures) {
+  candidates.addAll(index.findCandidateTrustedRoots(
+    authorityKeyIdentifier: sig.authorityKeyIdentifier,
+    issuerDn: sig.issuerDn,
+    serial: sig.serialDecimal,
+  ));
+}
+
+final report = await validator.validateAllSignaturesWithCandidates(
+  pdfBytes,
+  candidateTrustedRootsPem: candidates.toList(growable: false),
+  fallbackToAllRoots: true,
+  allTrustedRootsPem: index.allTrustedRootsPem,
+  trustedRootsIndex: index,
+);
+```
+
+Script de referência do fluxo completo:
+
+- `tool/smart_signature_validation_example.dart`
+
 #### Script utilitário de extração
 
 O script [scripts/extract_pdf_signature_info.dart](scripts/extract_pdf_signature_info.dart) foi atualizado para imprimir:
