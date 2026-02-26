@@ -74,6 +74,9 @@ void main(List<String> args) async {
   stdout.writeln('== Preflight ==');
 
   final autoCandidates = <String>{};
+  final Map<String, int> issuersWithoutRootCount = <String, int>{};
+  final Map<String, List<String>> issuersWithoutRootFields =
+      <String, List<String>>{};
   for (int i = 0; i < preflight.signatures.length; i++) {
     final sig = preflight.signatures[i];
     final candidates = index.findCandidateTrustedRoots(
@@ -82,6 +85,15 @@ void main(List<String> args) async {
       serial: sig.serialDecimal,
     );
     autoCandidates.addAll(candidates);
+
+    if (candidates.isEmpty) {
+      final issuerKey = sig.issuerDn ?? '(issuer_dn_missing)';
+      issuersWithoutRootCount[issuerKey] =
+          (issuersWithoutRootCount[issuerKey] ?? 0) + 1;
+      final fields =
+          issuersWithoutRootFields.putIfAbsent(issuerKey, () => <String>[]);
+      fields.add(sig.fieldName);
+    }
 
     stdout.writeln('Signature #${i + 1}');
     stdout.writeln('  fieldName: ${sig.fieldName}');
@@ -120,6 +132,11 @@ void main(List<String> args) async {
     stdout.writeln('  digestValid: ${sig.validation.byteRangeDigestOk}');
     stdout.writeln('  intact: ${sig.validation.documentIntact}');
     stdout.writeln('  chainTrusted: ${sig.chainTrusted}');
+    if (sig.chainErrors != null && sig.chainErrors!.isNotEmpty) {
+      stdout.writeln('  chainErrors: ${sig.chainErrors!.join(' | ')}');
+    } else {
+      stdout.writeln('  chainErrors: -');
+    }
     stdout.writeln('  signerSerialHex: ${sig.signerSerialHex ?? '-'}');
     stdout.writeln('  signerSerialDecimal: ${sig.signerSerialDecimal ?? '-'}');
     stdout.writeln('  issuerSerialHex: ${sig.issuerSerialHex ?? '-'}');
@@ -127,6 +144,21 @@ void main(List<String> args) async {
     stdout.writeln('  policyOid: ${sig.validation.policyOid ?? '-'}');
     stdout.writeln(
         '  signingTime: ${sig.validation.signingTime?.toUtc().toIso8601String() ?? '-'}');
+  }
+
+  stdout.writeln('');
+  stdout.writeln('== Issuers without matching candidate roots ==');
+  if (issuersWithoutRootCount.isEmpty) {
+    stdout.writeln('none');
+  } else {
+    final entries = issuersWithoutRootCount.entries.toList(growable: false)
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final e in entries) {
+      final fields = issuersWithoutRootFields[e.key] ?? const <String>[];
+      stdout.writeln('- count: ${e.value}');
+      stdout.writeln('  issuerDn: ${e.key}');
+      stdout.writeln('  fields: ${fields.join(', ')}');
+    }
   }
 }
 
