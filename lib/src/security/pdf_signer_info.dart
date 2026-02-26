@@ -5,6 +5,7 @@ import '../pdf/implementation/security/digital_signature/asn1/der.dart';
 import '../pdf/implementation/security/digital_signature/x509/x509_certificates.dart';
 import '../pdf/implementation/security/digital_signature/x509/x509_name.dart';
 import '../pdf/implementation/security/digital_signature/x509/x509_utils.dart';
+import 'certificate_serial.dart';
 
 /// OIDs comuns no SubjectAltName (otherName) de certificados ICP-Brasil.
 class IcpBrasilOtherNameOids {
@@ -38,6 +39,8 @@ class PdfSignerInfo {
     this.issuerCommonName,
     this.serialNumberHex,
     this.serialNumberDecimal,
+    this.issuerSerialNumberHex,
+    this.issuerSerialNumberDecimal,
     this.cpf,
     this.dateOfBirth,
     this.certNotBefore,
@@ -63,6 +66,12 @@ class PdfSignerInfo {
   /// Número de série do certificado em decimal (string).
   final String? serialNumberDecimal;
 
+  /// Número de série do certificado emissor (hex canônico).
+  final String? issuerSerialNumberHex;
+
+  /// Número de série do certificado emissor (decimal canônico).
+  final String? issuerSerialNumberDecimal;
+
   /// CPF (apenas dígitos), se presente.
   final String? cpf;
 
@@ -85,6 +94,8 @@ class PdfSignerInfo {
         'issuer_common_name': issuerCommonName,
         'serial_number_hex': serialNumberHex,
         'serial_number_decimal': serialNumberDecimal,
+        'issuer_serial_number_hex': issuerSerialNumberHex,
+        'issuer_serial_number_decimal': issuerSerialNumberDecimal,
         'cpf': cpf,
         'date_of_birth': dateOfBirth?.toIso8601String(),
         'cert_not_before': certNotBefore?.toIso8601String(),
@@ -100,6 +111,24 @@ class PdfSignerInfo {
       final String? subject = cert.c?.subject?.toString();
       final String? issuer = cert.c?.issuer?.toString();
       final BigInt? serial = cert.c?.serialNumber?.value;
+      CertificateSerial? serialVo;
+      if (serial != null) {
+        serialVo = CertificateSerial.fromDecimal(serial.toString());
+      }
+
+      CertificateSerial? issuerSerialVo;
+      if (certsPem.length > 1) {
+        try {
+          final issuerCert = _findIssuerCertificate(certsPem, cert);
+          final BigInt? issuerSerial = issuerCert?.c?.serialNumber?.value;
+          if (issuerSerial != null) {
+            issuerSerialVo =
+                CertificateSerial.fromDecimal(issuerSerial.toString());
+          }
+        } catch (_) {
+          // Keep signer info partial when issuer certificate is unavailable.
+        }
+      }
 
       final Map<String, String> otherNames = _extractOtherNames(cert)
           .fold<Map<String, String>>(<String, String>{}, (map, entry) {
@@ -117,8 +146,10 @@ class PdfSignerInfo {
         issuer: issuer,
         commonName: _extractCommonName(cert.c?.subject),
         issuerCommonName: _extractCommonName(cert.c?.issuer),
-        serialNumberHex: _serialToHex(serial),
-        serialNumberDecimal: _serialToDecimal(serial),
+        serialNumberHex: serialVo?.hex,
+        serialNumberDecimal: serialVo?.decimal,
+        issuerSerialNumberHex: issuerSerialVo?.hex,
+        issuerSerialNumberDecimal: issuerSerialVo?.decimal,
         cpf: cpf,
         dateOfBirth: dob,
         certNotBefore: notBefore,
@@ -129,6 +160,26 @@ class PdfSignerInfo {
       return null;
     }
   }
+}
+
+X509Certificate? _findIssuerCertificate(
+  List<String> certsPem,
+  X509Certificate signer,
+) {
+  final String? issuerDn = signer.c?.issuer?.toString();
+  if (issuerDn == null || issuerDn.isEmpty) return null;
+  for (int i = 1; i < certsPem.length; i++) {
+    try {
+      final cert = X509Utils.parsePemCertificate(certsPem[i]);
+      final String? subjectDn = cert.c?.subject?.toString();
+      if (subjectDn != null && subjectDn == issuerDn) {
+        return cert;
+      }
+    } catch (_) {
+      // ignore malformed issuer candidate
+    }
+  }
+  return null;
 }
 
 class _OtherName {
@@ -342,16 +393,4 @@ DateTime? _extractDateOfBirth(Map<String, String> otherNames) {
 
   // NÃO usar 2.16.76.1.3.5 (título de eleitor) como DOB.
   return null;
-}
-
-String? _serialToHex(BigInt? serial) {
-  if (serial == null) return null;
-  String hex = serial.toRadixString(16).toUpperCase();
-  if (hex.isEmpty) return null;
-  if (hex.length.isOdd) hex = '0$hex';
-  return hex;
-}
-
-String? _serialToDecimal(BigInt? serial) {
-  return serial?.toString();
 }

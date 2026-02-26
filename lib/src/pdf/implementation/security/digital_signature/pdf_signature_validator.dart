@@ -34,6 +34,7 @@ import '../../../../security/chain/icp_brasil_provider.dart';
 import '../../../../security/chain/iti_provider.dart';
 import '../../../../security/chain/serpro_provider.dart';
 import '../../../../security/chain/trusted_roots_provider.dart';
+import '../../../../security/certificate_serial.dart';
 import '../../../../security/pdf_signer_info.dart';
 
 class PdfLtvInfo {
@@ -225,6 +226,10 @@ class PdfSignatureValidationItem {
     required this.revocationStatus,
     this.policyStatus,
     this.timestampStatus,
+    this.signerSerialHex,
+    this.signerSerialDecimal,
+    this.issuerSerialHex,
+    this.issuerSerialDecimal,
     this.issues = const <PdfValidationIssue>[],
   });
 
@@ -268,6 +273,18 @@ class PdfSignatureValidationItem {
 
   final PdfTimestampStatus? timestampStatus;
 
+  /// Signer certificate serial in canonical hex (no 0x).
+  final String? signerSerialHex;
+
+  /// Signer certificate serial in canonical decimal.
+  final String? signerSerialDecimal;
+
+  /// Issuer certificate serial in canonical hex (no 0x).
+  final String? issuerSerialHex;
+
+  /// Issuer certificate serial in canonical decimal.
+  final String? issuerSerialDecimal;
+
   /// Aggregated issues (warnings/errors) from policy/timestamp checks.
   ///
   /// This is additive metadata; consumers should not assume it exists in older
@@ -301,6 +318,10 @@ class PdfSignatureValidationItem {
         'revocation_status': revocationStatus.toMap(),
         'policy_status': policyStatus?.toMap(),
         'timestamp_status': timestampStatus?.toMap(),
+        'signer_serial_hex': signerSerialHex,
+        'signer_serial_decimal': signerSerialDecimal,
+        'issuer_serial_hex': issuerSerialHex,
+        'issuer_serial_decimal': issuerSerialDecimal,
         'issues': issues.map((i) => i.toMap()).toList(growable: false),
       };
 }
@@ -322,6 +343,149 @@ class PdfSignatureValidationReport {
   String toJson() => jsonEncode(toMap());
 }
 
+/// Preflight metadata extracted from a PDF signature without full chain validation.
+class PdfSignaturePreflightItem {
+  const PdfSignaturePreflightItem({
+    required this.fieldName,
+    this.serialDecimal,
+    this.issuerDn,
+    this.authorityKeyIdentifier,
+    this.subjectKeyIdentifier,
+    this.policyOid,
+    this.signingTime,
+  });
+
+  final String fieldName;
+  final String? serialDecimal;
+  final String? issuerDn;
+  final String? authorityKeyIdentifier;
+  final String? subjectKeyIdentifier;
+  final String? policyOid;
+  final DateTime? signingTime;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'field_name': fieldName,
+        'serial_decimal': serialDecimal,
+        'issuer_dn': issuerDn,
+        'authority_key_identifier': authorityKeyIdentifier,
+        'subject_key_identifier': subjectKeyIdentifier,
+        'policy_oid': policyOid,
+        'signing_time': signingTime?.toUtc().toIso8601String(),
+      };
+}
+
+/// Preflight report for all signatures in a PDF.
+class PdfSignaturePreflightReport {
+  const PdfSignaturePreflightReport({required this.signatures});
+
+  final List<PdfSignaturePreflightItem> signatures;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'signatures': signatures.map((s) => s.toMap()).toList(growable: false),
+      };
+}
+
+/// Indexed trusted roots that can be reused across validation requests.
+class PdfTrustedRootsIndex {
+  PdfTrustedRootsIndex._({
+    required this.allTrustedRootsPem,
+    required Map<String, List<String>> akiToRoots,
+    required Map<String, List<String>> subjectDnToRoots,
+    required Map<String, List<String>> issuerAndSerialToRoots,
+    required Map<String, List<String>> fingerprintToRoots,
+  })  : _akiToRoots = akiToRoots,
+        _subjectDnToRoots = subjectDnToRoots,
+        _issuerAndSerialToRoots = issuerAndSerialToRoots,
+        _fingerprintToRoots = fingerprintToRoots;
+
+  final List<String> allTrustedRootsPem;
+  final Map<String, List<String>> _akiToRoots;
+  final Map<String, List<String>> _subjectDnToRoots;
+  final Map<String, List<String>> _issuerAndSerialToRoots;
+  final Map<String, List<String>> _fingerprintToRoots;
+
+  static PdfTrustedRootsIndex build(List<String> rootsPem) {
+    final deduped = _dedupePem(rootsPem);
+    final akiMap = <String, List<String>>{};
+    final subjectMap = <String, List<String>>{};
+    final issuerSerialMap = <String, List<String>>{};
+    final fingerprintMap = <String, List<String>>{};
+
+    for (final pem in deduped) {
+      try {
+        final cert = X509Utils.parsePemCertificate(pem);
+        final String? ski = _extractSubjectKeyIdentifierHex(cert);
+        final String? subjectDn = cert.c?.subject?.toString();
+        final BigInt? serialBigInt = cert.c?.serialNumber?.value;
+        final CertificateSerial? serial = serialBigInt == null
+            ? null
+            : CertificateSerial.fromDecimal(serialBigInt.toString());
+        final String fp = _sha256HexOfPem(pem);
+
+        if (ski != null && ski.isNotEmpty) {
+          akiMap.putIfAbsent(ski, () => <String>[]).add(pem);
+        }
+        final String? normalizedSubject = _normalizeDn(subjectDn);
+        if (normalizedSubject != null && normalizedSubject.isNotEmpty) {
+          subjectMap.putIfAbsent(normalizedSubject, () => <String>[]).add(pem);
+          if (serial != null) {
+            final key = '$normalizedSubject#${serial.hex}';
+            issuerSerialMap.putIfAbsent(key, () => <String>[]).add(pem);
+          }
+        }
+        fingerprintMap.putIfAbsent(fp, () => <String>[]).add(pem);
+      } catch (_) {
+        // Ignore invalid roots and keep valid entries.
+      }
+    }
+
+    return PdfTrustedRootsIndex._(
+      allTrustedRootsPem: deduped,
+      akiToRoots: akiMap,
+      subjectDnToRoots: subjectMap,
+      issuerAndSerialToRoots: issuerSerialMap,
+      fingerprintToRoots: fingerprintMap,
+    );
+  }
+
+  List<String> findCandidateTrustedRoots({
+    String? authorityKeyIdentifier,
+    String? issuerDn,
+    String? serial,
+  }) {
+    final out = <String>{};
+    if (authorityKeyIdentifier != null && authorityKeyIdentifier.isNotEmpty) {
+      final roots = _akiToRoots[authorityKeyIdentifier.toLowerCase()];
+      if (roots != null) out.addAll(roots);
+    }
+    final String? normalizedIssuer = _normalizeDn(issuerDn);
+    if (normalizedIssuer != null && normalizedIssuer.isNotEmpty) {
+      final roots = _subjectDnToRoots[normalizedIssuer];
+      if (roots != null) out.addAll(roots);
+      if (serial != null && serial.trim().isNotEmpty) {
+        try {
+          final normalizedSerialHex = normalizeSerialToHex(serial);
+          final rootsBySerial =
+              _issuerAndSerialToRoots['$normalizedIssuer#$normalizedSerialHex'];
+          if (rootsBySerial != null) out.addAll(rootsBySerial);
+        } catch (_) {
+          // Ignore invalid serial hint and continue with other selectors.
+        }
+      }
+    }
+    if (out.isEmpty) {
+      return <String>[];
+    }
+    return out.toList(growable: false);
+  }
+
+  bool containsFingerprint(String fingerprintHex) =>
+      _fingerprintToRoots.containsKey(fingerprintHex.toLowerCase());
+}
+
+PdfTrustedRootsIndex buildTrustedRootsIndex(List<String> rootsPem) =>
+    PdfTrustedRootsIndex.build(rootsPem);
+
 class PdfSignatureValidator {
   /// Validates all signatures in the PDF, performing integrity, trust, and revocation checks.
   ///
@@ -335,6 +499,7 @@ class PdfSignatureValidator {
   Future<PdfSignatureValidationReport> validateAllSignatures(
     Uint8List pdfBytes, {
     List<String>? trustedRootsPem,
+    PdfTrustedRootsIndex? trustedRootsIndex,
     TrustedRootsProvider? trustedRootsProvider,
     List<TrustedRootsProvider>? trustedRootsProviders,
     List<Uint8List>? crlBytes,
@@ -358,9 +523,16 @@ class PdfSignatureValidator {
 
       final List<String> effectiveRoots = <String>[];
       final List<String> extraCandidatesPem = <String>[];
+      if (trustedRootsIndex != null) {
+        effectiveRoots.addAll(trustedRootsIndex.allTrustedRootsPem);
+      }
       if (trustedRootsPem != null) {
         effectiveRoots.addAll(trustedRootsPem);
       }
+      final List<String> dedupedEffectiveRoots = _dedupePem(effectiveRoots);
+      effectiveRoots
+        ..clear()
+        ..addAll(dedupedEffectiveRoots);
 
       bool isSelfSigned(X509Certificate cert) {
         final String? subject = cert.c?.subject?.toString();
@@ -428,6 +600,11 @@ class PdfSignatureValidator {
           }
         }
       }
+      final List<String> dedupedExtraCandidates =
+          _dedupePem(extraCandidatesPem);
+      extraCandidatesPem
+        ..clear()
+        ..addAll(dedupedExtraCandidates);
 
       // Prepare CRLs
       final List<X509Crl> loadedCrls = <X509Crl>[];
@@ -708,6 +885,11 @@ class PdfSignatureValidator {
           cmsCertsPem: res.certsPem,
         );
 
+        final CertificateSerial? signerSerial =
+            res.certsPem.isNotEmpty ? _serialFromPem(res.certsPem.first) : null;
+        final CertificateSerial? issuerSerial =
+            _issuerSerialFromSignerChainPem(res.certsPem);
+
         out.add(
           PdfSignatureValidationItem(
             fieldName: sig.fieldName,
@@ -729,6 +911,10 @@ class PdfSignatureValidator {
             revocationStatus: revStatus,
             policyStatus: policyStatus,
             timestampStatus: tsStatus,
+            signerSerialHex: signerSerial?.hex,
+            signerSerialDecimal: signerSerial?.decimal,
+            issuerSerialHex: issuerSerial?.hex,
+            issuerSerialDecimal: issuerSerial?.decimal,
             issues: issues,
           ),
         );
@@ -1334,6 +1520,168 @@ class PdfSignatureValidator {
     return const PdfRevocationResult(isRevoked: false, status: 'good');
   }
 
+  /// Extracts lightweight signer metadata for all signatures.
+  ///
+  /// This method is intended for trusted-roots pre-selection and avoids full
+  /// chain/revocation validation.
+  Future<PdfSignaturePreflightReport> preflightSignatures(
+    Uint8List pdfBytes,
+  ) async {
+    final PdfDocument doc = PdfDocument(inputBytes: pdfBytes);
+    try {
+      final sigs = _extractAllSignatures(doc)
+        ..sort(
+          (a, b) => a.signedRevisionLength.compareTo(b.signedRevisionLength),
+        );
+      final cmsValidator = PdfSignatureValidation();
+      final out = <PdfSignaturePreflightItem>[];
+
+      for (final sig in sigs) {
+        PdfSignatureValidationResult res =
+            cmsValidator.validateDetachedSignature(
+          pdfBytes,
+          signatureName: sig.fieldName,
+          byteRange: sig.byteRange,
+          pkcs7DerBytes: sig.pkcs7Der,
+        );
+
+        final DateTime? dictSigningTime =
+            _extractSignatureDictionarySigningTime(sig.signatureDict);
+        if (res.signingTime == null && dictSigningTime != null) {
+          res = res.copyWith(signingTime: dictSigningTime);
+        }
+
+        String? serialDecimal;
+        String? issuerDn;
+        String? aki;
+        String? ski;
+
+        if (res.certsPem.isNotEmpty) {
+          try {
+            final cert = X509Utils.parsePemCertificate(res.certsPem.first);
+            final BigInt? serial = cert.c?.serialNumber?.value;
+            if (serial != null) {
+              serialDecimal =
+                  CertificateSerial.fromDecimal(serial.toString()).decimal;
+            }
+            issuerDn = cert.c?.issuer?.toString();
+            aki = _extractAuthorityKeyIdentifierHex(cert);
+            ski = _extractSubjectKeyIdentifierHex(cert);
+          } catch (_) {
+            // Keep partial metadata when cert parsing fails.
+          }
+        }
+
+        out.add(
+          PdfSignaturePreflightItem(
+            fieldName: sig.fieldName,
+            serialDecimal: serialDecimal,
+            issuerDn: issuerDn,
+            authorityKeyIdentifier: aki,
+            subjectKeyIdentifier: ski,
+            policyOid: res.policyOid,
+            signingTime: res.signingTime,
+          ),
+        );
+      }
+
+      return PdfSignaturePreflightReport(signatures: out);
+    } finally {
+      doc.dispose();
+    }
+  }
+
+  /// Validates all signatures using candidate roots first with optional fallback.
+  ///
+  /// Security note: when [fallbackToAllRoots] is true and candidate validation
+  /// is insufficient, validation is retried with [allTrustedRootsPem] (or
+  /// [trustedRootsIndex] roots) to avoid false negatives.
+  Future<PdfSignatureValidationReport> validateAllSignaturesWithCandidates(
+    Uint8List pdfBytes, {
+    List<String>? candidateTrustedRootsPem,
+    bool fallbackToAllRoots = true,
+    List<String>? allTrustedRootsPem,
+    PdfTrustedRootsIndex? trustedRootsIndex,
+    TrustedRootsProvider? trustedRootsProvider,
+    List<TrustedRootsProvider>? trustedRootsProviders,
+    List<Uint8List>? crlBytes,
+    bool fetchCrls = false,
+    bool useEmbeddedIcpBrasil = false,
+    bool strictRevocation = false,
+    bool strictPolicyDigest = false,
+    Lpa? lpa,
+    Map<String, String>? policyXmlByOid,
+  }) async {
+    var candidates = _dedupePem(candidateTrustedRootsPem);
+    if (candidates.isEmpty && trustedRootsIndex != null) {
+      final preflight = await preflightSignatures(pdfBytes);
+      final autoCandidates = <String>{};
+      for (final sig in preflight.signatures) {
+        autoCandidates.addAll(
+          trustedRootsIndex.findCandidateTrustedRoots(
+            authorityKeyIdentifier: sig.authorityKeyIdentifier,
+            issuerDn: sig.issuerDn,
+            serial: sig.serialDecimal,
+          ),
+        );
+      }
+      candidates = autoCandidates.toList(growable: false);
+    }
+    final List<String> allRoots = _dedupePem(
+      <String>[
+        ...?allTrustedRootsPem,
+        ...?trustedRootsIndex?.allTrustedRootsPem,
+      ],
+    );
+
+    final List<String> firstPassRoots =
+        candidates.isNotEmpty ? candidates : allRoots;
+
+    final first = await validateAllSignatures(
+      pdfBytes,
+      trustedRootsPem: firstPassRoots,
+      trustedRootsIndex: trustedRootsIndex,
+      trustedRootsProvider: trustedRootsProvider,
+      trustedRootsProviders: trustedRootsProviders,
+      crlBytes: crlBytes,
+      fetchCrls: fetchCrls,
+      useEmbeddedIcpBrasil: useEmbeddedIcpBrasil,
+      strictRevocation: strictRevocation,
+      strictPolicyDigest: strictPolicyDigest,
+      lpa: lpa,
+      policyXmlByOid: policyXmlByOid,
+    );
+
+    if (!fallbackToAllRoots || allRoots.isEmpty) {
+      return first;
+    }
+
+    final bool hasChainFailure =
+        first.signatures.any((s) => s.chainTrusted == false);
+    if (!hasChainFailure) {
+      return first;
+    }
+
+    if (_samePemSet(firstPassRoots, allRoots)) {
+      return first;
+    }
+
+    return validateAllSignatures(
+      pdfBytes,
+      trustedRootsPem: allRoots,
+      trustedRootsIndex: trustedRootsIndex,
+      trustedRootsProvider: trustedRootsProvider,
+      trustedRootsProviders: trustedRootsProviders,
+      crlBytes: crlBytes,
+      fetchCrls: fetchCrls,
+      useEmbeddedIcpBrasil: useEmbeddedIcpBrasil,
+      strictRevocation: strictRevocation,
+      strictPolicyDigest: strictPolicyDigest,
+      lpa: lpa,
+      policyXmlByOid: policyXmlByOid,
+    );
+  }
+
   /// Validates a single signature field by name.
   ///
   /// Returns null when the field is not found.
@@ -1864,4 +2212,122 @@ int _indexOfBytes(Uint8List haystack, List<int> needle, int start, int end) {
     if (ok) return i;
   }
   return -1;
+}
+
+List<String> _dedupePem(List<String>? input) {
+  if (input == null || input.isEmpty) return const <String>[];
+  final out = <String>[];
+  final seen = <String>{};
+  for (final pem in input) {
+    final normalized = pem.trim();
+    if (normalized.isEmpty) continue;
+    if (seen.add(normalized)) {
+      out.add(normalized);
+    }
+  }
+  return out;
+}
+
+bool _samePemSet(List<String> a, List<String> b) {
+  final sa = a.toSet();
+  final sb = b.toSet();
+  if (sa.length != sb.length) return false;
+  for (final e in sa) {
+    if (!sb.contains(e)) return false;
+  }
+  return true;
+}
+
+String? _normalizeDn(String? dn) {
+  if (dn == null) return null;
+  final n = dn
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll('"', '')
+      .trim();
+  return n.isEmpty ? null : n;
+}
+
+String _sha256HexOfPem(String pem) {
+  final der = X509Utils.pemToDer(pem);
+  final digest = crypto.sha256.convert(der);
+  return digest.toString().toLowerCase();
+}
+
+String? _extractSubjectKeyIdentifierHex(X509Certificate cert) {
+  try {
+    final Asn1Octet? ext = cert.getExtension(DerObjectID('2.5.29.14'));
+    final List<int>? extBytes = ext?.getOctets();
+    if (extBytes == null || extBytes.isEmpty) return null;
+    final Asn1? parsed = Asn1Stream(PdfStreamReader(extBytes)).readAsn1();
+    final Asn1Octet? oct = Asn1Octet.getOctetStringFromObject(parsed);
+    final List<int>? keyId = oct?.getOctets();
+    if (keyId == null || keyId.isEmpty) return null;
+    return _bytesToHex(Uint8List.fromList(keyId));
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _extractAuthorityKeyIdentifierHex(X509Certificate cert) {
+  try {
+    final Asn1Octet? ext = cert.getExtension(DerObjectID('2.5.29.35'));
+    final List<int>? extBytes = ext?.getOctets();
+    if (extBytes == null || extBytes.isEmpty) return null;
+    final Asn1? parsed = Asn1Stream(PdfStreamReader(extBytes)).readAsn1();
+    final Asn1Sequence? seq = Asn1Sequence.getSequence(parsed);
+    if (seq == null || seq.objects == null) return null;
+
+    for (final dynamic obj in seq.objects!) {
+      if (obj is! Asn1Tag || obj.tagNumber != 0) continue;
+      final Asn1Octet? oct =
+          Asn1Octet.getOctetStringFromObject(obj.getObject());
+      final List<int>? keyId = oct?.getOctets();
+      if (keyId == null || keyId.isEmpty) return null;
+      return _bytesToHex(Uint8List.fromList(keyId));
+    }
+
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+String _bytesToHex(Uint8List bytes) {
+  final StringBuffer sb = StringBuffer();
+  for (final int b in bytes) {
+    sb.write(b.toRadixString(16).padLeft(2, '0'));
+  }
+  return sb.toString().toLowerCase();
+}
+
+CertificateSerial? _serialFromPem(String pem) {
+  try {
+    final cert = X509Utils.parsePemCertificate(pem);
+    final BigInt? serial = cert.c?.serialNumber?.value;
+    if (serial == null) return null;
+    return CertificateSerial.fromDecimal(serial.toString());
+  } catch (_) {
+    return null;
+  }
+}
+
+CertificateSerial? _issuerSerialFromSignerChainPem(List<String> chainPem) {
+  if (chainPem.length < 2) return null;
+  try {
+    final signer = X509Utils.parsePemCertificate(chainPem.first);
+    final String? issuerDn = signer.c?.issuer?.toString();
+    if (issuerDn == null || issuerDn.isEmpty) return null;
+    for (int i = 1; i < chainPem.length; i++) {
+      final cert = X509Utils.parsePemCertificate(chainPem[i]);
+      if (cert.c?.subject?.toString() == issuerDn) {
+        final BigInt? serial = cert.c?.serialNumber?.value;
+        if (serial == null) return null;
+        return CertificateSerial.fromDecimal(serial.toString());
+      }
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
 }

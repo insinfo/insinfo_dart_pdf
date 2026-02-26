@@ -251,6 +251,10 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature_validato
         PdfSignatureValidator,
         PdfSignatureValidationReport,
         PdfSignatureValidationItem,
+        PdfSignaturePreflightItem,
+        PdfSignaturePreflightReport,
+        PdfTrustedRootsIndex,
+        buildTrustedRootsIndex,
         PdfDocMdpInfo,
         PdfLtvInfo,
         PdfLtvSelfCheckResult,
@@ -301,6 +305,12 @@ export 'src/security/pdf_signature_extractor.dart'
         extractSignatureContentsAt;
 export 'src/security/pdf_signer_info.dart'
     show PdfSignerInfo, IcpBrasilOtherNameOids;
+export 'src/security/certificate_serial.dart'
+    show
+        CertificateSerial,
+        equalsSerial,
+        normalizeSerialToHex,
+        normalizeSerialToDecimal;
 export 'src/pdf/implementation/security/digital_signature/cryptography/cipher_block_chaining_mode.dart'
     show RsaPrivateKeyParam;
 export 'src/pdf/implementation/security/digital_signature/time_stamp_server/time_stamp_server.dart'
