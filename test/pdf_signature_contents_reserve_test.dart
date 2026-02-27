@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart';
+import 'package:dart_pdf/pdf_server.dart';
 import 'package:test/test.dart';
 
 void main() {

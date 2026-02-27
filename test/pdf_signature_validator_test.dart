@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart' as pdf;
+import 'package:dart_pdf/pdf_server.dart' as pdf;
 import 'package:test/test.dart';
 
 const bool _verbose = bool.fromEnvironment('DART_PDF_TEST_VERBOSE');
@@ -15,7 +15,8 @@ void main() {
     () async {
       if (!hasOpenSsl) return;
 
-      final Directory testDir = await Directory.systemTemp.createTemp('sig_val_');
+      final Directory testDir =
+          await Directory.systemTemp.createTemp('sig_val_');
       try {
         final String keyPath = '${testDir.path}/user_key.pem';
         final String certPath = '${testDir.path}/user_cert.pem';
@@ -62,8 +63,8 @@ void main() {
           workDir: testDir,
         );
 
-        final pdf.PdfSignatureValidationReport report = await pdf.PdfSignatureValidator()
-            .validateAllSignatures(
+        final pdf.PdfSignatureValidationReport report =
+            await pdf.PdfSignatureValidator().validateAllSignatures(
           signedTwice,
           trustedRootsPem: <String>[File(certPath).readAsStringSync()],
         );
@@ -107,7 +108,8 @@ void main() {
           // When we provide the self-signed root (the same cert used to sign),
           // chain validation is expected to succeed.
           expect(item.chainTrusted, isTrue,
-              reason: 'Chain trust should validate against provided trustedRootsPem');
+              reason:
+                  'Chain trust should validate against provided trustedRootsPem');
         }
       } finally {
         await testDir.delete(recursive: true);
@@ -122,7 +124,8 @@ void main() {
     () async {
       if (!hasOpenSsl) return;
 
-      final Directory testDir = await Directory.systemTemp.createTemp('sig_val_roots_provider_');
+      final Directory testDir =
+          await Directory.systemTemp.createTemp('sig_val_roots_provider_');
       try {
         final String keyPath = '${testDir.path}/user_key.pem';
         final String certPath = '${testDir.path}/user_cert.pem';
@@ -164,9 +167,11 @@ void main() {
         final String certPem = File(certPath).readAsStringSync();
         final Uint8List certDer = _pemToDer(certPem);
 
-        final pdf.TrustedRootsProvider provider = _StaticTrustedRootsProvider([certDer]);
+        final pdf.TrustedRootsProvider provider =
+            _StaticTrustedRootsProvider([certDer]);
 
-        final pdf.PdfSignatureValidationReport report = await pdf.PdfSignatureValidator().validateAllSignatures(
+        final pdf.PdfSignatureValidationReport report =
+            await pdf.PdfSignatureValidator().validateAllSignatures(
           signedOnce,
           trustedRootsProvider: provider,
         );
@@ -214,7 +219,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
   signature.reason = 'Multi-signature test';
   signature.digestAlgorithm = pdf.DigestAlgorithm.sha256;
 
-  final pdf.PdfExternalSigningResult prepared = await pdf.PdfExternalSigning.preparePdf(
+  final pdf.PdfExternalSigningResult prepared =
+      await pdf.PdfExternalSigning.preparePdf(
     inputBytes: Uint8List.fromList(pdfBytes),
     pageNumber: 1,
     bounds: pdf.Rect.fromLTWH(100, 100, 200, 50),
@@ -224,7 +230,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
   );
 
   final Uint8List preparedBytes = prepared.preparedPdfBytes;
-  final List<int> ranges = pdf.PdfExternalSigning.extractByteRange(preparedBytes);
+  final List<int> ranges =
+      pdf.PdfExternalSigning.extractByteRange(preparedBytes);
 
   final int start1 = ranges[0];
   final int len1 = ranges[1];
@@ -290,7 +297,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
     }
   }
 
-  final Uint8List sigBytes = Uint8List.fromList(File(p7sPath).readAsBytesSync());
+  final Uint8List sigBytes =
+      Uint8List.fromList(File(p7sPath).readAsBytesSync());
   return pdf.PdfExternalSigning.embedSignature(
     preparedPdfBytes: preparedBytes,
     pkcs7Bytes: sigBytes,
@@ -299,7 +307,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
 
 bool _hasOpenSsl() {
   try {
-    final ProcessResult result = Process.runSync('openssl', const <String>['version']);
+    final ProcessResult result =
+        Process.runSync('openssl', const <String>['version']);
     return result.exitCode == 0;
   } catch (_) {
     return false;

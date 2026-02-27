@@ -82,8 +82,11 @@ class IcpBrasilPolicyEngine {
       );
     }
 
+    final String? aliasOid = _getIcpBrasilAliasOid(policyOid);
+
     for (final PolicyInfo info in lpa!.policyInfos) {
-      if (info.policyOid == policyOid) {
+      if (info.policyOid == policyOid ||
+          (aliasOid != null && info.policyOid == aliasOid)) {
         final PolicyEvaluation period = _evaluatePeriod(info, signingTime);
         issues.addAll(period.issues);
         return PolicyEvaluation(valid: period.valid, issues: issues);
@@ -111,11 +114,11 @@ class IcpBrasilPolicyEngine {
     List<int>? policyHashValue,
     bool strictDigest = false,
   }) {
-    final PolicyEvaluation detailed =
-        evaluatePolicyWithDigest(policyOid, signingTime,
-            policyHashAlgorithmOid: policyHashAlgorithmOid,
-            policyHashValue: policyHashValue,
-            strictDigest: strictDigest);
+    final PolicyEvaluation detailed = evaluatePolicyWithDigest(
+        policyOid, signingTime,
+        policyHashAlgorithmOid: policyHashAlgorithmOid,
+        policyHashValue: policyHashValue,
+        strictDigest: strictDigest);
     return PolicyValidationResult(
       isValid: detailed.valid,
       error: detailed.firstError,
@@ -162,9 +165,12 @@ class IcpBrasilPolicyEngine {
       return PolicyEvaluation(valid: true, issues: issues);
     }
 
+    final String? aliasOid = _getIcpBrasilAliasOid(policyOid);
+
     PolicyInfo? info;
     for (final PolicyInfo p in lpa!.policyInfos) {
-      if (p.policyOid == policyOid) {
+      if (p.policyOid == policyOid ||
+          (aliasOid != null && p.policyOid == aliasOid)) {
         info = p;
         break;
       }
@@ -317,7 +323,7 @@ class IcpBrasilPolicyEngine {
     // Since we might not have the full XML policy loaded, we use heuristics for known ICP-Brasil policies.
     // AD-RB v2.x (2.16.76.1.7.1.1.2.*) requires SHA-256 (2.16.840.1.101.3.4.2.1) or better.
 
-    if (policyOid.startsWith('2.16.76.1.7.1.1.2')) {
+    if (_isAdRbV2Family(policyOid)) {
       if (digestAlgorithmOid == '2.16.840.1.101.3.4.2.1') {
         return PolicyValidationResult(isValid: true);
       }
@@ -342,7 +348,7 @@ class IcpBrasilPolicyEngine {
   PolicyEvaluation evaluateAlgorithm(
       String policyOid, String digestAlgorithmOid,
       [DateTime? signingTime]) {
-    if (policyOid.startsWith('2.16.76.1.7.1.1.2')) {
+    if (_isAdRbV2Family(policyOid)) {
       if (digestAlgorithmOid == '2.16.840.1.101.3.4.2.1') {
         return const PolicyEvaluation(valid: true);
       }
@@ -382,6 +388,33 @@ class IcpBrasilPolicyEngine {
         )
       ],
     );
+  }
+
+  static bool _isAdRbV2Family(String policyOid) {
+    return policyOid.startsWith('2.16.76.1.7.1.1.2') ||
+        policyOid.startsWith('2.16.76.1.7.1.6.2');
+  }
+
+  static String? _getIcpBrasilAliasOid(String policyOid) {
+    const String basePrefix = '2.16.76.1.7.1.';
+    if (!policyOid.startsWith(basePrefix)) return null;
+
+    final String suffix = policyOid.substring(basePrefix.length);
+    final List<String> parts = suffix.split('.');
+    if (parts.length < 2) return null;
+
+    final int? family = int.tryParse(parts.first);
+    if (family == null) return null;
+
+    final int? aliasFamily = (family >= 1 && family <= 5)
+        ? family + 5
+        : (family >= 6 && family <= 10)
+            ? family - 5
+            : null;
+    if (aliasFamily == null) return null;
+
+    final String tail = parts.skip(1).join('.');
+    return '$basePrefix$aliasFamily.$tail';
   }
 }
 

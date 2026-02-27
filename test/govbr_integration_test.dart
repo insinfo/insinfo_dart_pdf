@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart' as pdf;
+import 'package:dart_pdf/pdf_server.dart' as pdf;
 import 'package:test/test.dart';
 
 void main() {
@@ -30,16 +30,16 @@ void main() {
         final Uint8List inputBytes = Uint8List.fromList(await doc.save());
         doc.dispose();
 
-      final pdf.PdfExternalSigningResult prepared =
-          await pdf.PdfExternalSigning.preparePdf(
-        inputBytes: inputBytes,
-        pageNumber: 1,
-        bounds: pdf.Rect.fromLTWH(100, 100, 200, 50),
-        fieldName: 'GovBr_Signature',
-      );
+        final pdf.PdfExternalSigningResult prepared =
+            await pdf.PdfExternalSigning.preparePdf(
+          inputBytes: inputBytes,
+          pageNumber: 1,
+          bounds: pdf.Rect.fromLTWH(100, 100, 200, 50),
+          fieldName: 'GovBr_Signature',
+        );
 
-      final List<int> byteRange =
-          pdf.PdfExternalSigning.extractByteRange(prepared.preparedPdfBytes);
+        final List<int> byteRange =
+            pdf.PdfExternalSigning.extractByteRange(prepared.preparedPdfBytes);
         final Uint8List dataToSign =
             _extractDataByRange(prepared.preparedPdfBytes, byteRange);
         final String expectedHashBase64 =
@@ -135,11 +135,11 @@ void main() {
         );
         expect(pkcs7.isNotEmpty, isTrue);
 
-      final Uint8List signedPdf = pdf.PdfExternalSigning.embedSignature(
-        preparedPdfBytes: prepared.preparedPdfBytes,
-        pkcs7Bytes: pkcs7,
-      );
-      expect(signedPdf.length, equals(prepared.preparedPdfBytes.length));
+        final Uint8List signedPdf = pdf.PdfExternalSigning.embedSignature(
+          preparedPdfBytes: prepared.preparedPdfBytes,
+          pkcs7Bytes: pkcs7,
+        );
+        expect(signedPdf.length, equals(prepared.preparedPdfBytes.length));
 
         final String verifyDataPath =
             '${tempDir.path}${Platform.pathSeparator}verify_data.bin';
@@ -148,28 +148,28 @@ void main() {
             '${tempDir.path}${Platform.pathSeparator}verify_sig.der';
         await File(verifySigPath).writeAsBytes(pkcs7, flush: true);
 
-      await _runCmd('openssl', [
-        'cms',
-        '-verify',
-        '-binary',
-        '-in',
-        verifySigPath,
-        '-inform',
-        'DER',
-        '-content',
-        verifyDataPath,
-        '-CAfile',
-        chain.rootCertPath,
-      ]);
-    } finally {
-      await server?.close(force: true);
-      await tempDir.delete(recursive: true);
-    }
-  },
-  timeout: const Timeout(Duration(minutes: 3)),
-  skip: !hasOpenSsl
-      ? 'openssl not available'
-      : (isCi ? 'Skip in CI environment' : false),
+        await _runCmd('openssl', [
+          'cms',
+          '-verify',
+          '-binary',
+          '-in',
+          verifySigPath,
+          '-inform',
+          'DER',
+          '-content',
+          verifyDataPath,
+          '-CAfile',
+          chain.rootCertPath,
+        ]);
+      } finally {
+        await server?.close(force: true);
+        await tempDir.delete(recursive: true);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+    skip: !hasOpenSsl
+        ? 'openssl not available'
+        : (isCi ? 'Skip in CI environment' : false),
   );
 
   test(
@@ -221,8 +221,7 @@ void main() {
           try {
             if (request.method == 'GET' &&
                 request.uri.path.endsWith('/certificadoPublico')) {
-              final String pem =
-                  await File(chain.leafCertPath).readAsString();
+              final String pem = await File(chain.leafCertPath).readAsString();
               request.response.statusCode = HttpStatus.ok;
               request.response.headers.contentType =
                   ContentType('text', 'plain');
@@ -376,8 +375,7 @@ void main() {
 
 bool _hasOpenSsl() {
   try {
-    final ProcessResult result =
-        Process.runSync('openssl', const ['version']);
+    final ProcessResult result = Process.runSync('openssl', const ['version']);
     return result.exitCode == 0;
   } catch (_) {
     return false;
@@ -506,8 +504,7 @@ authorityKeyIdentifier=keyid,issuer
     '/CN=Test User',
   ]);
 
-  final String leafExt =
-      '${dir.path}${Platform.pathSeparator}leaf_ext.cnf';
+  final String leafExt = '${dir.path}${Platform.pathSeparator}leaf_ext.cnf';
   await File(leafExt).writeAsString('''
 [usr_cert]
 basicConstraints=CA:FALSE
@@ -615,8 +612,7 @@ Future<_CertChain> _generateCertificateChainFiveLevels(Directory dir) async {
     '/CN=Test User (L5)',
   ]);
 
-  final String leafExt =
-      '${dir.path}${Platform.pathSeparator}leaf_ext.cnf';
+  final String leafExt = '${dir.path}${Platform.pathSeparator}leaf_ext.cnf';
   await File(leafExt).writeAsString('''
 [usr_cert]
 basicConstraints=CA:FALSE
@@ -680,8 +676,7 @@ Future<_Intermediate> _createIntermediate(
   final String safeName = name.replaceAll(' ', '_');
   final String keyPath =
       '${dir.path}${Platform.pathSeparator}${safeName}_key.pem';
-  final String csrPath =
-      '${dir.path}${Platform.pathSeparator}${safeName}.csr';
+  final String csrPath = '${dir.path}${Platform.pathSeparator}${safeName}.csr';
   final String certPath =
       '${dir.path}${Platform.pathSeparator}${safeName}_cert.pem';
 

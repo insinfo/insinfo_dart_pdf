@@ -7,8 +7,123 @@ Biblioteca de PDF (sem UI), rica em recursos e de alta performance, escrita nati
 
 O pacote PDF é uma biblioteca Flutter reutilizável (sem UI) para criar relatórios PDF programaticamente com texto formatado, imagens, formas, tabelas, links, listas, cabeçalhos, rodapés e mais. A biblioteca pode ser usada para criar, ler, editar e proteger PDFs em Flutter (mobile e web) sem dependência do Adobe Acrobat. A criação de PDFs segue a especificação PDF 1.7 (ISO 32000-1) e a PDF 2.0 (ISO 32000-2).
 
+## Breaking changes (entrypoints web/server)
+
+Nesta atualização, a API pública foi separada em dois entrypoints:
+
+- `package:dart_pdf/pdf.dart` (**web-safe**): mantém as APIs gerais de PDF e validação.
+- `package:dart_pdf/pdf_server.dart` (**server-side**): expõe APIs que dependem de `dart:io`.
+
+### O que mudou
+
+As APIs abaixo deixaram de ser exportadas por `pdf.dart` e passaram para `pdf_server.dart`:
+
+- `PdfExternalSigning`
+- `PdfExternalSigningResult`
+- `GovBrSignatureApi`
+- `GovBrOAuthClient`
+
+### Migração rápida
+
+Antes:
+
+```dart
+import 'package:dart_pdf/pdf.dart';
+```
+
+Depois (se usar assinatura externa/Gov.br):
+
+```dart
+import 'package:dart_pdf/pdf_server.dart';
+```
+
+Se o seu fluxo usa apenas criação/edição/validação de PDF sem essas APIs server-only, continue usando:
+
+```dart
+import 'package:dart_pdf/pdf.dart';
+```
+
+> Observação: `pki_server.dart` continua interno e **não** faz parte da API pública.
+
+### Guia de migração por erro comum
+
+Se após atualizar a biblioteca você encontrar erros como:
+
+- `Undefined name 'PdfExternalSigning'`
+- `Undefined class 'PdfExternalSigningResult'`
+- `Undefined class 'GovBrSignatureApi'`
+- `Undefined class 'GovBrOAuthClient'`
+
+isso indica que o arquivo ainda está importando `package:dart_pdf/pdf.dart` para um fluxo server-side.
+
+#### Como corrigir
+
+Troque o import:
+
+```dart
+import 'package:dart_pdf/pdf.dart';
+```
+
+por:
+
+```dart
+import 'package:dart_pdf/pdf_server.dart';
+```
+
+#### Quando manter `pdf.dart`
+
+Mantenha `package:dart_pdf/pdf.dart` quando o código não usa APIs server-only (ex.: criação, edição e validação geral de PDF, utilitários e modelos comuns).
+
+## Novas APIs adicionadas
+
+### `OfflineCertificateChainBuilder`
+
+API pública para montar cadeia completa offline a partir de certificados do signatário e truststores locais.
+
+- `loadCertPoolFromDirectories(List<String> directories, {int maxAncestorLevels = 5})`
+- `buildCompleteChain({required List<String> signerCertsPem, required List<X509Certificate> certPool, int maxDepth = 10})`
+
+Exemplo:
+
+```dart
+import 'package:dart_pdf/pdf.dart' as pdf;
+
+final certPool = pdf.OfflineCertificateChainBuilder.loadCertPoolFromDirectories(
+  const [
+    'assets/truststore/icp_brasil',
+    'assets/truststore/cadeia_icp_brasil',
+    'assets/truststore/iti',
+    'assets/truststore/serpro',
+  ],
+);
+
+final chain = pdf.OfflineCertificateChainBuilder.buildCompleteChain(
+  signerCertsPem: signature.validation.certsPem,
+  certPool: certPool,
+);
+```
+
+### `PdfRevocationResult.source`
+
+O resultado de revogação agora expõe a origem da evidência em `source`:
+
+- `ocsp`
+- `crl`
+- `mixed`
+- `none`
+
+Exemplo:
+
+```dart
+final sig = report.signatures.first;
+print('rev.status=${sig.revocationStatus.status} source=${sig.revocationStatus.source}');
+```
+
 
 ## Sumário
+- [Breaking changes (entrypoints web/server)](#breaking-changes-entrypoints-webserver)
+- [Guia de migração por erro comum](#guia-de-migração-por-erro-comum)
+- [Novas APIs adicionadas](#novas-apis-adicionadas)
 - [Principais recursos](#key-features)
 - [Primeiros passos](#getting-started)
   - [Criar um PDF a partir de texto simples](#create-a-pdf-document-from-simple-text)
@@ -761,6 +876,8 @@ class MyRemoteSigner implements IPdfSigner {
 Para fluxos manuais de baixo nível, o cálculo do hash do ByteRange agora é exposto:
 
 ```dart
+import 'package:dart_pdf/pdf_server.dart';
+
 final hashBytes = PdfExternalSigning.computeByteRangeDigest(pdfBytes, byteRange);
 ```
 
@@ -1330,6 +1447,12 @@ Lacunas que ainda podem impactar robustez (dependendo do seu nível de complianc
 
 Esta biblioteca suporta um fluxo robusto de assinatura externa compatível com a API do Gov.br.
 O fluxo tem duas fases: preparar o PDF e computar o hash do ByteRange; depois, injetar o PKCS#7 retornado pelo serviço de assinatura.
+
+Import recomendado para este fluxo:
+
+```dart
+import 'package:dart_pdf/pdf_server.dart';
+```
 
 ### 1) Preparar o PDF e calcular o hash (server-side)
 

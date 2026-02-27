@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:dart_pdf/pdf.dart' as pdf;
+import 'package:dart_pdf/pdf_server.dart' as pdf;
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/icp_brasil/etsi_policy.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_signature_dictionary.dart'
     show PdfCmsSigner;
@@ -55,7 +55,7 @@ Future<void> main(List<String> args) async {
       _extractDataByRange(prepared.preparedPdfBytes, byteRange);
 
   // 3) Compute digest of ByteRange content.
-    final Uint8List contentDigest =
+  final Uint8List contentDigest =
       Uint8List.fromList(crypto.sha256.convert(dataToSign).bytes);
 
   // 4) Build CMS detached with signedAttrs (includes SignaturePolicyId).
@@ -120,7 +120,8 @@ String _pickPolicyOidRequiringTimestamp() {
 }
 
 void _ensureOpenSsl() {
-  final ProcessResult result = Process.runSync('openssl', const <String>['version']);
+  final ProcessResult result =
+      Process.runSync('openssl', const <String>['version']);
   if (result.exitCode != 0) {
     throw Exception('OpenSSL not available (required by this generator).');
   }

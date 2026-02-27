@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart' as pdf;
+import 'package:dart_pdf/pdf_server.dart' as pdf;
 import 'package:pointycastle/export.dart';
 import 'package:test/test.dart';
 
@@ -48,8 +48,7 @@ void main() {
 
       final RSAPrivateKey leafPrivate =
           chain.leafKey.privateKey as RSAPrivateKey;
-      final RSAPublicKey leafPublic =
-          chain.leafKey.publicKey as RSAPublicKey;
+      final RSAPublicKey leafPublic = chain.leafKey.publicKey as RSAPublicKey;
       final String leafKeyPem = PkiPemUtils.rsaPrivateKeyToPem(
         leafPrivate,
         publicExponent: leafPublic.exponent,
@@ -65,8 +64,7 @@ void main() {
           if (request.method == 'GET' &&
               request.uri.path.endsWith('/certificadoPublico')) {
             request.response.statusCode = HttpStatus.ok;
-            request.response.headers.contentType =
-                ContentType('text', 'plain');
+            request.response.headers.contentType = ContentType('text', 'plain');
             request.response.write(leafCertPem);
             await request.response.close();
             return;
@@ -77,8 +75,7 @@ void main() {
             final String body = await utf8.decoder.bind(request).join();
             final Map<String, dynamic> jsonBody =
                 jsonDecode(body) as Map<String, dynamic>;
-            final String hashBase64 =
-                (jsonBody['hashBase64'] ?? '').toString();
+            final String hashBase64 = (jsonBody['hashBase64'] ?? '').toString();
             if (hashBase64 != expectedHashBase64) {
               request.response.statusCode = HttpStatus.badRequest;
               request.response.write('invalid hash');

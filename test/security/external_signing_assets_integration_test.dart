@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart';
+import 'package:dart_pdf/pdf_server.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -37,7 +37,8 @@ void main() {
         if (containsByteRange) {
           // Expected: should parse without throwing.
           final range = PdfExternalSigning.extractByteRange(bytes);
-          expect(range.length, equals(4), reason: 'Invalid ByteRange length for ${file.path}');
+          expect(range.length, equals(4),
+              reason: 'Invalid ByteRange length for ${file.path}');
 
           final contents = PdfExternalSigning.findContentsRange(bytes);
           expect(contents.start, lessThan(contents.end),

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/icp_brasil/lpa.dart';
+import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/icp_brasil/policy_oid_map_builder.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/icp_brasil/policy_engine.dart';
 import 'package:test/test.dart';
 
@@ -29,6 +30,45 @@ void main() {
     expect(
       engine.validatePolicy('2.16.76.1.7.1.6.2.2', before).isValid,
       isFalse,
+    );
+
+    expect(
+      engine.validatePolicy('2.16.76.1.7.1.1.2.2', inside).isValid,
+      isTrue,
+    );
+  });
+
+  test('Builds OID map from XML and DER artifacts including CAdES aliases',
+      () async {
+    final Map<String, String> policyOidMap =
+        await IcpBrasilPolicyOidMapBuilder.loadFromArtifactsDirectory(
+      'assets/policy/engine/artifacts',
+    );
+
+    expect(policyOidMap, isNotEmpty);
+
+    expect(policyOidMap['2.16.76.1.7.1.1.2.3'], isNotNull);
+    expect(policyOidMap['2.16.76.1.7.1.6.2.3'], isNotNull);
+    expect(
+      policyOidMap['2.16.76.1.7.1.1.2.3'],
+      equals(policyOidMap['2.16.76.1.7.1.6.2.3']),
+    );
+
+    final String resolvedPolicy =
+        policyOidMap['2.16.76.1.7.1.1.2.3']!.toLowerCase();
+    expect(resolvedPolicy, contains('pa_'));
+  });
+
+  test('Parses LPA_CAdES.der and finds AD-RB v2.3 OID', () {
+    final List<int> derBytes =
+        File('assets/policy/engine/artifacts/LPA_CAdES.der').readAsBytesSync();
+
+    final Lpa? lpa = Lpa.fromBytes(derBytes);
+    expect(lpa, isNotNull);
+    expect(lpa!.policyInfos, isNotEmpty);
+    expect(
+      lpa.policyInfos.any((p) => p.policyOid == '2.16.76.1.7.1.1.2.3'),
+      isTrue,
     );
   });
 }

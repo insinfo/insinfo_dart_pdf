@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_pdf/pdf.dart' as pdf;
+import 'package:dart_pdf/pdf_server.dart' as pdf;
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/pdf_ltv_manager.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/x509_certificates.dart';
 import 'package:dart_pdf/src/pdf/implementation/security/digital_signature/x509/x509_utils.dart';
@@ -16,21 +16,35 @@ void main() {
   test('PdfLtvManager creates DSS and VRI dictionaries', () async {
     if (!hasOpenSsl) return;
 
-    final Directory testDir = await Directory.systemTemp.createTemp('ltv_test_');
+    final Directory testDir =
+        await Directory.systemTemp.createTemp('ltv_test_');
     try {
       final String keyPath = '${testDir.path}/user_key.pem';
       final String certPath = '${testDir.path}/user_cert.pem';
 
       // Create Self-Signed Cert
       await _runCmd('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-keyout', keyPath, '-out', certPath,
-        '-days', '365', '-nodes', '-subj', '/CN=LTV Test User', 
-        '-addext', 'keyUsage=digitalSignature'
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-keyout',
+        keyPath,
+        '-out',
+        certPath,
+        '-days',
+        '365',
+        '-nodes',
+        '-subj',
+        '/CN=LTV Test User',
+        '-addext',
+        'keyUsage=digitalSignature'
       ]);
 
       // Create PDF
       final pdf.PdfDocument docBuilder = pdf.PdfDocument();
-      docBuilder.pages.add().graphics.drawString('LTV Test', pdf.PdfStandardFont(pdf.PdfFontFamily.helvetica, 12));
+      docBuilder.pages.add().graphics.drawString(
+          'LTV Test', pdf.PdfStandardFont(pdf.PdfFontFamily.helvetica, 12));
       final Uint8List unsignedPdf = Uint8List.fromList(await docBuilder.save());
       docBuilder.dispose();
 
@@ -64,20 +78,24 @@ void main() {
 
       // Verify LTV Structures
       final PdfSignatureValidator validator = PdfSignatureValidator();
-      final PdfSignatureValidationReport report = await validator.validateAllSignatures(ltvBytes, trustedRootsPem: [certPem]);
+      final PdfSignatureValidationReport report = await validator
+          .validateAllSignatures(ltvBytes, trustedRootsPem: [certPem]);
       final PdfSignatureValidationItem sig = report.signatures.first;
 
       if (_verbose) {
         // ignore: avoid_print
-        print('LTV Info: hasDss=${sig.ltv.hasDss} dssCerts=${sig.ltv.dssCertsCount}');
+        print(
+            'LTV Info: hasDss=${sig.ltv.hasDss} dssCerts=${sig.ltv.dssCertsCount}');
       }
 
-      expect(sig.ltv.hasDss, isTrue, reason: 'DSS Dictionary should be present');
-      expect(sig.ltv.dssCertsCount, greaterThanOrEqualTo(1), reason: 'DSS should contain the signer certificate');
-      
-      // VRI presence check
-      expect(sig.ltv.signatureHasVri, isTrue, reason: 'VRI should be created for the signature');
+      expect(sig.ltv.hasDss, isTrue,
+          reason: 'DSS Dictionary should be present');
+      expect(sig.ltv.dssCertsCount, greaterThanOrEqualTo(1),
+          reason: 'DSS should contain the signer certificate');
 
+      // VRI presence check
+      expect(sig.ltv.signatureHasVri, isTrue,
+          reason: 'VRI should be created for the signature');
     } finally {
       if (testDir.existsSync()) testDir.deleteSync(recursive: true);
     }
@@ -97,7 +115,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
   signature.reason = 'Multi-signature test';
   signature.digestAlgorithm = pdf.DigestAlgorithm.sha256;
 
-  final pdf.PdfExternalSigningResult prepared = await pdf.PdfExternalSigning.preparePdf(
+  final pdf.PdfExternalSigningResult prepared =
+      await pdf.PdfExternalSigning.preparePdf(
     inputBytes: Uint8List.fromList(pdfBytes),
     pageNumber: 1,
     bounds: pdf.Rect.fromLTWH(100, 100, 200, 50),
@@ -107,7 +126,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
   );
 
   final Uint8List preparedBytes = prepared.preparedPdfBytes;
-  final List<int> ranges = pdf.PdfExternalSigning.extractByteRange(preparedBytes);
+  final List<int> ranges =
+      pdf.PdfExternalSigning.extractByteRange(preparedBytes);
 
   final int start1 = ranges[0];
   final int len1 = ranges[1];
@@ -141,7 +161,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
     'DER'
   ]);
 
-  final Uint8List sigBytes = Uint8List.fromList(File(p7sPath).readAsBytesSync());
+  final Uint8List sigBytes =
+      Uint8List.fromList(File(p7sPath).readAsBytesSync());
   return pdf.PdfExternalSigning.embedSignature(
     preparedPdfBytes: preparedBytes,
     pkcs7Bytes: sigBytes,
@@ -150,7 +171,8 @@ Future<Uint8List> _externallySignWithOpenSsl({
 
 bool _hasOpenSsl() {
   try {
-    final ProcessResult result = Process.runSync('openssl', const <String>['version']);
+    final ProcessResult result =
+        Process.runSync('openssl', const <String>['version']);
     return result.exitCode == 0;
   } catch (_) {
     return false;

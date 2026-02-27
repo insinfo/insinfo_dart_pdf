@@ -422,7 +422,7 @@ class Asn1EncodeCollection {
 class Asn1Octet extends Asn1 implements IAsn1Octet {
   /// internal constructor
   Asn1Octet(this.value)
-    : super(<Asn1UniversalTags>[Asn1UniversalTags.octetString]);
+      : super(<Asn1UniversalTags>[Asn1UniversalTags.octetString]);
 
   /// internal constructor
   Asn1Octet.fromObject(Asn1Encode obj) {
@@ -530,10 +530,10 @@ class Asn1Sequence extends Asn1 {
   //Constructor
   /// internal constructor
   Asn1Sequence()
-    : super(<Asn1UniversalTags>[
-        Asn1UniversalTags.sequence,
-        Asn1UniversalTags.constructed,
-      ]) {
+      : super(<Asn1UniversalTags>[
+          Asn1UniversalTags.sequence,
+          Asn1UniversalTags.constructed,
+        ]) {
     objects = <dynamic>[];
   }
   //Fields
@@ -780,10 +780,9 @@ class Asn1SequenceHelper implements IAsn1Collection {
 class Asn1Set extends Asn1 {
   /// internal constructor
   Asn1Set([int? capacity]) {
-    objects =
-        capacity != null
-            ? List<dynamic>.generate(capacity, (dynamic i) => null)
-            : <dynamic>[];
+    objects = capacity != null
+        ? List<dynamic>.generate(capacity, (dynamic i) => null)
+        : <dynamic>[];
   }
   //Fields
   /// internal field
@@ -933,8 +932,8 @@ class Asn1Set extends Asn1 {
         final Asn1EncodeCollection collection = Asn1EncodeCollection();
         // ignore: avoid_function_literals_in_foreach_calls
         inner.objects!.toList().forEach(
-          (dynamic entry) => collection.encodableObjects.add(entry),
-        );
+              (dynamic entry) => collection.encodableObjects.add(entry),
+            );
         result = DerSet(collection: collection, isSort: false);
       } else {
         throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
@@ -1093,7 +1092,7 @@ class Asn1DerStream extends DerStream {
 class Asn1Integer extends Asn1 {
   /// internal constructor
   Asn1Integer(this._value)
-    : super(<Asn1UniversalTags>[Asn1UniversalTags.integer]);
+      : super(<Asn1UniversalTags>[Asn1UniversalTags.integer]);
 
   /// internal field
   late final int _value;
@@ -1129,7 +1128,7 @@ class Asn1Integer extends Asn1 {
 class Asn1Boolean extends Asn1 {
   /// internal constructor
   Asn1Boolean(this._value)
-    : super(<Asn1UniversalTags>[Asn1UniversalTags.boolean]);
+      : super(<Asn1UniversalTags>[Asn1UniversalTags.boolean]);
 
   /// internal field
   late final bool _value;
@@ -1157,7 +1156,7 @@ class Asn1Boolean extends Asn1 {
 class Asn1Identifier extends Asn1 {
   /// internal constructor
   Asn1Identifier(this._id)
-    : super(<Asn1UniversalTags>[Asn1UniversalTags.objectIdentifier]);
+      : super(<Asn1UniversalTags>[Asn1UniversalTags.objectIdentifier]);
 
   /// internal field
   late final String _id;
@@ -1251,7 +1250,47 @@ class GeneralizedTime extends Asn1 {
   //Implementation
   /// internal method
   DateTime? toDateTime() {
-    return DateTime.tryParse(time);
+    final DateTime? direct = DateTime.tryParse(time);
+    if (direct != null) return direct;
+
+    final RegExp normalized = RegExp(
+      r'^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{4})?$',
+    );
+    final RegExpMatch? match = normalized.firstMatch(time);
+    if (match == null) return null;
+
+    final int year = int.parse(match.group(1)!);
+    final int month = int.parse(match.group(2)!);
+    final int day = int.parse(match.group(3)!);
+    final int hour = int.parse(match.group(4)!);
+    final int minute = int.parse(match.group(5)!);
+    final int second = int.parse(match.group(6)!);
+    final String? fractionRaw = match.group(7);
+    final int millisecond = fractionRaw == null
+        ? 0
+        : int.parse(fractionRaw.padRight(3, '0').substring(0, 3));
+    final String tz = match.group(8) ?? 'Z';
+
+    DateTime dt = DateTime.utc(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      millisecond,
+    );
+
+    if (tz != 'Z') {
+      final int sign = tz.startsWith('-') ? -1 : 1;
+      final int offsetHours = int.parse(tz.substring(1, 3));
+      final int offsetMinutes = int.parse(tz.substring(3, 5));
+      final Duration offset =
+          Duration(hours: offsetHours, minutes: offsetMinutes);
+      dt = sign > 0 ? dt.subtract(offset) : dt.add(offset);
+    }
+
+    return dt;
   }
 
   @override

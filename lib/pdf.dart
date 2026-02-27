@@ -234,8 +234,6 @@ export 'src/pdf/implementation/pdf_document/pdf_file_structure.dart'
     show PdfFileStructure;
 export 'src/pdf/implementation/security/digital_signature/pdf_certificate.dart'
     show PdfCertificate;
-export 'src/pdf/implementation/security/digital_signature/external_pdf_signature.dart'
-    show PdfExternalSigning, PdfExternalSigningResult;
 export 'src/pdf/implementation/security/digital_signature/pdf_signing_session.dart'
     show PdfSigningSession, IPdfSigner;
 export 'src/pdf/implementation/security/digital_signature/pdf_signers.dart'
@@ -271,16 +269,14 @@ export 'src/pdf/implementation/security/digital_signature/x509/x509_certificates
 export 'src/pdf/implementation/security/digital_signature/x509/x509_name.dart'
     show X509Name;
 export 'src/pdf/implementation/security/digital_signature/x509/x509_generator_utils.dart';
-export 'src/pdf/implementation/security/digital_signature/govbr_signature_api.dart'
-    show GovBrSignatureApi;
-export 'src/pdf/implementation/security/digital_signature/govbr_oauth.dart'
-    show GovBrOAuthClient;
 export 'src/pdf/implementation/security/digital_signature/pdf_external_signer.dart';
 export 'src/pdf/implementation/security/digital_signature/pdf_signature.dart'
     show PdfSignature, RevocationType;
 export 'src/security/chain/trusted_roots_provider.dart'
     show TrustedRootsProvider, CompositeTrustedRootsProvider;
 export 'src/security/chain/govbr_provider.dart' show GovBrProvider;
+export 'src/security/chain/offline_certificate_chain_builder.dart'
+    show OfflineCertificateChainBuilder;
 
 export 'src/pki/pki_builder.dart' show PkiUtils;
 export 'src/pki/pki_pem_utils.dart' show PkiPemUtils;

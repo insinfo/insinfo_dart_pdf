@@ -112,6 +112,7 @@ class PdfRevocationResult {
     required this.isRevoked,
     required this.status,
     this.details,
+    this.source,
   });
 
   final bool isRevoked;
@@ -120,10 +121,14 @@ class PdfRevocationResult {
   final String status;
   final String? details;
 
+  /// Best-effort evidence source: 'ocsp', 'crl', 'mixed', 'none'.
+  final String? source;
+
   Map<String, dynamic> toMap() => <String, dynamic>{
         'is_revoked': isRevoked,
         'status': status,
         'details': details,
+        'source': source,
       };
 }
 
@@ -1346,8 +1351,12 @@ class PdfSignatureValidator {
       return const PdfRevocationResult(
           isRevoked: false,
           status: 'unknown',
-          details: 'No certificates in signature');
+          details: 'No certificates in signature',
+          source: 'none');
     }
+
+    bool sawOcspEvidence = false;
+    bool sawCrlEvidence = false;
 
     // Parse chain
     final List<X509Certificate> chain = [];
@@ -1428,11 +1437,13 @@ class PdfSignatureValidator {
               : OcspResponse.parse(ocspBytes);
 
           if (ocsp != null) {
+            sawOcspEvidence = true;
             if (ocsp.status == OcspCertificateStatus.revoked) {
               return PdfRevocationResult(
                 isRevoked: true,
                 status: 'revoked',
                 details: 'OCSP: certificate revoked',
+                source: 'ocsp',
               );
             }
             if (ocsp.status == OcspCertificateStatus.good) {
@@ -1490,11 +1501,14 @@ class PdfSignatureValidator {
           }
         }
 
+        sawCrlEvidence = true;
+
         if (crl.isRevoked(serial)) {
           return PdfRevocationResult(
             isRevoked: true,
             status: 'revoked',
             details: 'CRL: certificate revoked',
+            source: 'crl',
           );
         }
 
@@ -1514,10 +1528,34 @@ class PdfSignatureValidator {
       final String msg =
           'Missing validated revocation evidence for ${missingEvidenceFor.length} cert(s)';
       return PdfRevocationResult(
-          isRevoked: false, status: 'unknown', details: msg);
+        isRevoked: false,
+        status: 'unknown',
+        details: msg,
+        source: _revocationSourceFromEvidence(
+          sawOcspEvidence: sawOcspEvidence,
+          sawCrlEvidence: sawCrlEvidence,
+        ),
+      );
     }
 
-    return const PdfRevocationResult(isRevoked: false, status: 'good');
+    return PdfRevocationResult(
+      isRevoked: false,
+      status: 'good',
+      source: _revocationSourceFromEvidence(
+        sawOcspEvidence: sawOcspEvidence,
+        sawCrlEvidence: sawCrlEvidence,
+      ),
+    );
+  }
+
+  String _revocationSourceFromEvidence({
+    required bool sawOcspEvidence,
+    required bool sawCrlEvidence,
+  }) {
+    if (sawOcspEvidence && sawCrlEvidence) return 'mixed';
+    if (sawOcspEvidence) return 'ocsp';
+    if (sawCrlEvidence) return 'crl';
+    return 'none';
   }
 
   /// Extracts lightweight signer metadata for all signatures.

@@ -1,7 +1,6 @@
 import '../asn1/asn1.dart';
 import '../asn1/asn1_stream.dart';
 import '../asn1/der.dart';
-import '../x509/x509_time.dart';
 import '../../../io/stream_reader.dart';
 
 import 'dart:convert';
@@ -26,22 +25,23 @@ class Lpa {
   final int? version;
 
   static Lpa? fromAsn1(Asn1 asn1) {
-    if (asn1 is! Asn1Sequence || asn1.count < 2) return null;
+    final Asn1Sequence? lpaSeq = _asSequence(asn1);
+    if (lpaSeq == null || lpaSeq.count < 2) return null;
 
     int idx = 0;
     int? version;
 
     // version INTEGER OPTIONAL
-    final Asn1? first = asn1[0]?.getAsn1();
+    final Asn1? first = lpaSeq[0]?.getAsn1();
     if (first is DerInteger) {
       version = first.value.toInt();
       idx++;
     }
 
-    if (asn1.count - idx < 2) return null;
+    if (lpaSeq.count - idx < 2) return null;
 
     // policyInfos SEQUENCE OF PolicyInfo
-    final Asn1Sequence? infosSeq = asn1[idx++]?.getAsn1() as Asn1Sequence?;
+    final Asn1Sequence? infosSeq = _asSequence(lpaSeq[idx++]?.getAsn1());
     if (infosSeq == null) return null;
 
     final List<PolicyInfo> infos = [];
@@ -54,10 +54,16 @@ class Lpa {
     }
 
     // nextUpdate GeneralizedTime
-    final Asn1? nextUpdateAsn1 = asn1[idx]?.getAsn1();
-    final DateTime? nextUp = (nextUpdateAsn1 is GeneralizedTime)
-        ? nextUpdateAsn1.toDateTime()
-        : X509Time.getTime(nextUpdateAsn1)?.toDateTime();
+    DateTime? nextUp;
+    if (idx < lpaSeq.count) {
+      nextUp = _parseTimeAsDateTime(lpaSeq[idx]?.getAsn1());
+    }
+    if (nextUp == null) {
+      for (int i = idx; i < lpaSeq.count; i++) {
+        nextUp = _parseTimeAsDateTime(lpaSeq[i]?.getAsn1());
+        if (nextUp != null) break;
+      }
+    }
 
     if (nextUp == null) return null;
 
@@ -102,6 +108,27 @@ class Lpa {
   ) {
     return root.descendantElements.where((e) => e.name.local == localName);
   }
+
+  static Asn1Sequence? _asSequence(Asn1? asn1) {
+    if (asn1 == null) return null;
+    if (asn1 is Asn1Sequence) return asn1;
+    if (asn1 is Asn1Tag) {
+      final Asn1? inner = asn1.getObject();
+      if (inner is Asn1Sequence) return inner;
+      try {
+        return Asn1Sequence.getSequence(asn1, true);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  static DateTime? _parseTimeAsDateTime(Asn1? asn1) {
+    if (asn1 is GeneralizedTime) return asn1.toDateTime();
+    if (asn1 is DerUtcTime) return asn1.toAdjustedDateTime;
+    return null;
+  }
 }
 
 /// Represents a PolicyInfo entry in the LPA (v2).
@@ -130,32 +157,30 @@ class PolicyInfo {
   final PolicyDigest policyDigest;
 
   static PolicyInfo? fromAsn1(Asn1 asn1) {
-    if (asn1 is! Asn1Sequence) return null;
-    if (asn1.count < 4) return null;
+    final Asn1Sequence? seq = Lpa._asSequence(asn1);
+    if (seq == null || seq.count < 4) return null;
 
     int idx = 0;
     final SigningPeriod? signingPeriod =
-        SigningPeriod.fromAsn1(asn1[idx++]?.getAsn1());
+        SigningPeriod.fromAsn1(seq[idx++]?.getAsn1());
     if (signingPeriod == null) return null;
 
     DateTime? revocationDate;
-    final Asn1? maybeTime = asn1[idx]?.getAsn1();
-    final X509Time? timeObj = X509Time.getTime(maybeTime);
-    if (timeObj != null &&
-        (maybeTime is DerUtcTime || maybeTime is GeneralizedTime)) {
-      revocationDate = timeObj.toDateTime();
+    final Asn1? maybeTime = seq[idx]?.getAsn1();
+    if (maybeTime is DerUtcTime || maybeTime is GeneralizedTime) {
+      revocationDate = Lpa._parseTimeAsDateTime(maybeTime);
       idx++;
     }
 
-    final Asn1? oidAsn1 = asn1[idx++]?.getAsn1();
+    final Asn1? oidAsn1 = seq[idx++]?.getAsn1();
     if (oidAsn1 is! DerObjectID || oidAsn1.id == null) return null;
     final String policyOid = oidAsn1.id!;
 
-    final Asn1? uriAsn1 = asn1[idx++]?.getAsn1();
+    final Asn1? uriAsn1 = seq[idx++]?.getAsn1();
     final String? policyUri = _readIa5String(uriAsn1);
     if (policyUri == null) return null;
 
-    final Asn1? digestAsn1 = asn1[idx++]?.getAsn1();
+    final Asn1? digestAsn1 = seq[idx++]?.getAsn1();
     final PolicyDigest? digest = PolicyDigest.fromAsn1(digestAsn1);
     if (digest == null) return null;
 
@@ -177,7 +202,7 @@ class PolicyInfo {
 
     final String? notBeforeText = signingPeriodEl.childElements
         .where((e) => e.name.local == 'NotBefore')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (notBeforeText == null) return null;
@@ -186,7 +211,7 @@ class PolicyInfo {
 
     final String? notAfterText = signingPeriodEl.childElements
         .where((e) => e.name.local == 'NotAfter')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     final DateTime? notAfter =
@@ -194,7 +219,7 @@ class PolicyInfo {
 
     final String? revocationText = policyInfoElement.childElements
         .where((e) => e.name.local == 'RevocationDate')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     final DateTime? revocationDate =
@@ -202,7 +227,7 @@ class PolicyInfo {
 
     final String? identifierText = policyInfoElement.descendantElements
         .where((e) => e.name.local == 'Identifier')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (identifierText == null) return null;
@@ -218,7 +243,7 @@ class PolicyInfo {
 
     final String? policyUri = digestAndUri.childElements
         .where((e) => e.name.local == 'PolicyURI')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (policyUri == null) return null;
@@ -238,7 +263,7 @@ class PolicyInfo {
 
     final String? digestValueB64 = policyDigestEl.descendantElements
         .where((e) => e.name.local == 'DigestValue')
-      .map((e) => e.innerText.trim())
+        .map((e) => e.innerText.trim())
         .cast<String?>()
         .firstWhere((t) => t != null && t.isNotEmpty, orElse: () => null);
     if (digestValueB64 == null) return null;
@@ -273,15 +298,16 @@ class PolicyDigest {
   final List<int> value;
 
   static PolicyDigest? fromAsn1(Asn1? asn1) {
-    if (asn1 is! Asn1Sequence || asn1.count < 2) return null;
+    final Asn1Sequence? seq = Lpa._asSequence(asn1);
+    if (seq == null || seq.count < 2) return null;
 
-    final Asn1? algoSeq = asn1[0]?.getAsn1();
-    if (algoSeq is! Asn1Sequence || algoSeq.count < 1) return null;
+    final Asn1Sequence? algoSeq = Lpa._asSequence(seq[0]?.getAsn1());
+    if (algoSeq == null || algoSeq.count < 1) return null;
     final Asn1? oidAsn1 = algoSeq[0]?.getAsn1();
     if (oidAsn1 is! DerObjectID || oidAsn1.id == null) return null;
     final String algorithm = oidAsn1.id!;
 
-    final Asn1? valueAsn1 = asn1[1]?.getAsn1();
+    final Asn1? valueAsn1 = seq[1]?.getAsn1();
     if (valueAsn1 is! DerOctet || valueAsn1.getOctets() == null) return null;
     final List<int> value = valueAsn1.getOctets()!;
 
@@ -300,14 +326,15 @@ class SigningPeriod {
   final DateTime? notAfter;
 
   static SigningPeriod? fromAsn1(Asn1? asn1) {
-    if (asn1 is! Asn1Sequence) return null;
+    final Asn1Sequence? seq = Lpa._asSequence(asn1);
+    if (seq == null || seq.count < 1) return null;
 
-    final DateTime? nb = X509Time.getTime(asn1[0])?.toDateTime();
+    final DateTime? nb = Lpa._parseTimeAsDateTime(seq[0]?.getAsn1());
     if (nb == null) return null;
 
     DateTime? na;
-    if (asn1.count > 1) {
-      na = X509Time.getTime(asn1[1])?.toDateTime();
+    if (seq.count > 1) {
+      na = Lpa._parseTimeAsDateTime(seq[1]?.getAsn1());
     }
 
     return SigningPeriod(notBefore: nb, notAfter: na);
