@@ -162,7 +162,7 @@ class PdfSignatureExtractor {
             : _findContentsRangeInGap(pdfBytes, byteRange);
 
         final PdfSignatureFieldMapping fieldMapping =
-          _buildFieldMapping(doc, field, widget: widget);
+            _buildFieldMapping(doc, field, widget: widget);
 
         out.add(
           PdfSignatureExtraction(
@@ -172,7 +172,8 @@ class PdfSignatureExtractor {
             contentsStart: cr?.start,
             contentsEnd: cr?.end,
             signingTime: _extractSigningTime(sigDict),
-            reason: _readStringProperty(sigDict, PdfDictionaryProperties.reason),
+            reason:
+                _readStringProperty(sigDict, PdfDictionaryProperties.reason),
             location:
                 _readStringProperty(sigDict, PdfDictionaryProperties.location),
             contactInfo: _readStringProperty(
@@ -288,10 +289,9 @@ PdfSignatureFieldMapping _buildFieldMapping(
           } else if (annot is PdfReference) {
             annotRef = annot;
           } else if (annotDict != null) {
-            annotRef =
-                PdfDocumentHelper.getHelper(doc).crossTable.getReference(
-                      annotDict,
-                    );
+            annotRef = PdfDocumentHelper.getHelper(doc).crossTable.getReference(
+                  annotDict,
+                );
           }
 
           final bool matchByRef = widgetHasRef &&
@@ -311,7 +311,8 @@ PdfSignatureFieldMapping _buildFieldMapping(
                         pDict,
                       );
               if (pRef.objNum != null && pRef.genNum != null) {
-                pageRef = PdfPageRef(objNum: pRef.objNum!, genNum: pRef.genNum!);
+                pageRef =
+                    PdfPageRef(objNum: pRef.objNum!, genNum: pRef.genNum!);
               }
             }
             found = true;
@@ -347,8 +348,9 @@ PdfSignatureFieldMapping _buildFieldMapping(
             } else if (parent is PdfReference) {
               parentRef = parent;
             } else if (parent is PdfDictionary) {
-              parentRef =
-                  PdfDocumentHelper.getHelper(doc).crossTable.getReference(parent);
+              parentRef = PdfDocumentHelper.getHelper(doc)
+                  .crossTable
+                  .getReference(parent);
             }
 
             final bool matchByRef = fieldHasRef &&
@@ -443,7 +445,8 @@ _ContentsRange? _findContentsRangeInGap(
   final int labelPos = _indexOfBytes(pdfBytes, needle, gapStart, gapEnd);
   if (labelPos == -1) {
     final int lt = _scanForwardByte(pdfBytes, gapStart, gapEnd, 0x3C); // '<'
-    final int gt = _scanBackwardByte(pdfBytes, gapEnd - 1, gapStart, 0x3E); // '>'
+    final int gt =
+        _scanBackwardByte(pdfBytes, gapEnd - 1, gapStart, 0x3E); // '>'
     if (lt != -1 && gt != -1 && gt > lt) {
       return _ContentsRange(lt + 1, gt);
     }
@@ -533,7 +536,9 @@ Uint8List? _readContentsPkcs7(PdfDictionary sigDict) {
 
   final List<int> data = contentsPrim.data ?? const <int>[];
   if (data.isNotEmpty && data[0] == 0x30) {
-    return Uint8List.fromList(data);
+    return PdfSignatureUtils.trimReservedContentsPadding(
+      Uint8List.fromList(data),
+    );
   }
 
   final PdfString tmp = PdfString('');
@@ -542,7 +547,9 @@ Uint8List? _readContentsPkcs7(PdfDictionary sigDict) {
   if (decoded.isEmpty) {
     return null;
   }
-  return Uint8List.fromList(decoded);
+  return PdfSignatureUtils.trimReservedContentsPadding(
+    Uint8List.fromList(decoded),
+  );
 }
 
 DateTime? _extractSigningTime(PdfDictionary sigDict) {

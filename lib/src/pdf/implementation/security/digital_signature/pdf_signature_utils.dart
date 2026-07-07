@@ -37,9 +37,36 @@ class PdfSignatureOffsets {
 
 /// Utility to extract signature offsets safely using the PDF parser.
 class PdfSignatureUtils {
+  /// Removes the reserved zero padding commonly left after `/Contents`.
+  ///
+  /// Signed PDFs usually reserve a fixed-size hex string for CMS/PKCS#7 and
+  /// fill the unused tail with `00`. A valid DER object can also legitimately
+  /// end with byte `00`, so padding must be discarded from the declared ASN.1
+  /// element length first. The trailing-zero fallback is kept for malformed or
+  /// non-DER legacy inputs.
+  static Uint8List trimReservedContentsPadding(Uint8List bytes) {
+    var start = 0;
+    var end = bytes.length;
+    while (start < end && bytes[start] == 0x00) {
+      start++;
+    }
+
+    final int? derLength = _readAsn1ElementTotalLength(bytes, start);
+    if (derLength != null && start + derLength <= bytes.length) {
+      final int derEnd = start + derLength;
+      if (start == 0 && derEnd == bytes.length) return bytes;
+      return Uint8List.fromList(bytes.sublist(start, derEnd));
+    }
+
+    while (end > start && bytes[end - 1] == 0x00) {
+      end--;
+    }
+    if (start == 0 && end == bytes.length) return bytes;
+    return Uint8List.fromList(bytes.sublist(start, end));
+  }
 
   /// Finds the ByteRange and Contents offsets for a given signature reference.
-  /// 
+  ///
   /// [doc] The parsed document (used for CrossModel lookup).
   /// [pdfBytes] The raw file bytes (used for precise re-parsing).
   /// [signatureReference] The reference to the signature dictionary.
@@ -48,112 +75,119 @@ class PdfSignatureUtils {
     required List<int> pdfBytes,
     required PdfReference signatureReference,
   }) {
-    final PdfCrossTable crossTable = PdfDocumentHelper.getHelper(doc).crossTable;
+    final PdfCrossTable crossTable =
+        PdfDocumentHelper.getHelper(doc).crossTable;
     final CrossTable? internalCrossTable = crossTable.crossTable;
-    
+
     if (internalCrossTable == null) return null;
 
-    final ObjectInformation? objInfo = internalCrossTable.objects[signatureReference.objNum];
+    final ObjectInformation? objInfo =
+        internalCrossTable.objects[signatureReference.objNum];
     if (objInfo == null || objInfo.offset == null) return null;
 
     final int startOffset = objInfo.offset!;
     final PdfReader reader = PdfReader(pdfBytes);
     reader.position = startOffset;
-    
+
     final PdfLexer lexer = PdfLexer(reader);
-    
+
     // Skip 'objNum genNum obj'
     if (lexer.getNextToken() != PdfTokenType.number) return null;
     if (lexer.getNextToken() != PdfTokenType.number) return null;
-    
+
     // Loop until we find the dictionary start '<<'
     PdfTokenType token = lexer.getNextToken();
     while (token != PdfTokenType.dictionaryStart && token != PdfTokenType.eof) {
       token = lexer.getNextToken();
     }
-    
+
     if (token != PdfTokenType.dictionaryStart) return null;
-    
+
     // Now inside dictionary
     List<int>? byteRangeValues;
     List<int>? byteRangeRange;
     List<int>? contentsRange;
-    
+
     int loopCount = 0;
-    while (loopCount++ < 1000) { // Safety break
+    while (loopCount++ < 1000) {
+      // Safety break
       token = lexer.getNextToken();
       if (token == PdfTokenType.dictionaryEnd) break;
       if (token == PdfTokenType.eof) break;
-      
+
       if (token == PdfTokenType.name) {
         final String key = lexer.text;
         if (key == 'ByteRange') {
           // Expect arrayStart following 'ByteRange'
           final int preArrayPos = lexer.position;
-          
-          token = lexer.getNextToken(); 
+
+          token = lexer.getNextToken();
           if (token == PdfTokenType.arrayStart) {
-             // Found '['. Scan for exact position of '['
-             final int arrayStartPos = _scanForwardFor(pdfBytes, preArrayPos, 91); // '[' is 91
-             if (arrayStartPos == -1) return null;
-             
-             final List<int> values = <int>[];
-             while (true) {
-               final PdfTokenType valToken = lexer.getNextToken();
-               if (valToken == PdfTokenType.arrayEnd) break;
-               if (valToken == PdfTokenType.eof) break;
-               if (valToken == PdfTokenType.number) {
-                 try {
-                    values.add(int.parse(lexer.text));
-                 } catch (_) {}
-               }
-             }
-             
-             // Found ']'.
-             final int arrayEndPos = lexer.position;
-             // Verify ']' at arrayEndPos-1 or near
-             int p = arrayEndPos - 1;
-             while (p > arrayStartPos && pdfBytes[p] != 93) p--; // 93 is ']'
-             
-             if (pdfBytes[p] == 93) {
-                byteRangeRange = <int>[arrayStartPos, p + 1];
-                byteRangeValues = values;
-             }
+            // Found '['. Scan for exact position of '['
+            final int arrayStartPos =
+                _scanForwardFor(pdfBytes, preArrayPos, 91); // '[' is 91
+            if (arrayStartPos == -1) return null;
+
+            final List<int> values = <int>[];
+            while (true) {
+              final PdfTokenType valToken = lexer.getNextToken();
+              if (valToken == PdfTokenType.arrayEnd) break;
+              if (valToken == PdfTokenType.eof) break;
+              if (valToken == PdfTokenType.number) {
+                try {
+                  values.add(int.parse(lexer.text));
+                } catch (_) {}
+              }
+            }
+
+            // Found ']'.
+            final int arrayEndPos = lexer.position;
+            // Verify ']' at arrayEndPos-1 or near
+            int p = arrayEndPos - 1;
+            while (p > arrayStartPos && pdfBytes[p] != 93) p--; // 93 is ']'
+
+            if (pdfBytes[p] == 93) {
+              byteRangeRange = <int>[arrayStartPos, p + 1];
+              byteRangeValues = values;
+            }
           }
         } else if (key == 'Contents') {
-           final int preValPos = lexer.position;
-           token = lexer.getNextToken();
-           if (token == PdfTokenType.hexStringStart) {
-              final int startPos = _scanForwardFor(pdfBytes, preValPos, 60); // '<' is 60
-              
-              // lexer consumes content until '>'
-              while (true) {
-                token = lexer.getNextToken();
-                if (token == PdfTokenType.hexStringEnd) break;
-                if (token == PdfTokenType.eof) break;
-              }
-              
-              final int endPos = lexer.position;
-              // Verify '>' at endPos-1 or scan backward
-              int p = endPos - 1;
-              while (p > startPos && pdfBytes[p] != 62) p--; // 62 is '>'
-              
-              if (pdfBytes[p] == 62) {
-                 contentsRange = <int>[startPos, p + 1];
-              }
-           }
+          final int preValPos = lexer.position;
+          token = lexer.getNextToken();
+          if (token == PdfTokenType.hexStringStart) {
+            final int startPos =
+                _scanForwardFor(pdfBytes, preValPos, 60); // '<' is 60
+
+            // lexer consumes content until '>'
+            while (true) {
+              token = lexer.getNextToken();
+              if (token == PdfTokenType.hexStringEnd) break;
+              if (token == PdfTokenType.eof) break;
+            }
+
+            final int endPos = lexer.position;
+            // Verify '>' at endPos-1 or scan backward
+            int p = endPos - 1;
+            while (p > startPos && pdfBytes[p] != 62) p--; // 62 is '>'
+
+            if (pdfBytes[p] == 62) {
+              contentsRange = <int>[startPos, p + 1];
+            }
+          }
         }
       }
     }
-    
-    if (byteRangeValues != null && byteRangeRange != null && contentsRange != null) {
+
+    if (byteRangeValues != null &&
+        byteRangeRange != null &&
+        contentsRange != null) {
       return PdfSignatureOffsets(
         byteRange: byteRangeValues,
         byteRangeOffsets: byteRangeRange,
         contentsOffsets: contentsRange,
       );
     }
-    
+
     return null;
   }
 
@@ -198,35 +232,69 @@ class PdfSignatureUtils {
       out[oi++] = (hi << 4) | lo;
     }
 
-    int trimmed = out.length;
-    while (trimmed > 0 && out[trimmed - 1] == 0x00) {
-      trimmed--;
+    return trimReservedContentsPadding(out);
+  }
+
+  static int? _readAsn1ElementTotalLength(Uint8List bytes, int offset) {
+    if (offset < 0 || offset >= bytes.length) return null;
+
+    var cursor = offset + 1;
+    if ((bytes[offset] & 0x1F) == 0x1F) {
+      var completed = false;
+      while (cursor < bytes.length) {
+        final int b = bytes[cursor++];
+        if ((b & 0x80) == 0) {
+          completed = true;
+          break;
+        }
+      }
+      if (!completed) return null;
     }
-    return trimmed == out.length ? out : Uint8List.sublistView(out, 0, trimmed);
+
+    if (cursor >= bytes.length) return null;
+    final int lenByte = bytes[cursor++];
+    if (lenByte == 0x80) return null;
+
+    int length;
+    if ((lenByte & 0x80) == 0) {
+      length = lenByte;
+    } else {
+      final int lenLen = lenByte & 0x7F;
+      if (lenLen == 0 || cursor + lenLen > bytes.length) return null;
+      length = 0;
+      for (var i = 0; i < lenLen; i++) {
+        length = (length << 8) | bytes[cursor++];
+      }
+    }
+
+    return cursor - offset + length;
   }
 
   static int _hexNibble(int c) {
     if (c >= 48 && c <= 57) return c - 48; // 0-9
     if (c >= 65 && c <= 70) return c - 55; // A-F
     if (c >= 97 && c <= 102) return c - 87; // a-f
-    throw ArgumentError('Caractere inválido em hex string: ${String.fromCharCode(c)}');
+    throw ArgumentError(
+        'Caractere inválido em hex string: ${String.fromCharCode(c)}');
   }
-  
+
   static int _scanForwardFor(List<int> bytes, int start, int char) {
-    for (int i = start; i < bytes.length && i < start + 100; i++) { // Limit scan
-       if (bytes[i] == char) return i;
-       if (!_isWhitespace(bytes[i])) { 
-         if (bytes[i] == 37) { // % comment
-            // Skip to newline
-            while (i < bytes.length && bytes[i] != 10 && bytes[i] != 13) i++;
-         } else {
-             return -1;
-         }
-       }
+    for (int i = start; i < bytes.length && i < start + 100; i++) {
+      // Limit scan
+      if (bytes[i] == char) return i;
+      if (!_isWhitespace(bytes[i])) {
+        if (bytes[i] == 37) {
+          // % comment
+          // Skip to newline
+          while (i < bytes.length && bytes[i] != 10 && bytes[i] != 13) i++;
+        } else {
+          return -1;
+        }
+      }
     }
     return -1;
   }
-  
+
   static bool _isWhitespace(int c) {
     return c == 0 || c == 9 || c == 10 || c == 12 || c == 13 || c == 32;
   }

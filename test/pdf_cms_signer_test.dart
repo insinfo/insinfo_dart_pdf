@@ -106,7 +106,8 @@ void main() {
         final Uint8List digest =
             Uint8List.fromList(sha256.convert(content).bytes);
 
-        final Uint8List cmsDer = pdf.PdfCmsSigner.signDetachedSha256EcdsaFromPem(
+        final Uint8List cmsDer =
+            pdf.PdfCmsSigner.signDetachedSha256EcdsaFromPem(
           contentDigest: digest,
           privateKeyPem: privateKeyPem,
           certificatePem: certificatePem,
@@ -224,6 +225,69 @@ void main() {
         offsets: offsets,
       );
       expect(pkcs7, Uint8List.fromList(<int>[1, 2, 3, 4]));
+    });
+
+    test('preserves DER trailing zero and trims only reserved padding', () {
+      const String pdfText =
+          '%PDF-1.7\n1 0 obj\n<< /Contents <30 03 02 01 00 00 00> >>\nendobj\n';
+      final List<int> bytes = ascii.encode(pdfText);
+
+      final List<int> marker = ascii.encode('/Contents <');
+      final int markerIndex = _indexOfBytes(bytes, marker);
+      expect(markerIndex, isNonNegative);
+
+      final int start = markerIndex + marker.length - 1; // '<'
+      final int end = bytes.indexOf(62, start + 1) + 1; // after '>'
+
+      final pdf.PdfSignatureOffsets offsets = pdf.PdfSignatureOffsets(
+        byteRange: const <int>[0, 0, 0, 0],
+        byteRangeOffsets: const <int>[0, 0],
+        contentsOffsets: <int>[start, end],
+      );
+
+      final Uint8List pkcs7 = pdf.PdfSignatureUtils.extractPkcs7FromOffsets(
+        pdfBytes: bytes,
+        offsets: offsets,
+      );
+
+      expect(pkcs7, Uint8List.fromList(<int>[0x30, 0x03, 0x02, 0x01, 0x00]));
+      expect(pkcs7.last, 0x00);
+    });
+
+    test('trims long-form DER by declared ASN.1 length', () {
+      final List<int> der = <int>[
+        0x30,
+        0x81,
+        0x80,
+        ...List<int>.filled(128, 0x05),
+      ];
+      final String hex = <int>[...der, ...List<int>.filled(16, 0x00)]
+          .map((int b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+      final String pdfText =
+          '%PDF-1.7\n1 0 obj\n<< /Contents <$hex> >>\nendobj\n';
+      final List<int> bytes = ascii.encode(pdfText);
+
+      final List<int> marker = ascii.encode('/Contents <');
+      final int markerIndex = _indexOfBytes(bytes, marker);
+      expect(markerIndex, isNonNegative);
+
+      final int start = markerIndex + marker.length - 1; // '<'
+      final int end = bytes.indexOf(62, start + 1) + 1; // after '>'
+
+      final pdf.PdfSignatureOffsets offsets = pdf.PdfSignatureOffsets(
+        byteRange: const <int>[0, 0, 0, 0],
+        byteRangeOffsets: const <int>[0, 0],
+        contentsOffsets: <int>[start, end],
+      );
+
+      final Uint8List pkcs7 = pdf.PdfSignatureUtils.extractPkcs7FromOffsets(
+        pdfBytes: bytes,
+        offsets: offsets,
+      );
+
+      expect(pkcs7.length, der.length);
+      expect(pkcs7, Uint8List.fromList(der));
     });
 
     test('handles odd number of hex nibbles', () {

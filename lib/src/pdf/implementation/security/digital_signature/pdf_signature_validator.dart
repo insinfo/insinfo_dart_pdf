@@ -1916,7 +1916,9 @@ Uint8List? _readContentsPkcs7(PdfDictionary sigDict) {
 
   final List<int> data = contentsPrim.data ?? const <int>[];
   if (data.isNotEmpty && data[0] == 0x30) {
-    return Uint8List.fromList(data);
+    return PdfSignatureUtils.trimReservedContentsPadding(
+      Uint8List.fromList(data),
+    );
   }
 
   // Some parser flows keep hex payload as ASCII. Decode it.
@@ -1926,7 +1928,9 @@ Uint8List? _readContentsPkcs7(PdfDictionary sigDict) {
   if (decoded.isEmpty) {
     return null;
   }
-  return Uint8List.fromList(decoded);
+  return PdfSignatureUtils.trimReservedContentsPadding(
+    Uint8List.fromList(decoded),
+  );
 }
 
 DateTime? _extractSignatureDictionarySigningTime(PdfDictionary sigDict) {
