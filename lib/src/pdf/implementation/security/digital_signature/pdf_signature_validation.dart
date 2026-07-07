@@ -21,7 +21,6 @@ import 'asn1/der.dart';
 import 'cryptography/cipher_block_chaining_mode.dart';
 import 'cryptography/ipadding.dart';
 import 'pdf_signature_dictionary.dart' show SignerUtilities;
-import 'pdf_signature_utils.dart';
 import 'x509/x509_certificates.dart';
 import 'x509/x509_time.dart';
 
@@ -739,9 +738,7 @@ class PdfSignatureValidation {
 
     final List<int> data = contentsPrim.data ?? const <int>[];
     if (data.isNotEmpty && data[0] == 0x30) {
-      return PdfSignatureUtils.trimReservedContentsPadding(
-        Uint8List.fromList(data),
-      );
+      return Uint8List.fromList(data);
     }
 
     // Some parser flows keep hex payload as ASCII. Decode it.
@@ -751,9 +748,7 @@ class PdfSignatureValidation {
     if (decoded.isEmpty) {
       return null;
     }
-    return PdfSignatureUtils.trimReservedContentsPadding(
-      Uint8List.fromList(decoded),
-    );
+    return Uint8List.fromList(decoded);
   }
 
   Uint8List _collectSignedPortions(Uint8List pdf, List<int> br) {
