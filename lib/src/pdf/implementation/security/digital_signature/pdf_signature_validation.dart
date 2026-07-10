@@ -160,6 +160,7 @@ class _PdfParsedSignature {
 class _CmsParsed {
   _CmsParsed({
     this.messageDigest,
+    this.encapsulatedContent,
     this.signedAttrsDer,
     this.signedAttrsTaggedDer,
     this.signature,
@@ -177,6 +178,11 @@ class _CmsParsed {
   });
 
   final Uint8List? messageDigest;
+
+  /// Encapsulated content (eContent) of the SignedData, when present. For legacy
+  /// /adbe.pkcs7.sha1 signatures this is the SHA-1 digest of the signed
+  /// ByteRange; `null` for detached signatures.
+  final Uint8List? encapsulatedContent;
   final Uint8List? signedAttrsDer;
   final Uint8List? signedAttrsTaggedDer;
   final Uint8List? signature;
@@ -492,10 +498,30 @@ class PdfSignatureValidation {
     final Uint8List actualDigest =
         Uint8List.fromList(hash.convert(signedPortion).bytes);
 
-    final bool digestMatches = _constantTimeEquals(
-      actualDigest,
-      cms.messageDigest ?? Uint8List(0),
-    );
+    final bool digestMatches;
+    final Uint8List? eContent = cms.encapsulatedContent;
+    if (eContent != null && eContent.isNotEmpty) {
+      // Legacy encapsulated PKCS#7 (e.g. /adbe.pkcs7.sha1, ISO 32000-1
+      // §12.8.3.3): the eContent IS the digest of the signed ByteRange, so
+      // document integrity requires two links:
+      //  1) hash(ByteRange) == eContent  (document ↔ encapsulated digest);
+      //  2) when signed attributes are present, messageDigest == hash(eContent)
+      //     (encapsulated digest ↔ signature). Without link 2 the eContent would
+      //     not be bound to the signature and a document tampered together with
+      //     its eContent would pass as intact.
+      bool ok = _constantTimeEquals(actualDigest, eContent);
+      if (ok && cms.messageDigest != null) {
+        final Uint8List mdOfEContent =
+            Uint8List.fromList(hash.convert(eContent).bytes);
+        ok = _constantTimeEquals(mdOfEContent, cms.messageDigest!);
+      }
+      digestMatches = ok;
+    } else {
+      digestMatches = _constantTimeEquals(
+        actualDigest,
+        cms.messageDigest ?? Uint8List(0),
+      );
+    }
 
     bool sigValid = false;
     CipherParameter? publicKey = cms.signerPublicKey;
@@ -532,6 +558,11 @@ class PdfSignatureValidation {
         } else if (cms.signedAttrsTaggedDer != null) {
           // If we couldn't extract raw DER clean, try the tagged version if available
           dataCandidates.add(cms.signedAttrsTaggedDer!);
+        } else if (cms.encapsulatedContent != null &&
+            cms.encapsulatedContent!.isNotEmpty) {
+          // No signed attributes (legacy /adbe.pkcs7.sha1): the signature is
+          // computed directly over the encapsulated content (eContent).
+          dataCandidates.add(cms.encapsulatedContent!);
         }
 
         if (cms.signedAttrsTaggedDer != null) {
@@ -1077,6 +1108,30 @@ class PdfSignatureValidation {
       throw StateError('SignedData is not a SEQUENCE');
     }
 
+    // Capture the encapsulated content (eContent), if present. Legacy
+    // /adbe.pkcs7.sha1 signatures (ISO 32000-1 §12.8.3.3) are NOT detached:
+    // the eContent holds the SHA-1 digest of the signed ByteRange.
+    // EncapsulatedContentInfo ::= SEQUENCE { eContentType OID,
+    //   eContent [0] EXPLICIT OCTET STRING OPTIONAL }.
+    Uint8List? encapsulatedContent;
+    try {
+      final Asn1? encap = signedDataObj[2]?.getAsn1();
+      if (encap is DerSequence && encap.count >= 2) {
+        final Asn1? eContentTag = encap[1]?.getAsn1();
+        if (eContentTag is Asn1Tag && eContentTag.tagNumber == 0) {
+          final Asn1? inner = eContentTag.getObject();
+          if (inner is DerOctet) {
+            final List<int>? octets = inner.getOctets();
+            if (octets != null && octets.isNotEmpty) {
+              encapsulatedContent = Uint8List.fromList(octets);
+            }
+          }
+        }
+      }
+    } catch (_) {
+      encapsulatedContent = null;
+    }
+
     // SignedData ::= SEQUENCE {
     //   version, digestAlgorithms, encapContentInfo, [0]certs?, [1]crls?, signerInfos
     // }
@@ -1236,6 +1291,7 @@ class PdfSignatureValidation {
 
     return _CmsParsed(
       messageDigest: messageDigest,
+      encapsulatedContent: encapsulatedContent,
       signedAttrsDer: signedAttrsDer,
       signedAttrsTaggedDer: signedAttrsTaggedDer,
       signature: signature,
