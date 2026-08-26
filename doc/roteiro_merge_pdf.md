@@ -801,46 +801,87 @@ quem usa esta biblioteca, a saída dele foi analisada e virou fixture.
 
 ### Qual engine o SEI usa
 
-Perícia em `test/merging/assets/sei_merged_reference.pdf`. Duas ferramentas
-atuam no pipeline, e confundi-las é fácil: **wkhtmltopdf**
-converte o documento HTML do processo em PDF, e **PDFBox** mescla os PDFs.
+Perícia em `test/merging/assets/sei_merged_reference.pdf`. **Duas ferramentas
+atuam no pipeline, e confundi-las é fácil:** o wkhtmltopdf converte o documento
+HTML do processo em PDF, e outra ferramenta monta e carimba o consolidado.
 
-#### Evidência direta
+#### O papel do wkhtmltopdf: renderizador, não montador
+
+O `/Info` do consolidado (`Creator = wkhtmltopdf 0.12.6`, `Producer = Qt 4.8.7`)
+sugere à primeira vista que ele gerou o arquivo. Não gerou — três evidências:
+
+| Evidência | O que mostra |
+|---|---|
+| `/MediaBox` por página: 1–39 = `595.2756 × 841.8898` (A4 exato, Chrome/Skia), 40–41 = `200 × 200`, **42 = `595.0 × 842.0`** (A4 arredondado, Qt) | Só a página 42 tem a caixa do Qt — justamente o `Despacho 0009612`, que no ZIP sai como HTML |
+| Conteúdo da página 42 começa com `/GSa gs /CSp cs /CSp CS 0.75 0 0 -0.75 28.5 813.5 cm` | Nomes `/GSa`, `/CSp` e escala 0,75 com Y invertido são o motor PDF do Qt 4.8 convertendo 96 dpi em pontos. Nenhuma outra página tem isso |
+| **Toda** página, inclusive a 42, tem `/Contents` como array de três streams | O carimbador rodou *depois* do wkhtmltopdf e carimbou a saída dele também |
+
+Nenhum dos três PDFs de origem tem `/Info`; o do consolidado foi herdado da
+peça que o wkhtmltopdf gerou.
+
+#### Quem monta e carimba: três impressões digitais do PDFBox
+
+| Evidência | Verificação na fonte |
+|---|---|
+| Campo `dummyFieldName1` no consolidado, **ausente nos três PDFs de origem** — logo gerado na mesclagem | String literal em `PDFMergerUtility.acroFormLegacyMode`, usada ao renomear campo em colisão. Presente desde o PDFBox 1.8 |
+| Comentário binário do header `%öäüß` (`F6 E4 FC DF`) | `public static final byte[] GARBAGE = {0xf6, 0xe4, 0xfc, 0xdf}` em `COSWriter`, byte a byte |
+| `/Contents` como array de três streams: `q` / original intacto / `Q` + rodapé | `PDPageContentStream(doc, page, AppendMode.APPEND, compress, resetContext: true)` faz exatamente isso: cria um `PDStream` com `saveGraphicsState()`, insere em `array.add(0, …)`, e abre o stream anexado com `restoreGraphicsState()` |
+
+A terceira confere byte a byte no arquivo: `obj 55` descomprime para `q
+`
+(2 bytes, Flate → `/Length 10`), `obj 56` é o conteúdo original, `obj 57`
+começa com `Q
+` seguido do rodapé. São 42 arrays de três streams, um por
+página.
+
+Evidências de apoio:
 
 | Evidência | O que indica |
 |---|---|
-| Campo `dummyFieldName1` no consolidado, **ausente nos três PDFs de origem** | Foi *gerado na mesclagem*. É string literal em `PDFMergerUtility.acroFormLegacyMode`, usada ao renomear campo em colisão. Presente no PDFBox desde o 1.8 |
-| Comentário binário do header `%öäüß` (`F6 E4 FC DF`) | Constante `COSWriter.GARBAGE` do PDFBox, byte a byte |
-| Header `%PDF-1.4` com `/Version /1.7` no catálogo | `new PDDocument()` nasce em 1.4 e `setVersion` grava no **catálogo** quando a versão é ≥ 1.4. Um reserializador comum poria a versão real no header |
+| Header `%PDF-1.4` com `/Version /1.7` no catálogo | `new PDDocument()` nasce em 1.4 e `setVersion` grava no **catálogo** quando ≥ 1.4. Um reserializador comum poria a versão real no header |
 | Xref clássica, sem object streams | **Não é PDFBox 3.x**, que comprime por padrão desde o 3.0 → ramo 2.x |
-| `/ID` com as duas entradas idênticas | Primeira gravação de um `PDDocument` novo |
-| Cópia objeto a objeto: 43 dos 87 streams do relatório idênticos byte a byte no consolidado, incluindo os dois programas de fonte | `PDFCloneUtility`, o mecanismo do `PDFMergerUtility`. Renderização não reproduz isso |
+| `/ID` com as duas entradas idênticas; páginas nos objetos 7 a 48, sequenciais | Primeira gravação de um `PDDocument` novo, com renumeração total |
+| 43 dos 87 streams do relatório e os 2 programas de fonte idênticos byte a byte | `PDFCloneUtility`, o mecanismo do `PDFMergerUtility`. Renderização não reproduz isso |
 
-**Conclusão: Apache PDFBox 2.x, `PDFMergerUtility` em `PDFBOX_LEGACY_MODE`.**
+**Conclusão: Apache PDFBox 2.x — `PDFMergerUtility` em `PDFBOX_LEGACY_MODE`
+para montar, `PDPageContentStream` em modo append para carimbar.**
 Corroborado de forma independente pela documentação de operação do SEI, que
 cita o `pdfboxmerge.jar`, um cache em `/opt/sei/temp/.pdfbox.cache` e a
 exigência de JDK 1.8.
 
 #### Duas armadilhas nesta perícia
 
+Ambas custaram uma conclusão errada no meio do caminho, então ficam registradas.
+
 **1. A ausência do nome da biblioteca em `/Producer` não é evidência contra.**
-O raciocínio "toda biblioteca se carimba em `/Producer`, aqui está `Qt 4.8.7`,
-logo não é PDFBox" vale para iText, TCPDF, ReportLab e afins — **mas não para o
-PDFBox**, que nunca se carimba. Confirmado no código: nem `COSWriter` nem
-`PDDocument` escrevem `/Producer`, `PDDocumentInformation.getProducer()`
-devolve `null` quando ausente, e `PDFMergerUtility` não sobrescreve
-`/Producer` nem `/Creator`. O `/Info` do consolidado
-(`Creator = wkhtmltopdf 0.12.6`, `Producer = Qt 4.8.7`, `Title` posto pelo SEI)
-veio do despacho HTML renderizado — nenhum dos três PDFs de origem tem `/Info`.
+O raciocínio "toda biblioteca se carimba em `/Producer`; aqui está `Qt 4.8.7`;
+logo não é PDFBox" vale para iText, TCPDF e ReportLab — **mas não para o
+PDFBox, que nunca se carimba**. Verificado na fonte: nem `COSWriter` nem
+`PDDocument` escrevem `/Producer`; `PDDocumentInformation.getProducer()`
+devolve `null` quando ausente; e `PDFMergerUtility` não sobrescreve
+`/Producer` nem `/Creator`. Varrer o binário e os streams descomprimidos atrás
+do nome "PDFBox" devolve vazio — e isso é exatamente o esperado.
 
 **2. `E2 E3 CF D3` não é exclusivo do iText, e não é o que está aqui.**
-O `PDF_MAGIC` do **PoDoFo** é `"âãÏÓ
-"` — o mesmo do iText. O
-arquivo do SEI traz `F6 E4 FC DF`, que é do PDFBox. Isso **elimina o PoDoFo**,
-hipótese plausível à primeira vista por ser a biblioteca contra a qual o
-wkhtmltopdf 0.12.x é ligado: a impressão digital em que a suspeita se apoiaria
-aponta para o outro lado. Some-se que PoDoFo, Qt e wkhtmltopdf não têm lógica
-de merge de AcroForm — nenhum deles produziria `dummyFieldName1`.
+O PoDoFo é suspeito natural: não se carimba (o que casa com a varredura vazia)
+e é a biblioteca contra a qual o wkhtmltopdf 0.12.x é ligado. Mas
+`src/podofo/base/PdfWriter.cpp` traz
+`#define PDF_MAGIC "âãÏÓ
+"` — o **mesmo** do iText. O arquivo
+do SEI traz `F6 E4 FC DF`. A impressão digital em que a suspeita se apoiaria
+aponta para o outro lado, o que **elimina o PoDoFo**. Some-se que PoDoFo, Qt e
+wkhtmltopdf não têm lógica de merge de AcroForm: nenhum produziria
+`dummyFieldName1`.
+
+#### Uma técnica que vale copiar
+
+Independente de quem monta, o modo de carimbar do SEI é barato e correto:
+envolver o conteúdo existente com um stream `q` na frente e um `Q` + carimbo
+atrás, **sem tocar no stream original**. Preserva a fidelidade byte a byte do
+conteúdo importado e protege o carimbo de qualquer estado gráfico que a página
+tenha deixado aberto. É o que esta biblioteca deveria usar se um dia carimbar
+páginas mescladas — hoje o modo `flatten` reescreve o conteúdo, e o
+`objectImport` não carimba nada.
 
 ### O que o SEI faz com as assinaturas
 
@@ -856,7 +897,7 @@ de um PDF de 238 KB — o ITI reporta "assinaturas desconhecidas" e o Chaindoc,
 | `[1]-0009609_Despacho.pdf` | 39 | — |
 | `[2]-0009610_Recurso.pdf` | 1 | `Signature1` **sem widget** e com `/Rect [0 0 0 0]` (invisível) |
 | `[3]-0009611_Apartado.pdf` | 1 | `Signature1` com widget |
-| `[4]-0009612_Despacho.html` | 1 | HTML renderizado pelo SEI na hora da mesclagem |
+| `[4]-0009612_Despacho.html` | 1 | HTML renderizado pelo wkhtmltopdf na hora da mesclagem |
 
 Os três PDFs estão em `test/merging/assets/`, conferidos por SHA-256 contra as
 entradas do ZIP exportado pelo processo. O quarto é HTML — renderizar HTML não
@@ -872,6 +913,7 @@ verifica a estrutura das assinaturas, não a contagem.
 | Colisão de nome de campo | Renomeia para `dummyFieldName<N>` | Renomeia para `<nome>_<N>`, preservando o nome original |
 | Campo sem widget | Preservado, continua órfão | Preservado (`importOrphanFields`) |
 | `/Info` | Do documento HTML renderizado | Do destino; `copyDocumentInfoFromFirst` para herdar do primeiro |
+| Rodapé por página | Carimba com `q` / original / `Q` + rodapé | Não carimba (ver "Uma técnica que vale copiar") |
 
 A diferença que importa é o padrão: o SEI entrega um arquivo que todo validador
 marca como inválido, enquanto o padrão daqui entrega um que nenhum validador
