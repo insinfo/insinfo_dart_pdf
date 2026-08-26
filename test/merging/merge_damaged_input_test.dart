@@ -105,6 +105,52 @@ void main() {
         expect(e.toString(), contains('PdfFormatException'));
       }
     });
+
+    test('it is a FormatException, the type Dart code already catches', () {
+      // PdfFormatException extends FormatException on purpose: `on
+      // FormatException` is what a Dart developer writes by reflex for bad
+      // data, and an Error would be the wrong contract for a file someone
+      // uploaded.
+      expect(
+        () => PdfDocument(inputBytes: 'not a pdf'.codeUnits),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => PdfDocument(inputBytes: 'not a pdf'.codeUnits),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        () => PdfDocument(inputBytes: 'not a pdf'.codeUnits),
+        isNot(throwsA(isA<Error>())),
+        reason: 'bad data is not a programming error',
+      );
+    });
+
+    test('a failure raised deep in the parser still surfaces as one', () {
+      // The library throws ArgumentError in hundreds of places — the lexer,
+      // the decompressor, the ASN.1 reader. Converting every one of them would
+      // cover only the ones somebody remembered. Loading guards the whole
+      // parse instead, so whatever fires underneath reaches the caller as a
+      // format problem with the original kept in `cause`.
+      final List<int> shredded =
+          <String>[
+            '%PDF-1.7',
+            '1 0 obj',
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            'endobj',
+            '2 0 obj',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            'trailer',
+            '<< /Root 1 0 R >>',
+          ].join('\n').codeUnits;
+      try {
+        PdfDocument(inputBytes: shredded);
+        // Recovering is a fine outcome too: the point is that it does not
+        // escape as an Error.
+      } on PdfFormatException catch (e) {
+        expect(e.message, isNotEmpty);
+      }
+    });
   });
 }
 

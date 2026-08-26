@@ -176,6 +176,8 @@ export 'src/pdf/implementation/io/pdf_format_exception.dart'
     show PdfFormatException;
 export 'src/pdf/implementation/merging/pdf_document_merger.dart'
     show PdfDocumentMerger;
+export 'src/pdf/implementation/merging/pdf_imported_page.dart'
+    show PdfImportedPage, PdfPageImportedCallback;
 export 'src/pdf/implementation/merging/pdf_merge_options.dart'
     show
         PdfMergeOptions,

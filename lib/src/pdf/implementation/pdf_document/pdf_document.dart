@@ -30,6 +30,7 @@ import '../graphics/enums.dart';
 import '../graphics/pdf_pens.dart';
 import '../io/pdf_constants.dart';
 import '../io/pdf_cross_table.dart';
+import '../io/pdf_format_exception.dart';
 import '../merging/pdf_document_merger.dart';
 import '../merging/pdf_merge_options.dart';
 import '../io/pdf_main_object_collection.dart';
@@ -94,7 +95,7 @@ class PdfDocument {
     _helper = PdfDocumentHelper(this);
     _helper.isLoadedDocument = inputBytes != null;
     _helper.password = password;
-    _initialize(inputBytes);
+    _initializeGuarded(inputBytes);
     if (!_helper.isLoadedDocument && conformanceLevel != null) {
       _initializeConformance(conformanceLevel);
     }
@@ -127,7 +128,7 @@ class PdfDocument {
     }
     _helper.password = password;
     _helper.isLoadedDocument = true;
-    _initialize(base64.decode(base64String));
+    _initializeGuarded(base64.decode(base64String));
   }
 
   //Fields
@@ -1148,6 +1149,35 @@ class PdfDocument {
   }
 
   //Implementation
+  /// Reads [pdfData], reporting anything that goes wrong while parsing an
+  /// existing document as a [PdfFormatException].
+  ///
+  /// Parsing reaches a lexer, an object parser, a decompressor and, for an
+  /// encrypted file, a cipher. Each reports damage in its own way, mostly by
+  /// throwing [ArgumentError] — which reads as a caller mistake and is not
+  /// what a service handling an uploaded file wants to catch. Whatever they
+  /// throw surfaces here as a format problem instead, with the original kept
+  /// in [PdfFormatException.cause] so nothing is lost.
+  ///
+  /// Building a new, empty document is not guarded: a failure there really is
+  /// a programming error and should read as one.
+  void _initializeGuarded(List<int>? pdfData) {
+    if (!_helper.isLoadedDocument) {
+      _initialize(pdfData);
+      return;
+    }
+    try {
+      _initialize(pdfData);
+    } on PdfFormatException {
+      rethrow;
+    } catch (error) {
+      throw PdfFormatException(
+        'The PDF data could not be read.',
+        cause: error,
+      );
+    }
+  }
+
   void _initialize(List<int>? pdfData) {
     _helper._isAttachOnlyEncryption = false;
     _helper.isEncrypted = false;

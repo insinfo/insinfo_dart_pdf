@@ -221,6 +221,20 @@ class PdfDictionary implements IPdfPrimitive, IPdfChangable {
 
   /// internal method
   void saveDictionary(IPdfWriter writer, bool enableEvents) {
+    if (items == null) {
+      // The object was disposed and is being written anyway. In practice this
+      // means something built for one document — a font, a brush, an image —
+      // was kept and reused after that document was disposed, which takes its
+      // objects down with it. Saying so is worth a great deal more than the
+      // null dereference two lines further down.
+      throw StateError(
+        'A PDF object that has already been disposed is being written. This '
+        'happens when an object created for one document, such as a PdfFont, '
+        'a PdfBrush or a PdfBitmap, is reused after that document was '
+        'disposed. Create a new instance for each document, or dispose the '
+        'document only after every document that shares the object is saved.',
+      );
+    }
     writer.write(prefix);
     if (enableEvents) {
       final SavePdfPrimitiveArgs args = SavePdfPrimitiveArgs(writer);

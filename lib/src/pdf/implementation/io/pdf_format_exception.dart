@@ -1,5 +1,11 @@
 /// Thrown when PDF data cannot be read.
 ///
+/// Extends [FormatException], the type Dart already uses for "this data is not
+/// in the expected format", so `on FormatException` catches it too. That
+/// matters: an [Error] means the program has a bug and should not be caught,
+/// while a file supplied by a user being malformed is an ordinary, recoverable
+/// condition.
+///
 /// This is about the *data*, not about how the library was called: the bytes
 /// are empty, are not a PDF, or are damaged past the point where scanning the
 /// file can recover a document catalog. Code that accepts files from users —
@@ -21,14 +27,22 @@
 ///   return badRequest(e.message);
 /// }
 /// ```
-class PdfFormatException implements Exception {
+class PdfFormatException extends FormatException {
   /// Initializes a new instance of the [PdfFormatException] class.
-  PdfFormatException(this.message);
+  PdfFormatException(String message, {this.cause}) : super(message);
 
-  /// What is wrong with the data, in terms worth putting in a log or showing
-  /// to whoever supplied the file.
-  final String message;
+  /// The underlying failure, when this exception wraps one.
+  ///
+  /// Reading a PDF touches a lexer, a decompressor and, for an encrypted file,
+  /// a cipher — each of which reports damage in its own way. Loading catches
+  /// whatever they throw and reports it as a format problem, but keeps the
+  /// original here so nothing is lost when diagnosing a file that should have
+  /// worked.
+  final Object? cause;
 
   @override
-  String toString() => 'PdfFormatException: $message';
+  String toString() =>
+      cause == null
+          ? 'PdfFormatException: $message'
+          : 'PdfFormatException: $message (caused by $cause)';
 }
