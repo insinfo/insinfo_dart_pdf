@@ -1237,6 +1237,12 @@ class PdfBookmarkBase implements IPdfWrapper {
       this,
       previous,
       null,
+      isExpanded: isExpanded,
+      color: color,
+      destination: destination,
+      namedDestination: namedDestination,
+      action: action,
+      textStyle: textStyle,
     );
     if (previous != null) {
       previous._next = outline;

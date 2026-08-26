@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:math';
 
 import '../../interfaces/pdf_interface.dart';
+import '../merging/pdf_import_context.dart';
 import '../pages/pdf_page.dart';
 import '../pages/pdf_page_collection.dart';
 import '../pdf_document/enums.dart';
@@ -81,6 +82,13 @@ class PdfCrossTable {
 
   /// internal field
   PdfDictionary? pdfDocumentCatalog;
+
+  /// internal field
+  ///
+  /// Non null only while a [PdfDocumentMerger] session is importing objects
+  /// into this document. It is what allows `/Type /Page` dictionaries to be
+  /// cloned; see [PdfReferenceHolder.cloneObject].
+  PdfImportContext? importContext;
   bool _isIndexOutOfRange = false;
   PdfDictionary? _encryptorDictionary;
   List<_ArchiveInfo>? _archives;
