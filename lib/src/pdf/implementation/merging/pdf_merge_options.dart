@@ -1,3 +1,5 @@
+import 'pdf_imported_page.dart';
+
 /// Specifies how pages are transferred from a source document into the
 /// destination document during a merge.
 enum PdfMergeMode {
@@ -46,6 +48,7 @@ class PdfMergeOptions {
     this.keepInvalidSignatures = false,
     this.removeSignatureAppearance = false,
     this.groupBookmarksPerDocument = false,
+    this.onPageImported,
   });
 
   /// Creates options that flatten every source page.
@@ -138,6 +141,29 @@ class PdfMergeOptions {
   /// Whether imported bookmarks are nested under one node per source document
   /// instead of being appended to the destination root.
   bool groupBookmarksPerDocument;
+
+  /// Called once for every page the merge imports, after that page is
+  /// complete.
+  ///
+  /// This is the hook for anything the caller wants to add to an imported
+  /// page: a footer naming the document it came from, a page number for the
+  /// merged whole, a watermark, a stamp. [PdfImportedPage.appendGraphics]
+  /// draws on top of the imported content without rewriting a byte of it.
+  ///
+  /// ```dart
+  /// final PdfFont font = PdfStandardFont(PdfFontFamily.helvetica, 8);
+  /// PdfMergeOptions(
+  ///   onPageImported: (PdfImportedPage info) {
+  ///     info.appendGraphics().drawString(
+  ///       'Page ${info.importedPageNumber}',
+  ///       font,
+  ///       brush: PdfBrushes.gray,
+  ///       bounds: Rect.fromLTWH(0, info.page.size.height - 24, 200, 12),
+  ///     );
+  ///   },
+  /// );
+  /// ```
+  PdfPageImportedCallback? onPageImported;
 }
 
 /// The exception that is thrown when a merge operation cannot be completed.

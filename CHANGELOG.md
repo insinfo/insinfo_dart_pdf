@@ -48,11 +48,27 @@
   `trailer` dictionary still present, or synthesized around whichever rebuilt
   object is the document catalog. A file a browser can render now loads and
   merges.
-- **Breaking:** reading PDF data that cannot be parsed now throws
-  `PdfFormatException` instead of `ArgumentError`. Bad input from a user is not
-  a programming error, and code that accepts uploaded files needs to catch it
-  as an `Exception`. Callers matching on `ArgumentError` for this case must be
-  updated.
+- **Breaking, and narrower than it looks:** loading a document now reports bad
+  data as `PdfFormatException`, which extends `FormatException`. Reading a file
+  a user supplied is not a programming error, so an `Error` was the wrong
+  contract — `on ArgumentError` forces callers toward `catch (e)`, which also
+  swallows `StackOverflowError` and `TypeError`.
+
+  What is covered: `PdfDocument(inputBytes:)` and
+  `PdfDocument.fromBase64String`. The whole parse is guarded, so a failure
+  raised anywhere underneath — lexer, decompressor, ASN.1 reader — surfaces as
+  `PdfFormatException` with the original in `PdfFormatException.cause`.
+
+  What is **not** covered: everything outside document loading. The library
+  still throws `ArgumentError` from roughly 430 places — certificate and ASN.1
+  parsing, the signature dictionary, `PdfExternalSigning`, the compression
+  reader — when reached by any other route. **Do not replace `on
+  ArgumentError` with `on PdfFormatException` wholesale**: for those paths the
+  failure type has not changed. Keep both, or catch `on Exception` plus `on
+  ArgumentError` where you handle untrusted input outside the load path.
+
+  Extending `FormatException` means `on FormatException` — what Dart code
+  already writes for malformed data — catches it as well.
 - Drop the signature dictionary from the output instead of leaving it
   unreachable. Removing `/V` from the cloned widget detached it from
   `/AcroForm /Fields` but left the PKCS#7 blob registered as an orphan object —

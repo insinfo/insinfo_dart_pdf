@@ -17,6 +17,7 @@ import 'pdf_annotation_importer.dart';
 import 'pdf_catalog_merger.dart';
 import 'pdf_form_importer.dart';
 import 'pdf_import_context.dart';
+import 'pdf_imported_page.dart';
 import 'pdf_merge_options.dart';
 import 'pdf_outline_importer.dart';
 import 'pdf_page_importer.dart';
@@ -64,6 +65,7 @@ class PdfDocumentMerger {
   late final PdfOutlineImporter _outlineImporter;
   late final PdfCatalogMerger _catalogMerger;
   bool _documentInformationCopied = false;
+  int _importedPageCount = 0;
 
   /// Non fatal problems recorded so far — a dropped link, a renamed form
   /// field, a stripped signature.
@@ -109,7 +111,39 @@ class PdfDocumentMerger {
             ? _flatten(source, start, end)
             : _importObjects(source, start, end);
     _copyDocumentInformation(source);
+    _notifyPagesImported(created, source, start);
     return created;
+  }
+
+  /// Hands every page just imported to [PdfMergeOptions.onPageImported].
+  ///
+  /// Runs after the pages are complete — content, annotations, form fields and
+  /// bookmarks all in place — so a callback that measures the page or reads
+  /// its annotations sees the finished article.
+  void _notifyPagesImported(
+    List<PdfPage> created,
+    PdfDocument source,
+    int start,
+  ) {
+    final PdfPageImportedCallback? callback = options.onPageImported;
+    if (callback == null) {
+      _importedPageCount += created.length;
+      return;
+    }
+    final int firstDestinationIndex = destination.pages.count - created.length;
+    for (int i = 0; i < created.length; i++) {
+      _importedPageCount++;
+      callback(
+        PdfImportedPage(
+          created[i],
+          source.pages[start + i],
+          source,
+          sourcePageIndex: start + i,
+          destinationPageIndex: firstDestinationIndex + i,
+          importedPageNumber: _importedPageCount,
+        ),
+      );
+    }
   }
 
   /// Records — or, when asked to, refuses — a source that carries digital
