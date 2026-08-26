@@ -642,6 +642,7 @@ replicar a checagem no importador.
 | Round-trip | `test/merging/merge_roundtrip_test.dart` | merge → salvar → recarregar → merge de novo |
 | Corpus | `test/merging/merge_corpus_test.dart` | varredura dos 54 PDFs de `test/assets`: estrutura, geometria, texto, assinaturas, corpus inteiro em um documento |
 | Documentos reais | `test/merging/merge_real_documents_test.dart` | outline de `paginador.pdf`, formulário de 63 campos de `sample3.pdf`, anotações de `termo.pdf`, arquivos com 5–12 assinaturas, modo flatten |
+| Compatibilidade SEI | `test/merging/merge_sei_compatibility_test.dart` | comparação ponta a ponta contra a saída do SEI: mesmas entradas (conferidas por SHA-256 contra o ZIP do processo), assinaturas mantidas com `/ByteRange` verbatim, campo órfão, renomeação em colisão |
 | Perf | `benchmarks/merge_benchmark.dart` | 50×10 páginas |
 
 **Invariante geral de todos os testes:** o PDF de saída deve ser recarregável
