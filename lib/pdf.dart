@@ -172,6 +172,8 @@ export 'src/pdf/implementation/graphics/pdf_graphics.dart'
 export 'src/pdf/implementation/graphics/pdf_margins.dart' show PdfMargins;
 export 'src/pdf/implementation/graphics/pdf_pen.dart' show PdfPen;
 export 'src/pdf/implementation/graphics/pdf_pens.dart' show PdfPens;
+export 'src/pdf/implementation/io/pdf_format_exception.dart'
+    show PdfFormatException;
 export 'src/pdf/implementation/merging/pdf_document_merger.dart'
     show PdfDocumentMerger;
 export 'src/pdf/implementation/merging/pdf_merge_options.dart'

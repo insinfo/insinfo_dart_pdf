@@ -40,6 +40,25 @@
 - Objects shared inside a source document — a font program, an image, a
   resource dictionary — are cloned once and shared by the imported pages
   instead of being duplicated per page.
+- Recover from a damaged cross-reference table instead of refusing the file.
+  A `startxref` pointing past the end of the data, a missing `startxref`
+  because the tail was truncated, or a table that fails to parse no longer
+  aborts the load: the file is scanned for object headers and the table is
+  rebuilt, the way a viewer does. The trailer is recovered too — from a
+  `trailer` dictionary still present, or synthesized around whichever rebuilt
+  object is the document catalog. A file a browser can render now loads and
+  merges.
+- **Breaking:** reading PDF data that cannot be parsed now throws
+  `PdfFormatException` instead of `ArgumentError`. Bad input from a user is not
+  a programming error, and code that accepts uploaded files needs to catch it
+  as an `Exception`. Callers matching on `ArgumentError` for this case must be
+  updated.
+- Drop the signature dictionary from the output instead of leaving it
+  unreachable. Removing `/V` from the cloned widget detached it from
+  `/AcroForm /Fields` but left the PKCS#7 blob registered as an orphan object —
+  invisible to a reader walking the form tree, found by anything scanning for
+  signature dictionaries, and costing tens of kilobytes. The field entries are
+  now pruned before the clone, so they never enter the destination.
 - Import form fields that no page widget leads to. `/AcroForm /Fields` may hold
   a field with no widget annotation — a hidden data field, or a signature whose
   widget was dropped from `/Annots` by an earlier merge, the shape documents
