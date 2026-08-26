@@ -112,25 +112,39 @@ class PdfDocumentMerger {
     return created;
   }
 
-  /// Rejects, or records, a source that carries digital signatures.
+  /// Records — or, when asked to, refuses — a source that carries digital
+  /// signatures.
   ///
-  /// A merge rewrites the whole file, so every signature it already holds is
-  /// invalidated. Silently producing a document with broken signatures would
-  /// be worse than refusing.
+  /// A merge rewrites the whole file, so every signature the source holds is
+  /// invalidated by construction; every PDF tool that merges behaves this way.
+  /// The signature fields are therefore dropped rather than carried over
+  /// broken, and the caller is told through [warnings].
   void _checkSignatures(PdfDocument source) {
     if (!_hasSignatures(source)) {
       return;
     }
-    if (options.signedSourcePolicy == PdfSignedSourcePolicy.reject) {
+    if (options.rejectSignedSources) {
       throw PdfMergeException(
-        'The source document contains digital signatures, which merging would '
-        'invalidate. Set PdfMergeOptions.signedSourcePolicy to '
-        'PdfSignedSourcePolicy.stripSignatures to merge it anyway.',
+        'The source document contains digital signatures and '
+        'PdfMergeOptions.rejectSignedSources is set. Merging always '
+        'invalidates existing signatures.',
       );
     }
+    if (options.keepInvalidSignatures) {
+      _context.addWarning(
+        'The source document was signed. Merging invalidates signatures; the '
+        'signature fields were kept as requested and will be reported as '
+        'invalid by any viewer.',
+      );
+      return;
+    }
     _context.addWarning(
-      'The source document was signed; its signature fields were removed and '
-      'the signatures are no longer valid.',
+      options.removeSignatureAppearance
+          ? 'The source document was signed. Merging invalidates signatures, '
+              'so the signature fields and their visible mark were removed.'
+          : 'The source document was signed. Merging invalidates signatures, '
+              'so the signature fields were removed; their visible mark was '
+              'kept as a stamp annotation and no longer certifies anything.',
     );
   }
 

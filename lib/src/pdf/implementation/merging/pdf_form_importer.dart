@@ -7,6 +7,7 @@ import '../primitives/pdf_array.dart';
 import '../primitives/pdf_boolean.dart';
 import '../primitives/pdf_dictionary.dart';
 import '../primitives/pdf_name.dart';
+import '../primitives/pdf_number.dart';
 import '../primitives/pdf_reference_holder.dart';
 import '../primitives/pdf_string.dart';
 import 'pdf_import_context.dart';
@@ -41,6 +42,11 @@ class PdfFormImporter {
 
   /// Fully qualified names already present in the destination form.
   Set<String>? _takenNames;
+
+  /// Whether a signature field made it into the destination form, so that
+  /// `/SigFlags` has to be carried over for viewers to show the signature
+  /// panel at all.
+  bool _importedSignatureField = false;
 
   /// Adds [widgets] — source widget dictionary mapped to its clone — to the
   /// destination form.
@@ -86,6 +92,7 @@ class PdfFormImporter {
         continue;
       }
       _importedFields[terminal] = field;
+      _importedSignatureField |= _isSignatureField(field);
       fields.add(PdfReferenceHolder(field));
     }
     _mergeFormDefaults(acroForm, source);
@@ -184,6 +191,13 @@ class PdfFormImporter {
         field[key] = cloned;
       }
     }
+  }
+
+  bool _isSignatureField(PdfDictionary field) {
+    final IPdfPrimitive? type = PdfCrossTable.dereference(
+      field[PdfDictionaryProperties.ft],
+    );
+    return type is PdfName && type.name == PdfDictionaryProperties.sig;
   }
 
   IPdfPrimitive? _lookUp(PdfDictionary start, String key) {
@@ -363,6 +377,9 @@ class PdfFormImporter {
         }
       }
     }
+    if (_importedSignatureField) {
+      _mergeSignatureFlags(acroForm, sourceForm);
+    }
     final IPdfPrimitive? needAppearances = PdfCrossTable.dereference(
       sourceForm[PdfDictionaryProperties.needAppearances],
     );
@@ -370,6 +387,24 @@ class PdfFormImporter {
       acroForm[PdfDictionaryProperties.needAppearances] = PdfBoolean(true);
     }
     acroForm.modify();
+  }
+
+  /// Carries `/SigFlags` over, so viewers list the imported — and now
+  /// invalid — signatures instead of ignoring them.
+  void _mergeSignatureFlags(PdfDictionary acroForm, PdfDictionary sourceForm) {
+    final IPdfPrimitive? sourceFlags = PdfCrossTable.dereference(
+      sourceForm[PdfDictionaryProperties.sigFlags],
+    );
+    if (sourceFlags is! PdfNumber) {
+      return;
+    }
+    final IPdfPrimitive? existing = PdfCrossTable.dereference(
+      acroForm[PdfDictionaryProperties.sigFlags],
+    );
+    final int current = existing is PdfNumber ? existing.value!.toInt() : 0;
+    acroForm[PdfDictionaryProperties.sigFlags] = PdfNumber(
+      current | sourceFlags.value!.toInt(),
+    );
   }
 
   /// Merges the source `/DR` into the destination one.

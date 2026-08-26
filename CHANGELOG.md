@@ -1,6 +1,6 @@
 # Changelog
 
-## 31.2.0
+## 1.0.0
 
 - Add PDF merging. `PdfDocument.mergeSync` / `PdfDocument.merge` combine a list
   of PDF byte arrays into one document; `appendDocument`, `importPage` and
@@ -25,10 +25,18 @@
   `PdfMergeOptions.fieldNameConflict` (rename with a numeric suffix by
   default). Multi-widget fields — radio groups, fields spanning several pages —
   stay grouped under a single field.
-- Merging invalidates every digital signature the sources carry, so a signed
-  source is rejected by default. `PdfMergeOptions.signedSourcePolicy` can be
-  set to `PdfSignedSourcePolicy.stripSignatures` to merge anyway, dropping the
-  signature fields and recording a warning.
+- Merging invalidates every digital signature the sources carry — a signature
+  covers the exact bytes of the document it was applied to. Signed documents
+  merge anyway, as every PDF tool does, and the loss is reported through
+  `PdfDocumentMerger.warnings`. Three independent options control what happens:
+  - `rejectSignedSources` (default `false`) refuses to merge a signed source;
+  - `keepInvalidSignatures` (default `false`) carries the signature fields
+    over, certificates included, at the cost of viewers reporting them as
+    invalid;
+  - `removeSignatureAppearance` (default `false`) drops the visible signature
+    mark as well. By default the mark is kept as a read-only stamp annotation,
+    so the merged page still looks signed while no viewer reports a broken
+    signature.
 - Objects shared inside a source document — a font program, an image, a
   resource dictionary — are cloned once and shared by the imported pages
   instead of being duplicated per page.

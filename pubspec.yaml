@@ -1,6 +1,6 @@
 name: dart_pdf
 description: The library written natively in Dart for creating, reading, editing, and securing PDF files
-version: 31.2.0
+version: 1.0.0
 homepage: https://github.com/insinfo/insinfo_dart_pdf
 
 environment:

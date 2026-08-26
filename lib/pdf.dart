@@ -179,8 +179,7 @@ export 'src/pdf/implementation/merging/pdf_merge_options.dart'
         PdfMergeOptions,
         PdfMergeMode,
         PdfMergeException,
-        PdfFieldNameConflictPolicy,
-        PdfSignedSourcePolicy;
+        PdfFieldNameConflictPolicy;
 export 'src/pdf/implementation/pages/enum.dart'
     show
         PdfPageOrientation,
