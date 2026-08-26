@@ -554,17 +554,34 @@ bookmarks navegam para a página certa; nenhum destino nomeado duplicado.
 ### F8 — Casos especiais e políticas — *1–2 dias*
 
 **Documentos assinados — crítico para esta biblioteca.**
-Mesclar invalida *toda* assinatura digital existente (o merge reescreve o
-arquivo inteiro; não é atualização incremental). Comportamento:
+Mesclar invalida *toda* assinatura digital existente: a assinatura cobre os
+bytes exatos do documento em que foi aplicada, e o merge reescreve o arquivo
+inteiro. Não há como contornar.
 
-- padrão `PdfSignedSourcePolicy.reject`: lançar `PdfMergeException` se origem ou
-  destino contiver `/AcroForm /SigFlags` ou campo `/FT /Sig` preenchido;
-- `stripSignatures`: remover os campos de assinatura, zerar `/SigFlags`,
-  registrar warning explícito;
-- **nunca** habilitar `fileStructure.incrementalUpdate` durante um merge;
-- teste de regressão: mesclar → validar com o `PdfSignatureValidator` da lib e
-  confirmar que ele reporta o documento como *não assinado* (e não como
-  assinatura corrompida).
+Pesquisa de mercado (PDF24, iLovePDF, PDFsam, PDF Architect, Adobe Acrobat,
+PDFBox, iText): **nenhuma ferramenta recusa** documentos assinados — todas
+mesclam e a assinatura some ou fica inválida. Recusar seria comportamento
+divergente, então o padrão desta lib também é mesclar.
+
+Comportamento implementado — três chaves independentes em `PdfMergeOptions`:
+
+| Opção | Padrão | Efeito |
+|---|---|---|
+| `rejectSignedSources` | `false` | `true` lança `PdfMergeException` ao encontrar origem assinada |
+| `keepInvalidSignatures` | `false` | `true` mantém os campos `/FT /Sig` com o CMS e os certificados; `/SigFlags` é propagado. O visualizador vai reportar assinatura inválida |
+| `removeSignatureAppearance` | `false` | `true` remove também o carimbo visual |
+
+Padrão (todas `false`): os campos de assinatura são removidos, mas o
+**carimbo visual é preservado** como anotação `/Subtype /Stamp` somente-leitura
+(flag `/F` com bit 64). A página continua *parecendo* assinada — o que se
+espera de um relatório ou documento judicial — e nenhum visualizador reclama de
+assinatura quebrada, porque não há mais assinatura para conferir.
+
+Precedência: `rejectSignedSources` > `keepInvalidSignatures` >
+`removeSignatureAppearance`.
+
+Em todos os casos a perda é registrada em `PdfDocumentMerger.warnings`, e
+`fileStructure.incrementalUpdate` **nunca** é habilitado durante um merge.
 
 **Documentos criptografados.** Exigir senha na carga
 (`PdfDocument(inputBytes:, password:)`). Verificar que `PdfCrossTable.encryptor`

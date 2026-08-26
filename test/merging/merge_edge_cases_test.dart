@@ -3,9 +3,13 @@ import 'dart:io';
 import 'package:dart_pdf/pdf.dart';
 import 'package:dart_pdf/src/pdf/implementation/io/pdf_cross_table.dart';
 import 'package:dart_pdf/src/pdf/implementation/pages/pdf_page.dart';
+import 'package:dart_pdf/src/pdf/implementation/pdf_document/pdf_document.dart'
+    show PdfDocumentHelper;
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_array.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_dictionary.dart';
+import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_name.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_number.dart';
+import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_string.dart';
 import 'package:dart_pdf/src/pdf/interfaces/pdf_interface.dart';
 import 'package:test/test.dart';
 
@@ -142,58 +146,317 @@ void main() {
   group('merge - signed documents', () {
     const String signedAsset = 'test/assets/doc_assinado_icp_brasil_thais.pdf';
 
-    test('a signed source is rejected by default', () {
+    List<int>? signedBytes() {
       final File file = File(signedAsset);
-      if (!file.existsSync()) {
-        markTestSkipped('$signedAsset is not available');
-        return;
-      }
-      expect(
-        () => PdfDocument.mergeSync(<List<int>>[file.readAsBytesSync()]),
-        throwsA(isA<PdfMergeException>()),
-      );
-    });
+      return file.existsSync() ? file.readAsBytesSync() : null;
+    }
 
-    test('stripSignatures merges and removes the signature fields', () {
-      final File file = File(signedAsset);
-      if (!file.existsSync()) {
+    test('a signed source merges by default, without its signature', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
         markTestSkipped('$signedAsset is not available');
         return;
       }
-      final List<int> bytes = file.readAsBytesSync();
       final PdfDocument original = reopen(bytes);
       final int pageCount = original.pages.count;
       original.dispose();
 
       final PdfDocument output = PdfDocument();
-      final PdfDocumentMerger merger = PdfDocumentMerger(
-        output,
-        options: PdfMergeOptions(
-          signedSourcePolicy: PdfSignedSourcePolicy.stripSignatures,
-        ),
-      );
+      final PdfDocumentMerger merger = PdfDocumentMerger(output);
       final PdfDocument source = reopen(bytes);
       merger.append(source);
       final List<int> merged = output.saveSync();
       expect(
-        merger.warnings.any((String w) => w.contains('no longer valid')),
+        merger.warnings.any(
+          (String w) => w.contains('Merging invalidates signatures'),
+        ),
         isTrue,
+        reason: 'the loss is reported rather than thrown',
       );
       source.dispose();
       output.dispose();
 
       final PdfDocument result = reopen(merged);
       expect(result.pages.count, pageCount);
+      expect(result.form.fields.count, 0);
       for (int i = 0; i < result.pages.count; i++) {
         expect(
           _hasSignatureWidget(result, i),
           isFalse,
-          reason: 'page $i carries no signature widget',
+          reason: 'page $i carries no signature field',
         );
       }
       result.dispose();
     });
+
+    test('the visible signature mark is kept as a read-only stamp', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      final PdfDocument source = reopen(bytes);
+      final int visibleSignatures = _visibleSignatureCount(source);
+      source.dispose();
+      if (visibleSignatures == 0) {
+        markTestSkipped('$signedAsset has no visible signature');
+        return;
+      }
+
+      final List<int> merged = PdfDocument.mergeSync(<List<int>>[bytes]);
+      final PdfDocument result = reopen(merged);
+      final List<PdfDictionary> stamps = _stampsOf(result);
+      expect(
+        stamps.length,
+        visibleSignatures,
+        reason: 'every visible signature left a stamp behind',
+      );
+      for (final PdfDictionary stamp in stamps) {
+        expect(
+          PdfCrossTable.dereference(stamp['AP']),
+          isNotNull,
+          reason: 'the appearance stream travelled with the stamp',
+        );
+        expect(stamp['FT'], isNull, reason: 'it is no longer a form field');
+        expect(stamp['V'], isNull, reason: 'the signature value is gone');
+        final IPdfPrimitive? flags = PdfCrossTable.dereference(stamp['F']);
+        expect(
+          (flags! as PdfNumber).value!.toInt() & 64,
+          64,
+          reason: 'the stamp is read-only',
+        );
+      }
+      result.dispose();
+    });
+
+    test('removeSignatureAppearance removes the mark too', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[bytes],
+        options: PdfMergeOptions(removeSignatureAppearance: true),
+      );
+
+      final PdfDocument result = reopen(merged);
+      expect(_stampsOf(result), isEmpty);
+      expect(result.form.fields.count, 0);
+      result.dispose();
+    });
+
+    test('rejectSignedSources refuses the merge', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      expect(
+        () => PdfDocument.mergeSync(
+          <List<int>>[bytes],
+          options: PdfMergeOptions(rejectSignedSources: true),
+        ),
+        throwsA(isA<PdfMergeException>()),
+      );
+    });
+
+    test('keepInvalidSignatures carries the certificates over', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      final PdfDocument source = reopen(bytes);
+      final List<String> originalContents = _signatureContentsOf(source);
+      source.dispose();
+      if (originalContents.isEmpty) {
+        markTestSkipped('$signedAsset has no signature value to carry over');
+        return;
+      }
+
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[bytes],
+        options: PdfMergeOptions(keepInvalidSignatures: true),
+      );
+
+      final PdfDocument result = reopen(merged);
+      expect(
+        _signatureContentsOf(result),
+        equals(originalContents),
+        reason: 'the CMS blob of every signature survived byte for byte',
+      );
+      expect(_stampsOf(result), isEmpty, reason: 'nothing was demoted');
+      expect(
+        _signatureFlagsOf(result),
+        isNotNull,
+        reason: '/SigFlags travelled so viewers list the signatures',
+      );
+      result.dispose();
+    });
+
+    test('keepInvalidSignatures wins over removeSignatureAppearance', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[bytes],
+        options: PdfMergeOptions(
+          keepInvalidSignatures: true,
+          removeSignatureAppearance: true,
+        ),
+      );
+
+      final PdfDocument result = reopen(merged);
+      expect(_signatureContentsOf(result), isNotEmpty);
+      result.dispose();
+    });
+
+    test('rejectSignedSources wins over keepInvalidSignatures', () {
+      final List<int>? bytes = signedBytes();
+      if (bytes == null) {
+        markTestSkipped('$signedAsset is not available');
+        return;
+      }
+      expect(
+        () => PdfDocument.mergeSync(
+          <List<int>>[bytes],
+          options: PdfMergeOptions(
+            rejectSignedSources: true,
+            keepInvalidSignatures: true,
+          ),
+        ),
+        throwsA(isA<PdfMergeException>()),
+      );
+    });
+
+    test('an unsigned document merges without any signature warning', () {
+      final PdfDocument output = PdfDocument();
+      final PdfDocumentMerger merger = PdfDocumentMerger(output);
+      final PdfDocument source = reopen(MergeFixtures.text(pageCount: 1));
+      merger.append(source);
+      expect(
+        merger.warnings.any((String w) => w.contains('signature')),
+        isFalse,
+      );
+      source.dispose();
+      output.dispose();
+    });
   });
+}
+
+/// Signature widgets that have a visible appearance in the source document.
+int _visibleSignatureCount(PdfDocument document) {
+  int count = 0;
+  for (int i = 0; i < document.pages.count; i++) {
+    final PdfDictionary page =
+        PdfPageHelper.getHelper(document.pages[i]).dictionary!;
+    final IPdfPrimitive? annots = PdfCrossTable.dereference(page['Annots']);
+    if (annots is! PdfArray) {
+      continue;
+    }
+    for (int j = 0; j < annots.count; j++) {
+      final IPdfPrimitive? annotation = PdfCrossTable.dereference(annots[j]);
+      if (annotation is! PdfDictionary) {
+        continue;
+      }
+      if (!_isSignature(annotation)) {
+        continue;
+      }
+      final IPdfPrimitive? appearance = PdfCrossTable.dereference(
+        annotation['AP'],
+      );
+      if (appearance is PdfDictionary &&
+          PdfCrossTable.dereference(appearance['N']) != null) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+/// Every `/Subtype /Stamp` annotation of a document.
+List<PdfDictionary> _stampsOf(PdfDocument document) {
+  final List<PdfDictionary> stamps = <PdfDictionary>[];
+  for (int i = 0; i < document.pages.count; i++) {
+    final PdfDictionary page =
+        PdfPageHelper.getHelper(document.pages[i]).dictionary!;
+    final IPdfPrimitive? annots = PdfCrossTable.dereference(page['Annots']);
+    if (annots is! PdfArray) {
+      continue;
+    }
+    for (int j = 0; j < annots.count; j++) {
+      final IPdfPrimitive? annotation = PdfCrossTable.dereference(annots[j]);
+      if (annotation is! PdfDictionary) {
+        continue;
+      }
+      final IPdfPrimitive? subtype = PdfCrossTable.dereference(
+        annotation['Subtype'],
+      );
+      if (subtype is PdfName && subtype.name == 'Stamp') {
+        stamps.add(annotation);
+      }
+    }
+  }
+  return stamps;
+}
+
+/// The raw `/V /Contents` of every signature field of a document, in order.
+List<String> _signatureContentsOf(PdfDocument document) {
+  final List<String> contents = <String>[];
+  final IPdfPrimitive? acroForm = PdfCrossTable.dereference(
+    PdfDocumentHelper.getHelper(document).catalog['AcroForm'],
+  );
+  if (acroForm is! PdfDictionary) {
+    return contents;
+  }
+  final IPdfPrimitive? fields = PdfCrossTable.dereference(acroForm['Fields']);
+  if (fields is! PdfArray) {
+    return contents;
+  }
+  for (int i = 0; i < fields.count; i++) {
+    final IPdfPrimitive? field = PdfCrossTable.dereference(fields[i]);
+    if (field is! PdfDictionary || !_isSignature(field)) {
+      continue;
+    }
+    final IPdfPrimitive? value = PdfCrossTable.dereference(field['V']);
+    if (value is! PdfDictionary) {
+      continue;
+    }
+    final IPdfPrimitive? blob = PdfCrossTable.dereference(value['Contents']);
+    if (blob is PdfString && blob.value != null) {
+      contents.add(blob.value!);
+    }
+  }
+  contents.sort();
+  return contents;
+}
+
+int? _signatureFlagsOf(PdfDocument document) {
+  final IPdfPrimitive? acroForm = PdfCrossTable.dereference(
+    PdfDocumentHelper.getHelper(document).catalog['AcroForm'],
+  );
+  if (acroForm is! PdfDictionary) {
+    return null;
+  }
+  final IPdfPrimitive? flags = PdfCrossTable.dereference(
+    acroForm['SigFlags'],
+  );
+  return flags is PdfNumber ? flags.value!.toInt() : null;
+}
+
+bool _isSignature(PdfDictionary annotation) {
+  IPdfPrimitive? node = annotation;
+  while (node is PdfDictionary) {
+    final IPdfPrimitive? type = PdfCrossTable.dereference(node['FT']);
+    if (type != null) {
+      return type is PdfName && type.name == 'Sig';
+    }
+    node = PdfCrossTable.dereference(node['Parent']);
+  }
+  return false;
 }
 
 bool _hasSignatureWidget(PdfDocument document, int pageIndex) {

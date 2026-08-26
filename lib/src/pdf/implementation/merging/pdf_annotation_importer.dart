@@ -11,7 +11,6 @@ import '../primitives/pdf_number.dart';
 import '../primitives/pdf_reference_holder.dart';
 import '../primitives/pdf_string.dart';
 import 'pdf_import_context.dart';
-import 'pdf_merge_options.dart';
 import 'pdf_page_importer.dart';
 
 /// Result of importing the annotations of one page.
@@ -74,18 +73,28 @@ class PdfAnnotationImporter {
     final Map<PdfDictionary, PdfDictionary> clones =
         <PdfDictionary, PdfDictionary>{};
     for (final PdfDictionary annotation in sourceAnnotations) {
-      final bool isWidget = _isWidget(annotation);
+      bool isWidget = _isWidget(annotation);
       if (isWidget && !context.options.importFormFields) {
         continue;
       }
       if (!isWidget && !context.options.importAnnotations) {
         continue;
       }
+      bool isStrippedSignature = false;
       if (isWidget &&
-          context.options.signedSourcePolicy ==
-              PdfSignedSourcePolicy.stripSignatures &&
+          !context.options.keepInvalidSignatures &&
           _isSignatureField(annotation)) {
-        continue;
+        // The signature itself cannot survive a merge, only the mark it left
+        // on the page.
+        if (context.options.removeSignatureAppearance) {
+          continue;
+        }
+        if (!_hasAppearance(annotation)) {
+          // An invisible signature field leaves nothing worth keeping.
+          continue;
+        }
+        isStrippedSignature = true;
+        isWidget = false;
       }
       final PdfDictionary seed = _buildSeed(annotation, source);
       final PdfDictionary clone = pageImporter.clone(
@@ -93,6 +102,9 @@ class PdfAnnotationImporter {
         allowPageClone: true,
       );
       _dropBrokenDestinations(clone);
+      if (isStrippedSignature) {
+        _demoteToStamp(clone);
+      }
       clone[PdfDictionaryProperties.p] = PdfReferenceHolder(
         destinationDictionary,
       );
@@ -156,6 +168,66 @@ class PdfAnnotationImporter {
     }
     return false;
   }
+
+  /// Whether the annotation carries a normal appearance stream — the visible
+  /// mark a signature left on the page.
+  bool _hasAppearance(PdfDictionary annotation) {
+    final IPdfPrimitive? appearance = PdfCrossTable.dereference(
+      annotation[PdfDictionaryProperties.ap],
+    );
+    if (appearance is! PdfDictionary) {
+      return false;
+    }
+    return PdfCrossTable.dereference(
+          appearance[PdfDictionaryProperties.n],
+        ) !=
+        null;
+  }
+
+  /// Field entries that only make sense on a form widget.
+  static const List<String> _fieldOnlyKeys = <String>[
+    PdfDictionaryProperties.ft,
+    PdfDictionaryProperties.v,
+    PdfDictionaryProperties.dv,
+    PdfDictionaryProperties.t,
+    PdfDictionaryProperties.tu,
+    PdfDictionaryProperties.fieldFlags,
+    PdfDictionaryProperties.da,
+    PdfDictionaryProperties.q,
+    PdfDictionaryProperties.mk,
+    PdfDictionaryProperties.aa,
+    PdfDictionaryProperties.kids,
+    'SV',
+    'Lock',
+    'H',
+  ];
+
+  /// Turns a cloned signature widget into a read-only stamp annotation.
+  ///
+  /// The signature is gone — merging invalidated it — but the appearance
+  /// stream that shows who signed and when is ordinary page decoration, and
+  /// keeping it costs nothing. As a stamp it is no longer a form field, so no
+  /// viewer offers to validate a signature that is not there, and read-only
+  /// keeps it from being dragged around.
+  void _demoteToStamp(PdfDictionary clone) {
+    clone[PdfDictionaryProperties.subtype] = PdfName('Stamp');
+    for (final String key in _fieldOnlyKeys) {
+      clone.remove(key);
+    }
+    clone.remove(PdfDictionaryProperties.a);
+    final IPdfPrimitive? flags = PdfCrossTable.dereference(
+      clone[PdfDictionaryProperties.f],
+    );
+    final int current = flags is PdfNumber ? flags.value!.toInt() : _print;
+    clone[PdfDictionaryProperties.f] = PdfNumber(current | _readOnly);
+    clone.modify();
+  }
+
+  /// Annotation flag: print the annotation.
+  static const int _print = 4;
+
+  /// Annotation flag: the annotation cannot be edited by the user.
+  static const int _readOnly = 64;
 
   bool _isWidget(PdfDictionary annotation) {
     final IPdfPrimitive? subtype = PdfCrossTable.dereference(

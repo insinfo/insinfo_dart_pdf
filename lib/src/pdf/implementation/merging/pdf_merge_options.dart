@@ -27,18 +27,6 @@ enum PdfFieldNameConflictPolicy {
   throwError,
 }
 
-/// Specifies what happens when a source document carries digital signatures.
-///
-/// Merging always rewrites the whole file, so every existing signature is
-/// invalidated by construction.
-enum PdfSignedSourcePolicy {
-  /// Throws a [PdfMergeException]. This is the default.
-  reject,
-
-  /// Removes the signature fields and continues, recording a warning.
-  stripSignatures,
-}
-
 /// Controls the behaviour of [PdfDocumentMerger].
 class PdfMergeOptions {
   /// Initializes a new instance of the [PdfMergeOptions] class.
@@ -54,7 +42,9 @@ class PdfMergeOptions {
     this.importAttachments = false,
     this.dropStructureTree = true,
     this.copyDocumentInfoFromFirst = false,
-    this.signedSourcePolicy = PdfSignedSourcePolicy.reject,
+    this.rejectSignedSources = false,
+    this.keepInvalidSignatures = false,
+    this.removeSignatureAppearance = false,
     this.groupBookmarksPerDocument = false,
   });
 
@@ -100,8 +90,50 @@ class PdfMergeOptions {
   /// document is copied into the destination.
   bool copyDocumentInfoFromFirst;
 
-  /// What to do when a source document contains digital signatures.
-  PdfSignedSourcePolicy signedSourcePolicy;
+  /// Whether merging a source that carries digital signatures is refused.
+  ///
+  /// Merging always rewrites the whole file, so every signature the source
+  /// holds is invalidated by construction — a signature covers the exact bytes
+  /// of the document it was applied to, and no PDF tool can merge around that.
+  /// The default is therefore `false`: the merge goes ahead, the signature
+  /// fields are dropped instead of carried over broken, and the loss is
+  /// reported through [PdfDocumentMerger.warnings].
+  ///
+  /// Set it to `true` when losing a signature must stop the operation rather
+  /// than show up as a warning.
+  bool rejectSignedSources;
+
+  /// Whether the signature fields are carried over as they are, certificates
+  /// included, even though merging has broken their integrity.
+  ///
+  /// The default is `false`: the fields are dropped, because a signature whose
+  /// `/ByteRange` no longer describes the file makes viewers report the
+  /// document as tampered with.
+  ///
+  /// Set it to `true` to keep the signature dictionaries — the CMS blob, the
+  /// signing certificate and its chain — in the merged document. **The
+  /// signatures will not validate**, and a viewer will say so; what you get is
+  /// the signature data preserved for archival or forensic reading, not a
+  /// document that still proves anything.
+  ///
+  /// Takes precedence over [removeSignatureAppearance].
+  bool keepInvalidSignatures;
+
+  /// Whether the visible signature mark is removed together with the
+  /// signature.
+  ///
+  /// Ignored when [keepInvalidSignatures] is set, since the field then keeps
+  /// its own appearance.
+  ///
+  /// The default is `false`: the appearance stream showing who signed and when
+  /// is kept as a read-only stamp annotation, so the merged page still *looks*
+  /// signed — what a reader of a signed report or judicial document expects —
+  /// while no viewer reports a broken signature, because none is left to
+  /// check.
+  ///
+  /// Set it to `true` to drop the mark as well, leaving no trace of the
+  /// signature on the page.
+  bool removeSignatureAppearance;
 
   /// Whether imported bookmarks are nested under one node per source document
   /// instead of being appended to the destination root.

@@ -35,10 +35,13 @@ void mergeWithReport(List<String> paths) {
     output,
     options: PdfMergeOptions(
       groupBookmarksPerDocument: true,
-      // Merging rewrites the whole file, so any signature the source carries
-      // is invalidated. Opt in explicitly rather than producing a document
-      // with broken signatures.
-      signedSourcePolicy: PdfSignedSourcePolicy.stripSignatures,
+      // Merging rewrites the whole file, so any signature the sources carry is
+      // invalidated. By default the signature fields are dropped and their
+      // visible mark is kept as a stamp, so the page still looks signed. Three
+      // knobs change that:
+      //   rejectSignedSources: true       -> refuse to merge signed documents
+      //   keepInvalidSignatures: true     -> keep the certificates, invalid
+      //   removeSignatureAppearance: true -> drop the visible mark too
     ),
   );
 
