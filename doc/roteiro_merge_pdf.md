@@ -8,26 +8,32 @@
 
 ## 0. Resumo executivo
 
-A biblioteca **ainda não expõe** nenhuma API de merge/import de páginas
-(`importPage`, `mergeDocuments`, `appendDocument` — nenhuma existe hoje).
+> **Nota de leitura.** As seções 1 a 8 são o plano original, escrito quando a
+> biblioteca ainda não tinha merge; ficam aqui porque documentam *por que* cada
+> decisão foi tomada. As seções 9 em diante descrevem o que efetivamente foi
+> entregue, onde o plano mudou e o que ficou de fora.
 
-Porém, **a maior parte da infraestrutura necessária já está no repositório**:
-existe um motor completo de clonagem profunda de objetos PDF entre cross-tables
+Quando este roteiro foi escrito, a biblioteca **não expunha** nenhuma API de
+merge (`importPage`, `mergeDocuments`, `appendDocument` — nenhuma existia).
+
+Porém, **a maior parte da infraestrutura necessária já estava no repositório**:
+um motor completo de clonagem profunda de objetos PDF entre cross-tables
 (`IPdfPrimitive.cloneObject(PdfCrossTable)`), com resolução de referências
-circulares e cache de objetos clonados. Ele é usado hoje para importar
-*recursos* de páginas carregadas (`PdfTemplate`) e *campos de formulário*
-(`PdfFormFieldCollection`), mas está **deliberadamente bloqueado** para
+circulares e cache de objetos clonados. Ele era usado para importar *recursos*
+de páginas carregadas (`PdfTemplate`) e *campos de formulário*
+(`PdfFormFieldCollection`), mas estava **deliberadamente bloqueado** para
 objetos de página.
 
-O roteiro abaixo é dividido em duas entregas:
+Duas entregas:
 
-| Nível | O que é | Esforço | Fidelidade |
-|---|---|---|---|
-| **Nível 1 — `flatten`** | Merge via `PdfTemplate` (achatamento visual) | ~1 dia | Só conteúdo gráfico |
-| **Nível 2 — `objectImport`** | Import real do grafo de objetos da página | ~10–14 dias | Anotações, links, formulários, bookmarks, camadas |
+| Nível | O que é | Fidelidade |
+|---|---|---|
+| **Nível 1 — `flatten`** | Merge via `PdfTemplate` (achatamento visual) | Só conteúdo gráfico |
+| **Nível 2 — `objectImport`** | Import real do grafo de objetos da página | Anotações, links, formulários, bookmarks, camadas, page labels |
 
-O Nível 1 funciona **hoje**, sem alterar a lib (ver §2.1), e deve ser entregue
-primeiro como fallback. O Nível 2 é o merge de verdade.
+**Ambos estão implementados**, com `objectImport` como padrão. A suíte tem 286
+testes de merge, incluindo varredura dos 54 PDFs de `test/assets` e comparação
+ponta a ponta contra a saída do SEI (§11).
 
 ---
 
@@ -160,9 +166,12 @@ dicionário resultante na árvore `/Pages`. É o caminho que preserva estrutura.
 
 ---
 
-## 3. API pública proposta
+## 3. API pública
 
-Novo diretório: `lib/src/pdf/implementation/merging/`
+> Entregue como descrito abaixo, com uma diferença: a política de
+> assinaturas virou três booleanos independentes em vez de um enum (§8, F8).
+
+Diretório: `lib/src/pdf/implementation/merging/`
 
 ```dart
 // pdf_merge_options.dart
@@ -178,16 +187,11 @@ enum PdfMergeMode {
 }
 
 /// Política aplicada quando dois documentos têm campos de formulário homônimos.
-enum PdfFieldNameConflictPolicy { renameSuffix, keepFirst, merge, throwError }
+enum PdfFieldNameConflictPolicy { renameSuffix, keepFirst, throwError }
 
-/// Política aplicada quando um documento de origem contém assinaturas digitais.
-enum PdfSignedSourcePolicy {
-  /// Lança [PdfMergeException] (padrão).
-  reject,
-
-  /// Remove os campos de assinatura e prossegue.
-  stripSignatures,
-}
+// Assinaturas: três booleanos independentes, todos `false` por padrão —
+// `rejectSignedSources`, `keepInvalidSignatures`, `removeSignatureAppearance`.
+// Ver F8 para a semântica e a precedência.
 
 class PdfMergeOptions {
   PdfMergeOptions({
@@ -202,7 +206,9 @@ class PdfMergeOptions {
     this.importAttachments = false,
     this.dropStructureTree = true,
     this.copyDocumentInfoFromFirst = false,
-    this.signedSourcePolicy = PdfSignedSourcePolicy.reject,
+    this.rejectSignedSources = false,
+    this.keepInvalidSignatures = false,
+    this.removeSignatureAppearance = false,
     this.deduplicateResources = true,
   });
   // ... campos
@@ -606,7 +612,7 @@ replicar a checagem no importador.
 
 - Exportar em `lib/pdf.dart` (e `lib/pdf_server.dart` se aplicável):
   `PdfDocumentMerger`, `PdfMergeOptions`, `PdfMergeMode`,
-  `PdfFieldNameConflictPolicy`, `PdfSignedSourcePolicy`, `PdfMergeException`.
+  `PdfFieldNameConflictPolicy`, `PdfMergeException`.
 - Doc comments no padrão da lib (com exemplo `///` executável).
 - Atualizar `doc/doc.md`, `doc.md` (raiz) e `CHANGELOG.md`; bump de versão.
 - Exemplo em `example1/bin/merge_example.dart`.
@@ -655,22 +661,25 @@ bater com a soma esperada.
 
 | # | Risco | Mitigação |
 |---|---|---|
-| R1 | Alterar `PdfReferenceHolder.cloneObject` quebra `PdfTemplate` / `PdfFormFieldCollection` / `json_document` | Bypass só ativo com `importContext != null`; rodar a suíte inteira (`dart test`) antes e depois |
-| R2 | Cache `clonedObject` vazando entre sessões de merge | `resetCloneCache()` obrigatório em `finish()`; teste de merge encadeado |
-| R3 | `PdfDictionary.cloneObject` descarta chaves nulas silenciosamente | Mecanismo de `PendingReference` + warning quando uma pendência não resolve |
-| R4 | Árvore de marcação estrutural (tagged PDF) | Descartar na v1, documentar, deixar para v2 |
-| R5 | Explosão de tamanho ao mesclar muitos documentos similares | F10 (dedup por hash) |
-| R6 | Usuário mesclar documento assinado sem perceber | Política `reject` como padrão; exceção com mensagem explícita |
+| # | Risco | Desfecho |
+|---|---|---|
+| R1 | Alterar `PdfReferenceHolder.cloneObject` quebra `PdfTemplate` / `PdfFormFieldCollection` / `json_document` | **Controlado.** Bypass só ativo com `importContext != null`; os 199 testes pré-existentes continuam verdes |
+| R2 | Cache `clonedObject` vazando entre sessões de merge | **Não se materializou.** O cache é chaveado pela cross-table de destino, então invalida sozinho ao trocar de destino. `resetCloneCache()` não foi necessário |
+| R3 | `PdfDictionary.cloneObject` descarta chaves nulas silenciosamente | **Resolvido de outra forma.** Duas passagens em vez de `PendingReference`; o que sobra é detectado em `_dropBrokenDestinations` |
+| R4 | Árvore de marcação estrutural (tagged PDF) | **Descartada**, como planejado (§9) |
+| R5 | Explosão de tamanho ao mesclar muitos documentos similares | **Resolvido.** Memo explícito no contexto; teste verifica que 5 cópias saem menores que a soma |
+| R6 | Usuário mesclar documento assinado sem perceber | **Repensado.** Recusar divergia do mercado; hoje mescla por padrão e registra em `warnings` (F8) |
 
-**Decisões pendentes (resolver antes de F3):**
+**Decisões que estavam pendentes:**
 
-1. Enxerto direto do dicionário clonado *vs.* criar página vazia e sobrescrever
-   — spike de 2h.
-2. `flatten` deve normalizar `/Rotate` (aplicando a rotação na matriz do
-   template) ou propagar a chave? Recomendação: **propagar**, para preservar a
-   orientação vista pelo usuário.
-3. Bookmarks agrupados por documento de origem: padrão ligado ou desligado?
-   Recomendação: **desligado** (concatenação plana), com opção para ligar.
+1. Enxerto direto do dicionário clonado *vs.* criar página vazia e sobrescrever.
+   → **Sobrescrever.** `PdfPageCollection.insert` só funciona em documento
+   carregado, e para documento novo o modelo de seções já dá o tamanho por
+   página. Enxertar direto exigiria mexer em `PdfSection`.
+2. `flatten` normaliza `/Rotate` ou propaga? → **Propaga**, como recomendado.
+   Teste: `merge_edge_cases_test.dart`, "page rotation is carried over".
+3. Bookmarks agrupados por documento de origem? → **Desligado por padrão**,
+   com `groupBookmarksPerDocument` para ligar.
 
 ---
 
@@ -704,6 +713,7 @@ bater com a soma esperada.
 | Documentos criptografados na origem | Funcionam quando a senha é passada na carga (`PdfDocument(inputBytes:, password:)`); sem teste automatizado | Falta fixture criptografada no repositório |
 | Benchmarks | Não escritos | — |
 | Conformidade PDF/A do destino | Não é validada durante o import | A checagem de fontes embutidas existe só no caminho `PdfGraphics` |
+| `PdfExternalSigning` sobre PDF já mesclado | `findContentsRange` lança `Contents range found but inconsistent` | Comportamento correto: o `/ByteRange` mantido por `keepInvalidSignatures` não descreve o arquivo novo. Assinar um documento mesclado exige decidir antes o que fazer com as assinaturas anteriores |
 
 **Limitação conhecida:** se o documento de destino receber camadas via
 `document.layers.add()` *depois* de um merge, `PdfLayerCollection` substitui
@@ -722,8 +732,9 @@ próprias antes de mesclar.
 | F5 | [pdf_form_importer.dart](../lib/src/pdf/implementation/merging/pdf_form_importer.dart) |
 | F6 | [pdf_outline_importer.dart](../lib/src/pdf/implementation/merging/pdf_outline_importer.dart) |
 | F7 | [pdf_catalog_merger.dart](../lib/src/pdf/implementation/merging/pdf_catalog_merger.dart) |
+| F5 (extensão) | Campos sem widget: `PdfFormImporter.importOrphanFields` |
 | F1/F8/F9 | [pdf_document_merger.dart](../lib/src/pdf/implementation/merging/pdf_document_merger.dart), [pdf_merge_options.dart](../lib/src/pdf/implementation/merging/pdf_merge_options.dart), `PdfDocument.mergeSync`/`merge`/`appendDocument`/`importPage`/`importPageRange` |
-| Testes | [test/merging/](../test/merging/) — 270 testes em 10 arquivos, incluindo varredura dos 54 PDFs de `test/assets` |
+| Testes | [test/merging/](../test/merging/) — 286 testes em 11 arquivos, incluindo varredura dos 54 PDFs de `test/assets` e a comparação contra o SEI (§11) |
 | Exemplo | [example1/bin/merge_documents.dart](../example1/bin/merge_documents.dart) |
 
 ### Desvios em relação ao plano
@@ -759,8 +770,110 @@ próprias antes de mesclar.
    campos que atravessam páginas) continuam agrupados sob um único campo via
    `/Kids`.
 
-5. **Destino carregado usa `pages.insert`; destino novo usa seções.**
+5. **Campos de formulário sem widget são varridos à parte.** O plano assumia
+   que todo campo é alcançável pelo widget que o mostra numa página. Não é:
+   `/AcroForm /Fields` pode conter campo sem widget nenhum — um campo de dados
+   oculto, ou uma assinatura invisível. A comparação com o SEI (§11) expôs isso
+   custando uma de duas assinaturas. `PdfFormImporter.importOrphanFields` varre
+   os campos terminais ao fim de cada documento de origem e traz os que nenhum
+   widget alcançou.
+
+6. **Bookmarks reconstruídos toleram destino ilegível.** Resolver o destino de
+   um bookmark percorre a árvore de nomes do documento de origem, que pode
+   estar malformada de formas que o leitor não sobrevive. A leitura é isolada:
+   o bookmark entra sem destino e a falha vira warning, em vez de derrubar a
+   mesclagem inteira.
+
+7. **Destino carregado usa `pages.insert`; destino novo usa seções.**
    `PdfPageCollection.insert` só funciona em documento carregado (depende de
    `_crossTable`). Para um `PdfDocument()` novo, cada página importada ganha
    uma `PdfSection` própria com as dimensões da origem — é o que permite
    preservar tamanho por página.
+
+---
+
+## 11. Referência de campo: como o SEI mescla
+
+O SEI (Sistema Eletrônico de Informações, do TRF4, usado em boa parte da
+administração pública brasileira) tem a função "Gerar Arquivo PDF do Processo",
+que mescla os documentos de um processo. Como é o sistema de referência para
+quem usa esta biblioteca, a saída dele foi analisada e virou fixture.
+
+### Qual engine o SEI usa
+
+Perícia em `test/merging/assets/sei_merged_reference.pdf`. Duas ferramentas
+atuam no pipeline, e confundi-las é fácil: **wkhtmltopdf**
+converte o documento HTML do processo em PDF, e **PDFBox** mescla os PDFs.
+
+#### Evidência direta
+
+| Evidência | O que indica |
+|---|---|
+| Campo `dummyFieldName1` no consolidado, **ausente nos três PDFs de origem** | Foi *gerado na mesclagem*. É string literal em `PDFMergerUtility.acroFormLegacyMode`, usada ao renomear campo em colisão. Presente no PDFBox desde o 1.8 |
+| Comentário binário do header `%öäüß` (`F6 E4 FC DF`) | Constante `COSWriter.GARBAGE` do PDFBox, byte a byte |
+| Header `%PDF-1.4` com `/Version /1.7` no catálogo | `new PDDocument()` nasce em 1.4 e `setVersion` grava no **catálogo** quando a versão é ≥ 1.4. Um reserializador comum poria a versão real no header |
+| Xref clássica, sem object streams | **Não é PDFBox 3.x**, que comprime por padrão desde o 3.0 → ramo 2.x |
+| `/ID` com as duas entradas idênticas | Primeira gravação de um `PDDocument` novo |
+| Cópia objeto a objeto: 43 dos 87 streams do relatório idênticos byte a byte no consolidado, incluindo os dois programas de fonte | `PDFCloneUtility`, o mecanismo do `PDFMergerUtility`. Renderização não reproduz isso |
+
+**Conclusão: Apache PDFBox 2.x, `PDFMergerUtility` em `PDFBOX_LEGACY_MODE`.**
+Corroborado de forma independente pela documentação de operação do SEI, que
+cita o `pdfboxmerge.jar`, um cache em `/opt/sei/temp/.pdfbox.cache` e a
+exigência de JDK 1.8.
+
+#### Duas armadilhas nesta perícia
+
+**1. A ausência do nome da biblioteca em `/Producer` não é evidência contra.**
+O raciocínio "toda biblioteca se carimba em `/Producer`, aqui está `Qt 4.8.7`,
+logo não é PDFBox" vale para iText, TCPDF, ReportLab e afins — **mas não para o
+PDFBox**, que nunca se carimba. Confirmado no código: nem `COSWriter` nem
+`PDDocument` escrevem `/Producer`, `PDDocumentInformation.getProducer()`
+devolve `null` quando ausente, e `PDFMergerUtility` não sobrescreve
+`/Producer` nem `/Creator`. O `/Info` do consolidado
+(`Creator = wkhtmltopdf 0.12.6`, `Producer = Qt 4.8.7`, `Title` posto pelo SEI)
+veio do despacho HTML renderizado — nenhum dos três PDFs de origem tem `/Info`.
+
+**2. `E2 E3 CF D3` não é exclusivo do iText, e não é o que está aqui.**
+O `PDF_MAGIC` do **PoDoFo** é `"âãÏÓ
+"` — o mesmo do iText. O
+arquivo do SEI traz `F6 E4 FC DF`, que é do PDFBox. Isso **elimina o PoDoFo**,
+hipótese plausível à primeira vista por ser a biblioteca contra a qual o
+wkhtmltopdf 0.12.x é ligado: a impressão digital em que a suspeita se apoiaria
+aponta para o outro lado. Some-se que PoDoFo, Qt e wkhtmltopdf não têm lógica
+de merge de AcroForm — nenhum deles produziria `dummyFieldName1`.
+
+### O que o SEI faz com as assinaturas
+
+Mantém os campos `/FT /Sig` com o `/ByteRange` original. No arquivo de
+referência são duas assinaturas com ranges somando 20 643 e 29 711 bytes dentro
+de um PDF de 238 KB — o ITI reporta "assinaturas desconhecidas" e o Chaindoc,
+"Invalid". É o comportamento de `keepInvalidSignatures: true`.
+
+### O processo analisado
+
+| Documento | Páginas | Assinatura |
+|---|---|---|
+| `[1]-0009609_Despacho.pdf` | 39 | — |
+| `[2]-0009610_Recurso.pdf` | 1 | `Signature1` **sem widget** e com `/Rect [0 0 0 0]` (invisível) |
+| `[3]-0009611_Apartado.pdf` | 1 | `Signature1` com widget |
+| `[4]-0009612_Despacho.html` | 1 | HTML renderizado pelo SEI na hora da mesclagem |
+
+Os três PDFs estão em `test/merging/assets/`, conferidos por SHA-256 contra as
+entradas do ZIP exportado pelo processo. O quarto é HTML — renderizar HTML não
+é função de uma biblioteca PDF, então a comparação é de 41 contra 42 páginas e
+verifica a estrutura das assinaturas, não a contagem.
+
+### Onde esta biblioteca coincide e onde difere
+
+| Aspecto | SEI (PDFBox) | Esta biblioteca |
+|---|---|---|
+| Assinaturas | Mantidas, inválidas | `keepInvalidSignatures: true` faz o mesmo; **por padrão** vira carimbo somente-leitura |
+| `/ByteRange` | Verbatim | Verbatim |
+| Colisão de nome de campo | Renomeia para `dummyFieldName<N>` | Renomeia para `<nome>_<N>`, preservando o nome original |
+| Campo sem widget | Preservado, continua órfão | Preservado (`importOrphanFields`) |
+| `/Info` | Do documento HTML renderizado | Do destino; `copyDocumentInfoFromFirst` para herdar do primeiro |
+
+A diferença que importa é o padrão: o SEI entrega um arquivo que todo validador
+marca como inválido, enquanto o padrão daqui entrega um que nenhum validador
+reclama — porque não sobrou assinatura para conferir — mantendo o carimbo
+visual. Quem precisa da saída no formato do SEI liga `keepInvalidSignatures`.
