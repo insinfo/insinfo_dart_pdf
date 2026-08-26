@@ -2,6 +2,7 @@ import '../../interfaces/pdf_interface.dart';
 import '../io/pdf_constants.dart';
 import '../primitives/pdf_array.dart';
 import '../primitives/pdf_dictionary.dart';
+import '../primitives/pdf_name.dart';
 import '../primitives/pdf_null.dart';
 import '../primitives/pdf_number.dart';
 import '../primitives/pdf_reference.dart';
@@ -11,6 +12,7 @@ import '../primitives/pdf_string.dart';
 import '../security/pdf_encryptor.dart';
 import 'enums.dart';
 import 'pdf_cross_table.dart';
+import 'pdf_format_exception.dart';
 import 'pdf_parser.dart';
 import 'pdf_reader.dart';
 
@@ -30,11 +32,7 @@ class CrossTable {
   /// internal constructor
   CrossTable(List<int>? data, PdfCrossTable crossTable) {
     if (data == null || data.isEmpty) {
-      throw ArgumentError.value(
-        data,
-        'PDF data',
-        'PDF data cannot be null or empty',
-      );
+      throw PdfFormatException('The PDF data is empty.');
     }
     _data = data;
     _crossTable = crossTable;
@@ -107,7 +105,9 @@ class CrossTable {
       if (obj is PdfReferenceHolder) {
         _documentCatalog = obj;
       } else {
-        throw ArgumentError.value(obj, 'Invalid format');
+        throw PdfFormatException(
+          'The trailer does not point at a document catalog (/Root).',
+        );
       }
     }
     return _documentCatalog;
@@ -133,10 +133,8 @@ class CrossTable {
     final int startingOffset = _checkJunk();
     _debugXrefLog('startingOffset=$startingOffset dataLen=${_data.length}');
     if (startingOffset < 0) {
-      throw ArgumentError.value(
-        startingOffset,
-        'startingOffset',
-        'Could not find valid PDF header (%PDF-)',
+      throw PdfFormatException(
+        'The data does not start with a PDF header (%PDF-).',
       );
     }
     objects = <int, ObjectInformation>{};
@@ -174,6 +172,14 @@ class CrossTable {
       position = parser.startCrossReference();
       _debugXrefLog('startxref value=$position');
       startCrossReference = position;
+      if (position < 0 || position > reader.length!) {
+        // `startxref` names an offset past the end of the file — the usual
+        // sign of a truncated download or of a tool that appended without
+        // fixing the pointer.
+        _debugXrefLog('startxref $position out of range, rebuilding');
+        _rebuildByScanning(parser);
+        return;
+      }
       _parser!.setOffset(position);
       if (_whiteSpace != 0) {
         final int crossReferencePosition = reader.searchForward(
@@ -218,7 +224,21 @@ class CrossTable {
       if (tempOffset != -1) {
         position = tempOffset;
       }
+      if (position < 0 || position > reader.length!) {
+        // No `startxref`, no `xref` — nothing left to point at a table.
+        _debugXrefLog('no cross reference table found, rebuilding');
+        _rebuildByScanning(parser);
+        return;
+      }
       parser.setOffset(position);
+    }
+    if (position < 0 || position > reader.length!) {
+      // Nothing in the file pointed at a usable cross-reference table: the
+      // offset is out of range, or `startxref` is missing because the tail was
+      // truncated. Browsers recover by scanning; so do we.
+      _debugXrefLog('cross reference offset $position unusable, rebuilding');
+      _rebuildByScanning(parser);
+      return;
     }
     reader.position = position;
     try {
@@ -230,7 +250,14 @@ class CrossTable {
       trailer = tempResult['object'] as PdfDictionary?;
       objects = tempResult['objects'] as Map<int, ObjectInformation>;
     } catch (e) {
-      throw ArgumentError.value(trailer, 'Invalid cross reference table.');
+      _debugXrefLog('parseCrossReferenceTable failed ($e), rebuilding');
+      _rebuildByScanning(parser);
+      return;
+    }
+    if (trailer == null || !_hasUsableRoot(trailer!)) {
+      _debugXrefLog('trailer without a usable /Root, rebuilding');
+      _rebuildByScanning(parser);
+      return;
     }
     PdfDictionary trailerObj = trailer!;
     _debugXrefLog('trailer keys=${trailerObj.items?.keys.length ?? 0}');
@@ -313,6 +340,112 @@ class CrossTable {
         _isStructureAltered = true;
       }
     }
+  }
+
+  /// Rebuilds the object table by scanning the file for object headers, the
+  /// way a viewer does when the cross-reference table it was handed cannot be
+  /// used.
+  ///
+  /// The scan finds objects but no trailer, so the trailer is recovered too:
+  /// first from a `trailer` dictionary still present in the file, and failing
+  /// that by synthesizing one around whichever rebuilt object is the document
+  /// catalog. A file a browser can render should merge, and the
+  /// cross-reference table is the part most often damaged — by a truncated
+  /// download, a byte range copied wrong, or a tool that appended without
+  /// fixing the offsets.
+  void _rebuildByScanning(PdfParser parser) {
+    parser.rebuildXrefTable(objects, this);
+    _debugXrefLog('rebuilt ${objects.length} object(s) by scanning');
+    trailer = _recoverTrailer() ?? _synthesizeTrailer();
+    if (trailer == null) {
+      throw PdfFormatException(
+        'The cross-reference table is unusable and scanning the file found no '
+        'document catalog. The data is not a recoverable PDF.',
+      );
+    }
+    _isStructureAltered = true;
+  }
+
+  /// Looks for a `trailer` dictionary that still parses and names a `/Root`.
+  PdfDictionary? _recoverTrailer() {
+    final PdfReader reader = PdfReader(_data);
+    int searchFrom = _data.length;
+    // Walk the trailers backwards: the last one that resolves wins, but an
+    // incremental update may have left a damaged one at the very end.
+    for (int attempt = 0; attempt < 8; attempt++) {
+      reader.position = searchFrom;
+      final int position = reader.searchBack(PdfOperators.trailer);
+      if (position < 0) {
+        return null;
+      }
+      searchFrom = position;
+      try {
+        final PdfParser trailerParser = PdfParser(this, PdfReader(_data),
+            _crossTable);
+        trailerParser.setOffset(position);
+        final IPdfPrimitive? candidate = trailerParser.trailer();
+        if (candidate is PdfDictionary && _hasUsableRoot(candidate)) {
+          _debugXrefLog('recovered trailer at $position');
+          return candidate;
+        }
+      } catch (_) {
+        // Try the one before it.
+      }
+      if (searchFrom <= 0) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /// Builds a minimal trailer around the catalog found among the rebuilt
+  /// objects.
+  PdfDictionary? _synthesizeTrailer() {
+    final List<int> numbers = objects.keys.toList()..sort();
+    int? catalogNumber;
+    for (int i = numbers.length - 1; i >= 0; i--) {
+      final int number = numbers[i];
+      final ObjectInformation? info = objects[number];
+      if (info == null) {
+        continue;
+      }
+      IPdfPrimitive? object;
+      try {
+        object = info.parser!.parseOffset(info.offset!);
+      } catch (_) {
+        continue;
+      }
+      if (object is! PdfDictionary) {
+        continue;
+      }
+      final IPdfPrimitive? type = object[PdfDictionaryProperties.type];
+      if (type is PdfName && type.name == 'Catalog') {
+        // Prefer a catalog that actually leads to pages; a damaged file can
+        // carry an older, emptied one from a previous revision.
+        catalogNumber = number;
+        if (object.containsKey(PdfDictionaryProperties.pages)) {
+          break;
+        }
+      }
+    }
+    if (catalogNumber == null) {
+      return null;
+    }
+    _debugXrefLog('synthesized trailer pointing at object $catalogNumber');
+    final PdfDictionary recovered = PdfDictionary();
+    recovered[PdfDictionaryProperties.root] = PdfReferenceHolder.fromReference(
+      PdfReference(catalogNumber, 0),
+      _crossTable,
+    );
+    recovered[PdfDictionaryProperties.size] = PdfNumber(
+      numbers.isEmpty ? 1 : numbers.last + 1,
+    );
+    return recovered;
+  }
+
+  bool _hasUsableRoot(PdfDictionary candidate) {
+    final IPdfPrimitive? root = candidate[PdfDictionaryProperties.root];
+    return root is PdfReferenceHolder || root is PdfDictionary;
   }
 
   ObjectInformation? _returnValue(int? key) {

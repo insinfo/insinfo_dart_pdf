@@ -96,7 +96,11 @@ class PdfAnnotationImporter {
         isStrippedSignature = true;
         isWidget = false;
       }
-      final PdfDictionary seed = _buildSeed(annotation, source);
+      final PdfDictionary seed = _buildSeed(
+        annotation,
+        source,
+        stripField: isStrippedSignature,
+      );
       final PdfDictionary clone = pageImporter.clone(
         seed,
         allowPageClone: true,
@@ -204,6 +208,10 @@ class PdfAnnotationImporter {
 
   /// Turns a cloned signature widget into a read-only stamp annotation.
   ///
+  /// The field entries are already gone: [_buildSeed] pruned them from the
+  /// seed so they were never cloned. What is left is the appearance and the
+  /// geometry.
+  ///
   /// The signature is gone — merging invalidated it — but the appearance
   /// stream that shows who signed and when is ordinary page decoration, and
   /// keeping it costs nothing. As a stamp it is no longer a form field, so no
@@ -239,7 +247,11 @@ class PdfAnnotationImporter {
 
   /// Builds a detached shallow copy of [annotation] with every entry that
   /// points back into the source document removed or resolved.
-  PdfDictionary _buildSeed(PdfDictionary annotation, PdfDocument source) {
+  PdfDictionary _buildSeed(
+    PdfDictionary annotation,
+    PdfDocument source, {
+    bool stripField = false,
+  }) {
     final PdfDictionary seed = PdfDictionary(annotation);
     seed.remove(PdfDictionaryProperties.p);
     seed.remove(PdfDictionaryProperties.parent);
@@ -247,6 +259,16 @@ class PdfAnnotationImporter {
     seed.remove(inReplyTo);
     if (context.options.dropStructureTree) {
       seed.remove('StructParent');
+    }
+    if (stripField) {
+      // Prune before cloning, not after. Dropping `/V` from the clone would
+      // leave the signature dictionary — the whole PKCS#7 blob — registered in
+      // the destination as an unreachable object: invisible to a reader that
+      // walks `/AcroForm /Fields`, but found by anything that scans for
+      // signature dictionaries, and paying for tens of kilobytes of dead CMS.
+      for (final String key in _fieldOnlyKeys) {
+        seed.remove(key);
+      }
     }
     _resolveNamedDestinations(seed, source);
     return seed;
