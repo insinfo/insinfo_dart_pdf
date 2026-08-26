@@ -29,7 +29,12 @@
 /// ```
 class PdfFormatException extends FormatException {
   /// Initializes a new instance of the [PdfFormatException] class.
-  PdfFormatException(String message, {this.cause}) : super(message);
+  ///
+  /// [source] is whatever value made the data unreadable — an offset, a
+  /// malformed token, an unexpected object — kept because it is usually the
+  /// first thing anyone diagnosing the file wants to see.
+  PdfFormatException(String message, {this.cause, Object? source, int? offset})
+    : super(message, source, offset);
 
   /// The underlying failure, when this exception wraps one.
   ///
@@ -41,8 +46,14 @@ class PdfFormatException extends FormatException {
   final Object? cause;
 
   @override
-  String toString() =>
-      cause == null
-          ? 'PdfFormatException: $message'
-          : 'PdfFormatException: $message (caused by $cause)';
+  String toString() {
+    final StringBuffer buffer = StringBuffer('PdfFormatException: $message');
+    if (source != null) {
+      buffer.write(' (at $source)');
+    }
+    if (cause != null) {
+      buffer.write(' (caused by $cause)');
+    }
+    return buffer.toString();
+  }
 }

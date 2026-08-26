@@ -1170,13 +1170,24 @@ class PdfDocument {
       _initialize(pdfData);
     } on PdfFormatException {
       rethrow;
-    } catch (error) {
-      throw PdfFormatException(
-        'The PDF data could not be read.',
-        cause: error,
-      );
+    } on ArgumentError catch (error) {
+      // On this path the only argument is the byte array, so an argument
+      // complaint raised underneath is a complaint about the data. RangeError
+      // and IndexError arrive here too: both extend ArgumentError.
+      throw PdfFormatException(_readFailure, cause: error);
+    } on FormatException catch (error) {
+      // A decoder gave up: a bad text encoding, a malformed date, a broken
+      // filter parameter.
+      throw PdfFormatException(_readFailure, cause: error);
     }
+    // Anything else is left alone on purpose. A StateError means an invariant
+    // of this library was violated and a TypeError or StackOverflowError means
+    // it has a bug; reporting either as "the file is bad" would send the
+    // caller off to blame a document that is fine, and hide the defect for
+    // good.
   }
+
+  static const String _readFailure = 'The PDF data could not be read.';
 
   void _initialize(List<int>? pdfData) {
     _helper._isAttachOnlyEncryption = false;
