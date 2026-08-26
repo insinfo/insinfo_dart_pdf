@@ -30,6 +30,8 @@ import '../graphics/enums.dart';
 import '../graphics/pdf_pens.dart';
 import '../io/pdf_constants.dart';
 import '../io/pdf_cross_table.dart';
+import '../merging/pdf_document_merger.dart';
+import '../merging/pdf_merge_options.dart';
 import '../io/pdf_main_object_collection.dart';
 import '../io/pdf_reader.dart';
 import '../io/pdf_writer.dart';
@@ -988,6 +990,160 @@ class PdfDocument {
       _helper.importFdf(data);
     } else if (format == PdfAnnotationDataFormat.json) {
       _helper.importJson(data);
+    }
+  }
+
+  /// Appends every page of [source] to this document.
+  ///
+  /// Returns the pages that were created in this document, in source order.
+  ///
+  /// ```dart
+  /// //Create the document that receives the pages.
+  /// PdfDocument document = PdfDocument();
+  /// //Append an existing document.
+  /// document.appendDocument(
+  ///     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync()));
+  /// //Save the document.
+  /// File('merged.pdf').writeAsBytesSync(await document.save());
+  /// //Dispose the document.
+  /// document.dispose();
+  /// ```
+  List<PdfPage> appendDocument(
+    PdfDocument source, {
+    PdfMergeOptions? options,
+  }) {
+    return PdfDocumentMerger(this, options: options).append(source);
+  }
+
+  /// Imports a single page of [source], identified by its zero based
+  /// [pageIndex].
+  ///
+  /// ```dart
+  /// //Create the document that receives the page.
+  /// PdfDocument document = PdfDocument();
+  /// //Import the first page of an existing document.
+  /// document.importPage(
+  ///     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync()), 0);
+  /// //Save the document.
+  /// File('merged.pdf').writeAsBytesSync(await document.save());
+  /// //Dispose the document.
+  /// document.dispose();
+  /// ```
+  PdfPage importPage(
+    PdfDocument source,
+    int pageIndex, {
+    PdfMergeOptions? options,
+  }) {
+    return PdfDocumentMerger(this, options: options).importPage(
+      source,
+      pageIndex,
+    );
+  }
+
+  /// Imports the pages of [source] from [start] to [end], both inclusive.
+  ///
+  /// ```dart
+  /// //Create the document that receives the pages.
+  /// PdfDocument document = PdfDocument();
+  /// //Import the first three pages of an existing document.
+  /// document.importPageRange(
+  ///     PdfDocument(inputBytes: File('input.pdf').readAsBytesSync()), 0, 2);
+  /// //Save the document.
+  /// File('merged.pdf').writeAsBytesSync(await document.save());
+  /// //Dispose the document.
+  /// document.dispose();
+  /// ```
+  List<PdfPage> importPageRange(
+    PdfDocument source,
+    int start,
+    int end, {
+    PdfMergeOptions? options,
+  }) {
+    return PdfDocumentMerger(this, options: options).importPageRange(
+      source,
+      start,
+      end,
+    );
+  }
+
+  /// Merges [documents] — each one the bytes of a PDF file — into a single
+  /// document and returns its bytes.
+  ///
+  /// [passwords] may hold the open password of each input, positionally; a
+  /// `null` entry means the matching document is not encrypted.
+  ///
+  /// ```dart
+  /// List<int> merged = PdfDocument.mergeSync(<List<int>>[
+  ///   File('first.pdf').readAsBytesSync(),
+  ///   File('second.pdf').readAsBytesSync(),
+  /// ]);
+  /// File('merged.pdf').writeAsBytesSync(merged);
+  /// ```
+  static List<int> mergeSync(
+    List<List<int>> documents, {
+    PdfMergeOptions? options,
+    List<String?>? passwords,
+  }) {
+    final PdfDocument output = PdfDocument();
+    final PdfDocumentMerger merger = PdfDocumentMerger(
+      output,
+      options: options,
+    );
+    final List<PdfDocument> sources = <PdfDocument>[];
+    try {
+      for (int i = 0; i < documents.length; i++) {
+        final PdfDocument source = PdfDocument(
+          inputBytes: documents[i],
+          password:
+              (passwords != null && i < passwords.length)
+                  ? passwords[i]
+                  : null,
+        );
+        sources.add(source);
+        merger.append(source);
+      }
+      return output.saveSync();
+    } finally {
+      for (final PdfDocument source in sources) {
+        source.dispose();
+      }
+      output.dispose();
+    }
+  }
+
+  /// Merges [documents] — each one the bytes of a PDF file — into a single
+  /// document and returns its bytes.
+  ///
+  /// The asynchronous counterpart of [mergeSync].
+  static Future<List<int>> merge(
+    List<List<int>> documents, {
+    PdfMergeOptions? options,
+    List<String?>? passwords,
+  }) async {
+    final PdfDocument output = PdfDocument();
+    final PdfDocumentMerger merger = PdfDocumentMerger(
+      output,
+      options: options,
+    );
+    final List<PdfDocument> sources = <PdfDocument>[];
+    try {
+      for (int i = 0; i < documents.length; i++) {
+        final PdfDocument source = PdfDocument(
+          inputBytes: documents[i],
+          password:
+              (passwords != null && i < passwords.length)
+                  ? passwords[i]
+                  : null,
+        );
+        sources.add(source);
+        merger.append(source);
+      }
+      return await output.save();
+    } finally {
+      for (final PdfDocument source in sources) {
+        source.dispose();
+      }
+      output.dispose();
     }
   }
 

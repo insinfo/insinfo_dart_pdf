@@ -3,6 +3,7 @@ import '../io/enums.dart';
 import '../io/pdf_constants.dart';
 import '../io/pdf_cross_table.dart';
 import '../io/pdf_main_object_collection.dart';
+import '../merging/pdf_import_context.dart';
 import '../pdf_document/pdf_catalog.dart';
 import '../pdf_document/pdf_document.dart';
 import '../primitives/pdf_dictionary.dart';
@@ -191,13 +192,34 @@ class PdfReferenceHolder implements IPdfPrimitive {
         final PdfName? pageName = dict[type] as PdfName?;
         if (pageName != null) {
           if (pageName.name == 'Page') {
-            return PdfNull();
+            // A merge session may map the page onto one already imported into
+            // the destination document. Outside a merge, `importContext` is
+            // null and the historical behaviour is preserved untouched.
+            final PdfImportContext? context = crossTable.importContext;
+            if (context == null || !context.allowPageClone) {
+              return PdfNull();
+            }
+            return context.mapPageReference(dict) ?? PdfNull();
           }
         }
       }
     }
     if (object is PdfName) {
       return PdfName((object! as PdfName).name);
+    }
+
+    // During a merge, reuse the clone already produced for this object instead
+    // of falling through to the cycle guard below, which would re-adopt the
+    // source object into the destination document.
+    final PdfImportContext? mergeContext = crossTable.importContext;
+    if (mergeContext != null && object != null) {
+      final IPdfPrimitive? cloned = mergeContext.clonedObjects[object!];
+      if (cloned != null) {
+        return PdfReferenceHolder.fromReference(
+          crossTable.getReference(cloned),
+          crossTable,
+        );
+      }
     }
 
     // Resolves circular references.
@@ -223,6 +245,9 @@ class PdfReferenceHolder implements IPdfPrimitive {
       temp = object!.cloneObject(crossTable);
     } else {
       temp = PdfDocumentHelper.getHelper(crossTable.document!).catalog;
+    }
+    if (mergeContext != null && object != null && temp != null) {
+      mergeContext.clonedObjects[object!] = temp;
     }
 
     reference = crossTable.getReference(temp);

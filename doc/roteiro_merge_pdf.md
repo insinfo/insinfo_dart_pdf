@@ -1,7 +1,8 @@
 # Roteiro de Implementação — Merge (Mesclagem) de PDFs
 
-> Alvo: `dart_pdf` v31.1.22 (`c:\MyDartProjects\insinfo_dart_pdf`)
-> Documento de planejamento. Nenhum código foi alterado.
+> Alvo: `dart_pdf` (`c:\MyDartProjects\insinfo_dart_pdf`)
+> **Status: implementado na v31.2.0**, branch `nova`. Ver §9 para o que ficou
+> de fora e §10 para o mapa entre o plano e o código entregue.
 
 ---
 
@@ -657,24 +658,90 @@ bater com a soma esperada.
 ## 8. Ordem de execução — checklist
 
 ```
-[ ] F0  Fixtures + helpers de teste                      0,5d
-[ ] F1  Modo flatten (entrega utilizável)                1,0d   <- primeiro release
-[ ] F2  PdfImportContext + bypass do guard de página     2,5d
-[ ] F3  Importação da página + atributos herdados        1,5d   <- alpha interno
-[ ] F4  Anotações e links                                1,5d
-[ ] F5  AcroForm                                         2,0d
-[ ] F6  Bookmarks e destinos nomeados                    1,5d
-[ ] F7  Catálogo (OCG, PageLabels, Info, XMP)            1,5d
-[ ] F8  Criptografia, assinaturas, PDF/A, xref stream    1,5d
-[ ] F9  API pública, exports, docs, CHANGELOG            0,5d
-[ ] F10 Dedup, variante async, benchmarks                1,0d
-                                                        ------
-                                                        ~15 dias
+[x] F0  Fixtures + helpers de teste                      test/merging/merge_fixtures.dart
+[x] F1  Modo flatten                                     PdfMergeMode.flatten
+[x] F2  PdfImportContext + bypass do guard de página     pdf_import_context.dart
+[x] F3  Importação da página + atributos herdados        pdf_page_importer.dart
+[x] F4  Anotações e links                                pdf_annotation_importer.dart
+[x] F5  AcroForm                                         pdf_form_importer.dart
+[x] F6  Bookmarks                                        pdf_outline_importer.dart
+[x] F7  Catálogo (OCG, PageLabels, Info)                 pdf_catalog_merger.dart
+[x] F8  Assinaturas, xref stream, geometria atípica      política + testes
+[x] F9  API pública, exports, docs, CHANGELOG            PdfDocument.merge*, lib/pdf.dart
+[~] F10 Dedup (feito), async (feito), benchmarks (não)
 ```
 
-Marcos de entrega:
+---
 
-- **M1 (após F1):** merge funcional em modo `flatten`, publicável.
-- **M2 (após F3):** merge estrutural de conteúdo — alpha interno.
-- **M3 (após F6):** paridade com bibliotecas comerciais para o caso comum.
-- **M4 (após F10):** pronto para produção.
+## 9. O que ficou fora desta entrega
+
+| Item | Situação | Motivo |
+|---|---|---|
+| Árvore de marcação estrutural (`/StructTreeRoot`, tagged PDF) | Descartada; `/StructParent` é removido das páginas importadas (`dropStructureTree`, padrão `true`) | Mesclar árvores de marcação exige remapear todo o `/ParentTree`; fora do escopo da v1 |
+| `/Names /Dests` no destino | Não é reconstruído | Destinos nomeados são resolvidos para arrays explícitos no momento do import, então o resultado navega sem precisar da árvore de nomes |
+| `/DR` do AcroForm com nomes em conflito | O recurso do destino vence; a colisão vira warning | Renomear exigiria reescrever todas as strings `/DA` que citam o recurso |
+| Anexos (`/Names /EmbeddedFiles`) | `importAttachments` existe nas opções mas ainda não é honrado | Não implementado |
+| XMP (`/Metadata`) | O do destino é mantido | Mesclar metadados XMP de N documentos não tem semântica óbvia |
+| Documentos criptografados na origem | Funcionam quando a senha é passada na carga (`PdfDocument(inputBytes:, password:)`); sem teste automatizado | Falta fixture criptografada no repositório |
+| Benchmarks | Não escritos | — |
+| Conformidade PDF/A do destino | Não é validada durante o import | A checagem de fontes embutidas existe só no caminho `PdfGraphics` |
+
+**Limitação conhecida:** se o documento de destino receber camadas via
+`document.layers.add()` *depois* de um merge, `PdfLayerCollection` substitui
+`/OCProperties` inteiro e descarta os OCGs importados. Adicione as camadas
+próprias antes de mesclar.
+
+---
+
+## 10. Mapa plano → código
+
+| Fase | Arquivo entregue |
+|---|---|
+| F2 | [pdf_import_context.dart](../lib/src/pdf/implementation/merging/pdf_import_context.dart), campo `PdfCrossTable.importContext`, bypass em [pdf_reference_holder.dart](../lib/src/pdf/implementation/primitives/pdf_reference_holder.dart) |
+| F3 | [pdf_page_importer.dart](../lib/src/pdf/implementation/merging/pdf_page_importer.dart) |
+| F4 | [pdf_annotation_importer.dart](../lib/src/pdf/implementation/merging/pdf_annotation_importer.dart) |
+| F5 | [pdf_form_importer.dart](../lib/src/pdf/implementation/merging/pdf_form_importer.dart) |
+| F6 | [pdf_outline_importer.dart](../lib/src/pdf/implementation/merging/pdf_outline_importer.dart) |
+| F7 | [pdf_catalog_merger.dart](../lib/src/pdf/implementation/merging/pdf_catalog_merger.dart) |
+| F1/F8/F9 | [pdf_document_merger.dart](../lib/src/pdf/implementation/merging/pdf_document_merger.dart), [pdf_merge_options.dart](../lib/src/pdf/implementation/merging/pdf_merge_options.dart), `PdfDocument.mergeSync`/`merge`/`appendDocument`/`importPage`/`importPageRange` |
+| Testes | [test/merging/](../test/merging/) — 53 testes em 8 arquivos |
+| Exemplo | [example1/bin/merge_documents.dart](../example1/bin/merge_documents.dart) |
+
+### Desvios em relação ao plano
+
+1. **Sem mecanismo de pendências (`PendingReference`).** O plano previa
+   reinjetar chaves descartadas pelo filtro de `PdfNull`. Na implementação o
+   import roda em **duas passagens** — todas as páginas do intervalo primeiro,
+   anotações e bookmarks depois —, então o `pageMap` já está completo quando
+   uma referência de página é resolvida. Referências para fora do intervalo
+   continuam virando `PdfNull`, e são detectadas e removidas explicitamente em
+   `_dropBrokenDestinations`.
+
+2. **Memo de clone explícito no contexto.** Além do bypass do guard de página,
+   `PdfReferenceHolder.cloneObject` passou a consultar
+   `PdfImportContext.clonedObjects` **antes** do guard de ciclo
+   (`prevReference`). Sem isso, o segundo encontro com um objeto compartilhado
+   (uma fonte usada por duas páginas) caía no ramo "circular" e **adotava o
+   objeto de origem** dentro do documento de destino. O memo faz o clone ser
+   reaproveitado — é o que garante a deduplicação verificada em
+   `merge_content_test.dart`.
+
+3. **Bookmarks reconstruídos pelo modelo público, não clonados.**
+   `PdfBookmarkBase` é dono de `/First`, `/Last`, `/Prev`, `/Next` e `/Count` e
+   os reescreve ao salvar, então uma árvore enxertada à mão seria sobrescrita.
+   O importador percorre a árvore de origem e recria cada nó com
+   `PdfBookmarkBase.add`. Isso expôs um bug: `add` aceitava `destination`,
+   `color`, `textStyle` e `isExpanded` mas nunca os repassava ao construtor —
+   corrigido nesta entrega.
+
+4. **Hierarquia de campos achatada.** Em vez de preservar a árvore de campos,
+   cada campo terminal é recriado no topo de `/AcroForm /Fields` com o nome
+   totalmente qualificado em `/T`. Campos com vários widgets (grupos de rádio,
+   campos que atravessam páginas) continuam agrupados sob um único campo via
+   `/Kids`.
+
+5. **Destino carregado usa `pages.insert`; destino novo usa seções.**
+   `PdfPageCollection.insert` só funciona em documento carregado (depende de
+   `_crossTable`). Para um `PdfDocument()` novo, cada página importada ganha
+   uma `PdfSection` própria com as dimensões da origem — é o que permite
+   preservar tamanho por página.
