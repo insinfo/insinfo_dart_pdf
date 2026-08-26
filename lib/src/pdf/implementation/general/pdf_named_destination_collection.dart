@@ -172,34 +172,31 @@ class PdfNamedDestinationCollection implements IPdfWrapper {
             )
             as PdfArray?;
     if (elements != null) {
-      for (int i = 1; i <= elements.count; i = i + 2) {
-        PdfReferenceHolder? reference;
-        if (elements[i] is PdfReferenceHolder) {
-          reference = elements[i]! as PdfReferenceHolder;
-        }
+      // The array pairs a name with its destination, so the last usable index
+      // is count - 1; stopping at count would read past the end of a malformed
+      // tree with an odd number of entries.
+      for (int i = 1; i < elements.count; i = i + 2) {
+        final IPdfPrimitive? value = elements[i];
+        final PdfReferenceHolder? reference =
+            value is PdfReferenceHolder ? value : null;
+        final IPdfPrimitive? target =
+            reference != null ? reference.object : value;
         PdfDictionary? dictionary;
-        if (reference != null && reference.object is PdfArray) {
+        if (target is PdfArray) {
+          // An explicit destination: wrap the array the way a destination
+          // dictionary would carry it.
           dictionary = PdfDictionary();
-          dictionary.setProperty(
-            PdfDictionaryProperties.d,
-            PdfArray(reference.object as PdfArray?),
-          );
-        } else if (reference == null && elements[i] is PdfArray) {
-          dictionary = PdfDictionary();
-          final PdfArray referenceArray = elements[i]! as PdfArray;
-          dictionary.setProperty(
-            PdfDictionaryProperties.d,
-            PdfArray(referenceArray),
-          );
-        } else {
-          dictionary = reference!.object as PdfDictionary?;
+          dictionary.setProperty(PdfDictionaryProperties.d, PdfArray(target));
+        } else if (target is PdfDictionary) {
+          // A destination dictionary, either referenced or written inline.
+          dictionary = target;
         }
         if (dictionary != null) {
           final PdfNamedDestination namedDestinations =
               PdfNamedDestinationHelper.load(dictionary, _crossTable, true);
-          final PdfString? title = elements[i - 1] as PdfString?;
-          if (title != null) {
-            namedDestinations.title = title.value!;
+          final IPdfPrimitive? name = elements[i - 1];
+          if (name is PdfString && name.value != null) {
+            namedDestinations.title = name.value!;
           }
           _namedCollections.add(namedDestinations);
         }

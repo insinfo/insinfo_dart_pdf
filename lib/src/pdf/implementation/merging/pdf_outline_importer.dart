@@ -56,7 +56,20 @@ class PdfOutlineImporter {
 
   /// Re-targets a bookmark destination at the imported copy of its page.
   PdfDestination? _mapDestination(PdfBookmark item) {
-    final PdfDestination? source = item.destination;
+    PdfDestination? source;
+    try {
+      source = item.destination;
+    } catch (error) {
+      // Resolving a destination walks the name tree of the source document,
+      // which can be malformed in ways the reader does not survive. A bookmark
+      // that cannot say where it points is worth importing without a target;
+      // it is not worth losing the merge over.
+      context.addWarning(
+        'Bookmark "${item.title}" has a destination that could not be read '
+        '($error); it was imported without one.',
+      );
+      return null;
+    }
     if (source == null) {
       return null;
     }
