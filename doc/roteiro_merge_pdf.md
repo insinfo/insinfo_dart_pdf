@@ -638,9 +638,10 @@ replicar a checagem no importador.
 | Formulários | `test/merging/merge_forms_test.dart` | colisão de nomes, `/DR`, valores após reabrir |
 | Outlines | `test/merging/merge_outlines_test.dart` | árvore combinada, destinos nomeados |
 | Camadas | `test/merging/merge_layers_test.dart` | OCGs preservados e independentes |
-| Robustez | `test/merging/merge_edge_cases_test.dart` | criptografado, xref stream, CropBox deslocado, PDF/A |
-| Assinaturas | `test/merging/merge_signed_test.dart` | políticas `reject` e `stripSignatures` |
+| Robustez e assinaturas | `test/merging/merge_edge_cases_test.dart` | PDFs reais, rotação, MediaBox herdado, e as três chaves de assinatura com sua precedência |
 | Round-trip | `test/merging/merge_roundtrip_test.dart` | merge → salvar → recarregar → merge de novo |
+| Corpus | `test/merging/merge_corpus_test.dart` | varredura dos 54 PDFs de `test/assets`: estrutura, geometria, texto, assinaturas, corpus inteiro em um documento |
+| Documentos reais | `test/merging/merge_real_documents_test.dart` | outline de `paginador.pdf`, formulário de 63 campos de `sample3.pdf`, anotações de `termo.pdf`, arquivos com 5–12 assinaturas, modo flatten |
 | Perf | `benchmarks/merge_benchmark.dart` | 50×10 páginas |
 
 **Invariante geral de todos os testes:** o PDF de saída deve ser recarregável
@@ -721,7 +722,7 @@ próprias antes de mesclar.
 | F6 | [pdf_outline_importer.dart](../lib/src/pdf/implementation/merging/pdf_outline_importer.dart) |
 | F7 | [pdf_catalog_merger.dart](../lib/src/pdf/implementation/merging/pdf_catalog_merger.dart) |
 | F1/F8/F9 | [pdf_document_merger.dart](../lib/src/pdf/implementation/merging/pdf_document_merger.dart), [pdf_merge_options.dart](../lib/src/pdf/implementation/merging/pdf_merge_options.dart), `PdfDocument.mergeSync`/`merge`/`appendDocument`/`importPage`/`importPageRange` |
-| Testes | [test/merging/](../test/merging/) — 53 testes em 8 arquivos |
+| Testes | [test/merging/](../test/merging/) — 270 testes em 10 arquivos, incluindo varredura dos 54 PDFs de `test/assets` |
 | Exemplo | [example1/bin/merge_documents.dart](../example1/bin/merge_documents.dart) |
 
 ### Desvios em relação ao plano

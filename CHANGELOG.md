@@ -43,8 +43,15 @@
 - Fix `PdfBookmarkBase.add`, which accepted `destination`, `namedDestination`,
   `action`, `color`, `textStyle` and `isExpanded` but silently discarded them.
   They are now applied to the created bookmark.
+- Fix `PdfNamedDestinationCollection`, which threw a null check error while
+  reading a name tree whose destination is written inline as a dictionary
+  rather than as an indirect reference or an explicit array — a valid shape
+  that `gov_assinado.pdf` in the test corpus uses. Reading
+  `PdfDocument.namedDestinationCollection`, or any bookmark targeting a named
+  destination, crashed on such documents. The reader now accepts every form
+  the name tree may take, tolerates a non string key, and no longer reads past
+  the end of an array with an odd number of entries.
 
-## 31.1.22
 
 - Fix validation of legacy PDF signatures using `/adbe.pkcs7.sha1`
   (ISO 32000-1 §12.8.3.3). These signatures are encapsulated, not detached: the
