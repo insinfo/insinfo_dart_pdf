@@ -1,0 +1,42 @@
+# Binary assets must be stored byte for byte.
+#
+# Git guesses whether a file is text by looking for a NUL byte near the start.
+# A PDF whose header happens to carry none is guessed wrong, and on a Windows
+# checkout (core.autocrlf=true) every CR in it is then rewritten — silently
+# corrupting a fixture whose exact bytes are the point. That is how
+# test/merging/assets/sei_source_signed_invisible.pdf lost 11 of its 20643
+# bytes, which only surfaced when a checksum test ran on Linux CI.
+
+*.pdf   binary
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+
+# Key stores and DER encoded material: binary by definition.
+*.pfx   binary
+*.p12   binary
+*.jks   binary
+*.bks   binary
+*.der   binary
+
+# Certificates and keys in this repository are PEM, which is text. Pinning the
+# line ending keeps them byte stable across platforms without treating them as
+# opaque blobs.
+*.crt   text eol=lf
+*.cer   text eol=lf
+*.key   text eol=lf
+*.pem   text eol=lf
+
+# Sources and configuration keep LF in the repository.
+*.dart  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+.gitattributes text eol=lf
+.gitignore     text eol=lf
