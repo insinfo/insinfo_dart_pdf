@@ -48,6 +48,10 @@ class PdfFormImporter {
   /// panel at all.
   bool _importedSignatureField = false;
 
+  /// Sources whose widget-less fields have already been swept in, so importing
+  /// two page ranges of the same document does not duplicate them.
+  final Set<PdfDocument> _sweptSources = Set<PdfDocument>.identity();
+
   /// Adds [widgets] — source widget dictionary mapped to its clone — to the
   /// destination form.
   void importWidgets(
@@ -96,6 +100,118 @@ class PdfFormImporter {
       fields.add(PdfReferenceHolder(field));
     }
     _mergeFormDefaults(acroForm, source);
+  }
+
+  /// Imports the fields of [source] that no page widget led to.
+  ///
+  /// A field is normally found through the widget annotation that shows it on
+  /// a page, but `/AcroForm /Fields` may hold fields with no widget at all: a
+  /// hidden data field, or — as documents produced by the SEI process system
+  /// show — a signature whose widget was dropped from `/Annots` by an earlier
+  /// merge. Those fields carry values and certificates, so they are swept in
+  /// separately once every page of the source has been imported.
+  void importOrphanFields(PdfDocument source) {
+    if (!context.options.importFormFields || !_sweptSources.add(source)) {
+      return;
+    }
+    final PdfDictionary? sourceForm = _sourceAcroForm(source);
+    if (sourceForm == null) {
+      return;
+    }
+    final IPdfPrimitive? sourceFields = PdfCrossTable.dereference(
+      sourceForm[PdfDictionaryProperties.fields],
+    );
+    if (sourceFields is! PdfArray) {
+      return;
+    }
+    final List<PdfDictionary> orphans =
+        _terminalFieldsOf(sourceFields)
+            .where((PdfDictionary f) => !_importedFields.containsKey(f))
+            .toList();
+    if (orphans.isEmpty) {
+      return;
+    }
+    final PdfDictionary acroForm = _destinationAcroForm();
+    final PdfArray fields = _fieldsArray(acroForm);
+    _takenNames ??= _collectNames(fields);
+    for (final PdfDictionary orphan in orphans) {
+      if (_isSignatureField(orphan) &&
+          !context.options.keepInvalidSignatures) {
+        // Dropped for the same reason as the signatures that did have a
+        // widget: merging invalidated them.
+        continue;
+      }
+      final String? name = _resolveName(_qualifiedName(orphan));
+      if (name == null) {
+        continue;
+      }
+      final PdfDictionary seed = PdfDictionary(orphan);
+      seed.remove(PdfDictionaryProperties.parent);
+      seed.remove(PdfDictionaryProperties.kids);
+      seed.remove(PdfDictionaryProperties.t);
+      // The field has no page to belong to; a stale /P would drag the source
+      // page into the destination.
+      seed.remove(PdfDictionaryProperties.p);
+      final PdfDictionary field = pageImporter.clone(
+        seed,
+        allowPageClone: true,
+      );
+      _materializeInherited(orphan, field);
+      field[PdfDictionaryProperties.t] = PdfString(name);
+      field.remove(PdfDictionaryProperties.parent);
+      field.remove(PdfDictionaryProperties.p);
+      field.modify();
+      _importedFields[orphan] = field;
+      _importedSignatureField |= _isSignatureField(field);
+      fields.add(PdfReferenceHolder(field));
+    }
+    _mergeFormDefaults(acroForm, source);
+  }
+
+  /// The terminal fields of a `/Fields` array: the nodes that name a field and
+  /// have no field children of their own. A `/Kids` entry without `/T` is a
+  /// widget, not a nested field.
+  List<PdfDictionary> _terminalFieldsOf(PdfArray nodes) {
+    final List<PdfDictionary> terminals = <PdfDictionary>[];
+    final Set<PdfDictionary> visited = <PdfDictionary>{};
+    void walk(PdfArray current) {
+      for (int i = 0; i < current.count; i++) {
+        final IPdfPrimitive? node = PdfCrossTable.dereference(current[i]);
+        if (node is! PdfDictionary || !visited.add(node)) {
+          continue;
+        }
+        final IPdfPrimitive? kids = PdfCrossTable.dereference(
+          node[PdfDictionaryProperties.kids],
+        );
+        if (kids is PdfArray && _hasFieldChildren(kids)) {
+          walk(kids);
+        } else {
+          terminals.add(node);
+        }
+      }
+    }
+
+    walk(nodes);
+    return terminals;
+  }
+
+  bool _hasFieldChildren(PdfArray kids) {
+    for (int i = 0; i < kids.count; i++) {
+      final IPdfPrimitive? kid = PdfCrossTable.dereference(kids[i]);
+      if (kid is PdfDictionary && kid.containsKey(PdfDictionaryProperties.t)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  PdfDictionary? _sourceAcroForm(PdfDocument source) {
+    final IPdfPrimitive? form = PdfCrossTable.dereference(
+      PdfDocumentHelper.getHelper(
+        source,
+      ).catalog[PdfDictionaryProperties.acroForm],
+    );
+    return form is PdfDictionary ? form : null;
   }
 
   /// Creates the destination field for one group, or `null` when the name
@@ -355,12 +471,8 @@ class PdfFormImporter {
   /// Carries `/DR`, `/DA`, `/Q` and `/NeedAppearances` over from the source
   /// form.
   void _mergeFormDefaults(PdfDictionary acroForm, PdfDocument source) {
-    final IPdfPrimitive? sourceForm = PdfCrossTable.dereference(
-      PdfDocumentHelper.getHelper(
-        source,
-      ).catalog[PdfDictionaryProperties.acroForm],
-    );
-    if (sourceForm is! PdfDictionary) {
+    final PdfDictionary? sourceForm = _sourceAcroForm(source);
+    if (sourceForm == null) {
       return;
     }
     _mergeDefaultResources(acroForm, sourceForm);

@@ -40,6 +40,12 @@
 - Objects shared inside a source document — a font program, an image, a
   resource dictionary — are cloned once and shared by the imported pages
   instead of being duplicated per page.
+- Import form fields that no page widget leads to. `/AcroForm /Fields` may hold
+  a field with no widget annotation — a hidden data field, or a signature whose
+  widget was dropped from `/Annots` by an earlier merge, the shape documents
+  exported by the SEI process system have. Such fields carry values and
+  certificates and were previously lost, since fields were discovered only
+  through the widgets found on the imported pages.
 - Fix `PdfBookmarkBase.add`, which accepted `destination`, `namedDestination`,
   `action`, `color`, `textStyle` and `isExpanded` but silently discarded them.
   They are now applied to the created bookmark.

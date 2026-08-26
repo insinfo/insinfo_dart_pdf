@@ -220,6 +220,7 @@ class PdfDocumentMerger {
       widgets.addAll(result.widgets);
     }
     _formImporter.importWidgets(widgets, source);
+    _formImporter.importOrphanFields(source);
     _outlineImporter.import(source);
     _catalogMerger.importOptionalContent(source);
     _catalogMerger.importPageLabels(source, destinationOffset);
