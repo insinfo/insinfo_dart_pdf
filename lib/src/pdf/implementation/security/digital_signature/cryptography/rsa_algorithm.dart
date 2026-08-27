@@ -4,6 +4,7 @@ import '../asn1/asn1.dart';
 import 'cipher_block_chaining_mode.dart';
 import 'ipadding.dart';
 import 'signature_utilities.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class RsaAlgorithm implements ICipherBlock {
@@ -65,7 +66,7 @@ class RsaAlgorithm implements ICipherBlock {
     final int cmp = min.compareTo(max);
     if (cmp >= 0) {
       if (cmp > 0) {
-        throw ArgumentError.value('Invalid range');
+        throw PdfFormatException('Invalid range');
       }
       return min;
     }
@@ -108,7 +109,7 @@ class _RsaCoreAlgorithm {
   //Implementation
   void initialize(bool isEncryption, ICipherParameter? parameters) {
     if (parameters is! RsaKeyParam) {
-      throw ArgumentError.value(parameters, 'parameters', 'Invalid RSA key');
+      throw PdfFormatException('Invalid RSA key', source: parameters);
     }
     _key = parameters;
     _isEncryption = isEncryption;
@@ -118,14 +119,14 @@ class _RsaCoreAlgorithm {
   BigInt convertInput(List<int> bytes, int offset, int length) {
     final int maxLength = (_bitSize + 7) ~/ 8;
     if (length > maxLength) {
-      throw ArgumentError.value(length, 'length', 'Invalid length in inputs');
+      throw PdfFormatException('Invalid length in inputs', source: length);
     }
     final BigInt input = bigIntFromBytes(
       bytes.sublist(offset, offset + length),
       1,
     );
     if (input.compareTo(_key.modulus!) >= 0) {
-      throw ArgumentError.value(length, 'length', 'Invalid length in inputs');
+      throw PdfFormatException('Invalid length in inputs', source: length);
     }
     return input;
   }

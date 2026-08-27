@@ -27,6 +27,7 @@ import 'pdf_archive_stream.dart';
 import 'pdf_constants.dart';
 import 'pdf_main_object_collection.dart';
 import 'pdf_writer.dart';
+import 'pdf_format_exception.dart';
 
 /// PDFCrossTable is responsible for intermediate level parsing and
 /// savingof a PDF document.
@@ -183,7 +184,7 @@ class PdfCrossTable {
   PdfDocument? get document => _pdfDocument;
   set document(PdfDocument? document) {
     if (document == null) {
-      throw ArgumentError('Document');
+      throw PdfFormatException('Document');
     }
     _pdfDocument = document;
     items = PdfDocumentHelper.getHelper(_pdfDocument!).objects;
@@ -1659,7 +1660,7 @@ class PdfCrossTable {
 
         // ignore: no_default_cases
         default:
-          throw ArgumentError('Internal error: Undefined object type.');
+          throw StateError('Internal error: Undefined object type.');
       }
     }
   }
@@ -1699,7 +1700,7 @@ class PdfCrossTable {
 
         // ignore: no_default_cases
         default:
-          throw ArgumentError('Internal error: Undefined object type.');
+          throw StateError('Internal error: Undefined object type.');
       }
     }
   }

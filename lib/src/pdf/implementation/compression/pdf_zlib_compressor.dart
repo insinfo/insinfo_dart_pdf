@@ -1,6 +1,7 @@
 import '../pdf_document/enums.dart';
 import 'compressed_stream_reader.dart';
 import 'deflate/deflate_stream.dart';
+import '../io/pdf_format_exception.dart';
 
 /// internal class
 class PdfZlibCompressor {
@@ -87,11 +88,7 @@ class PdfAscii85Compressor {
       switch (c) {
         case 'z':
           if (count != 0) {
-            throw ArgumentError.value(
-              c,
-              'c',
-              'The character "z" is invalid inside an ASCII85 block.',
-            );
+            throw PdfFormatException('The character "z" is invalid inside an ASCII85 block.', source: c);
           }
           _decodedBlock = List<int>.filled(4, 0, growable: true);
           for (int i = 0; i < _decodedBlock.length; i++) {

@@ -49,7 +49,9 @@ void main() {
             () => PdfExternalSigning.extractByteRange(bytes),
             throwsA(
               predicate(
-                (e) => e is StateError && e.message == 'ByteRange not found',
+                (e) =>
+                    e is PdfFormatException &&
+                    e.message == 'ByteRange not found',
               ),
             ),
             reason: 'Expected ByteRange not found for ${file.path}',

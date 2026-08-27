@@ -1,5 +1,6 @@
 import '../asn1/asn1.dart';
 import '../asn1/der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class X509Time extends Asn1Encode {
@@ -19,7 +20,7 @@ class X509Time extends Asn1Encode {
     } else if (obj is GeneralizedTime) {
       result = X509Time(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }
@@ -36,7 +37,7 @@ class X509Time extends Asn1Encode {
         result = DateTime.now();
       }
     } catch (e) {
-      throw ArgumentError.value(result, 'DateTime', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: result);
     }
     return result;
   }

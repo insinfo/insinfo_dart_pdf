@@ -6,6 +6,7 @@ import 'asn1.dart';
 import 'asn1_parser.dart';
 import 'ber.dart';
 import 'der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class Asn1Stream {
@@ -179,11 +180,7 @@ class Asn1Stream {
       final int length = getLength(_stream!, _limit);
       if (length < 0) {
         if (!isConstructed) {
-          throw ArgumentError.value(
-            length,
-            'length',
-            'Encodeing length is invalid',
-          );
+          throw PdfFormatException('Encodeing length is invalid', source: length);
         }
         final Asn1Parser sp = Asn1Parser(
           Asn1LengthStream(_stream, _limit),
@@ -198,11 +195,7 @@ class Asn1Stream {
           case Asn1Tags.sequence:
             return BerSequenceHelper(sp).getAsn1();
           default:
-            throw ArgumentError.value(
-              tagNumber,
-              'tag',
-              'Invalid object in the sequence',
-            );
+            throw PdfFormatException('Invalid object in the sequence', source: tagNumber);
         }
       } else {
         return buildObject(tag, tagNumber, length);
@@ -210,7 +203,7 @@ class Asn1Stream {
     } else if (tag < 0) {
       return null;
     } else if (tag == 0) {
-      throw ArgumentError.value(tag, 'tag', 'End of contents is invalid');
+      throw PdfFormatException('End of contents is invalid', source: tag);
     }
     return null;
   }
@@ -326,7 +319,7 @@ class Asn1StreamHelper extends Asn1BaseStream {
     }
     final int result = input!.readByte()!;
     if (result < 0) {
-      throw ArgumentError.value(result, 'result', 'Invalid length in bytes');
+      throw PdfFormatException('Invalid length in bytes', source: result);
     }
     _remaining -= 1;
     if (_remaining == 0) {
@@ -343,7 +336,7 @@ class Asn1StreamHelper extends Asn1BaseStream {
     }
     final int count = super.read(bytes, offset, min(length, _remaining));
     if (count < 1) {
-      throw ArgumentError.value(count, 'count', 'Object truncated');
+      throw PdfFormatException('Object truncated', source: count);
     }
     if ((_remaining -= count) == 0) {
       setParentEndOfFileDetect(true);
@@ -358,7 +351,7 @@ class Asn1StreamHelper extends Asn1BaseStream {
     }
     final List<int> bytes = List<int>.generate(_remaining, (int i) => 0);
     if ((_remaining -= readData(bytes, 0, bytes.length)) != 0) {
-      throw ArgumentError.value(bytes, 'bytes', 'Object truncated');
+      throw PdfFormatException('Object truncated', source: bytes);
     }
     setParentEndOfFileDetect(true);
     return bytes;
@@ -367,10 +360,10 @@ class Asn1StreamHelper extends Asn1BaseStream {
   /// internal method
   void readAll(List<int> bytes) {
     if (_remaining != bytes.length) {
-      throw ArgumentError.value(bytes, 'bytes', 'Invalid length in bytes');
+      throw PdfFormatException('Invalid length in bytes', source: bytes);
     }
     if ((_remaining -= readData(bytes, 0, bytes.length)) != 0) {
-      throw ArgumentError.value(bytes, 'bytes', 'Object truncated');
+      throw PdfFormatException('Object truncated', source: bytes);
     }
     setParentEndOfFileDetect(true);
   }
@@ -407,7 +400,7 @@ class Asn1LengthStream extends Asn1BaseStream {
   int requireByte() {
     final int value = input!.readByte()!;
     if (value < 0) {
-      throw ArgumentError.value(value, 'value', 'Invalid data in stream');
+      throw PdfFormatException('Invalid data in stream', source: value);
     }
     return value;
   }

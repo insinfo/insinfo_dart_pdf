@@ -47,7 +47,7 @@ class PdfCryptoUtils {
       return _rsaPrivateKeyFromPkcs8Der(decrypted);
     }
 
-    throw ArgumentError('Unsupported private key PEM format.');
+    throw UnsupportedError('Unsupported private key PEM format.');
   }
 
   /// Parses an EC private key from PEM and returns the internal key type.
@@ -81,7 +81,7 @@ class PdfCryptoUtils {
       return _ecPrivateKeyFromPkcs8Der(decrypted);
     }
 
-    throw ArgumentError('Unsupported private key PEM format.');
+    throw UnsupportedError('Unsupported private key PEM format.');
   }
 
   /// Decodes a certificate PEM into its DER bytes.
@@ -182,7 +182,7 @@ class PdfCryptoUtils {
     // PBKDF2-params ::= SEQUENCE { salt OCTET STRING, iterationCount INTEGER, keyLength INTEGER OPTIONAL, prf AlgorithmIdentifier DEFAULT hmacWithSHA1 }
     final Asn1? saltAsn1 = pbkdf2ParamsAsn1[0]?.getAsn1();
     if (saltAsn1 is! DerOctet) {
-      throw ArgumentError('Unsupported PBKDF2 salt type (expected OCTET STRING).');
+      throw UnsupportedError('Unsupported PBKDF2 salt type (expected OCTET STRING).');
     }
     final Uint8List salt = Uint8List.fromList(saltAsn1.getOctets() ?? const <int>[]);
     final int iterations = _requireDerInteger(pbkdf2ParamsAsn1[1]).positiveValue.toInt();
@@ -211,7 +211,7 @@ class PdfCryptoUtils {
     final DerObjectID? encOid = DerObjectID.getID(encScheme[0]);
     final Asn1? ivAsn1 = encScheme.count >= 2 ? encScheme[1]?.getAsn1() : null;
     if (encOid?.id == null || ivAsn1 is! DerOctet) {
-      throw ArgumentError('Unsupported PBES2 encryption scheme.');
+      throw UnsupportedError('Unsupported PBES2 encryption scheme.');
     }
 
     final ({int keyBytes, String oid}) cipher = _aesKeyLengthForOid(encOid!.id!);
@@ -285,7 +285,7 @@ class PdfCryptoUtils {
       case '2.16.840.1.101.3.4.1.42':
         return (keyBytes: 32, oid: oid); // aes-256-cbc
     }
-    throw ArgumentError('Unsupported PBES2 AES cipher OID: $oid');
+    throw UnsupportedError('Unsupported PBES2 AES cipher OID: $oid');
   }
 
   static RsaPrivateKeyParam _rsaPrivateKeyFromPkcs8Der(Uint8List der) {
@@ -393,9 +393,7 @@ class PdfCryptoUtils {
     }
 
     if (curveOid == null) {
-      throw ArgumentError(
-        'Unsupported EC private key: missing named curve OID. Provide a PKCS#8 key with named curve parameters.',
-      );
+      throw UnsupportedError('Unsupported EC private key: missing named curve OID. Provide a PKCS#8 key with named curve parameters.');
     }
 
     final String domainName = _ecDomainNameForOid(curveOid);
@@ -416,7 +414,7 @@ class PdfCryptoUtils {
       case '1.3.132.0.35':
         return 'secp521r1';
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported named curve OID');
+    throw UnsupportedError('Unsupported named curve OID');
   }
 
   static RsaPrivateKeyParam _rsaPrivateKeyFromPkcs1Der(Uint8List der) {

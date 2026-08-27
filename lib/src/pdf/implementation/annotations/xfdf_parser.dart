@@ -24,6 +24,7 @@ import '../primitives/pdf_string.dart';
 import 'enum.dart';
 import 'json_parser.dart';
 import 'pdf_annotation.dart';
+import '../io/pdf_format_exception.dart';
 
 /// The class provides methods and properties to handle the loaded annotations from the existing PDF document for Xfdf export and import.
 class XfdfParser {
@@ -34,11 +35,7 @@ class XfdfParser {
     final String xmlString = utf8.decode(data);
     _xmlDocument = XmlDocument.parse(xmlString);
     if (_xmlDocument.rootElement.localName.toLowerCase() != 'xfdf') {
-      throw ArgumentError.value(
-        _xmlDocument.rootElement.localName,
-        'xmlString',
-        'Invalid XFDF data',
-      );
+      throw PdfFormatException('Invalid XFDF data', source: _xmlDocument.rootElement.localName);
     }
   }
 

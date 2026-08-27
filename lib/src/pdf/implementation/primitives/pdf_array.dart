@@ -51,6 +51,15 @@ class PdfArray implements IPdfPrimitive, IPdfChangable {
   /// internal property
   IPdfPrimitive? operator [](int index) => _getElement(index);
   IPdfPrimitive? _getElement(int index) {
+    // Arrays read from a file are often shorter than the structure that names
+    // them requires — a `/MediaBox` with three numbers, a `/ByteRange` with
+    // two. Callers index those by position, so a short array would surface as
+    // a RangeError, which reads as a bug in the caller rather than as damage
+    // in the document. Reporting the missing element as absent lets the
+    // reading code decide, and it already handles null everywhere.
+    if (index < 0 || index >= elements.length) {
+      return null;
+    }
     return elements[index];
   }
 

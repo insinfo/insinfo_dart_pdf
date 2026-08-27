@@ -1,4 +1,5 @@
 import 'in_buffer.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// internal class
 class HuffmanTree {
@@ -106,7 +107,7 @@ class HuffmanTree {
         if (len <= _tBits) {
           final int i = 1 << len;
           if (start >= i) {
-            throw ArgumentError.value('Invalid Data.');
+            throw PdfFormatException('Invalid Data.');
           }
           final int l = 1 << (_tBits - len);
           for (int j = 0; j < l; j++) {
@@ -126,7 +127,7 @@ class HuffmanTree {
               avail++;
             }
             if (value > 0) {
-              throw ArgumentError.value('Invalid Data.');
+              throw PdfFormatException('Invalid Data.');
             }
             if ((start & bitMask) == 0) {
               array = _left!;
@@ -164,7 +165,7 @@ class HuffmanTree {
     }
     final int codeLength = _clArray[symbol];
     if (codeLength <= 0) {
-      throw ArgumentError.value('Invalid Data.');
+      throw PdfFormatException('Invalid Data.');
     }
     if (codeLength > input.bits) {
       return -1;

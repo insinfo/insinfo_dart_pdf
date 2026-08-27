@@ -71,9 +71,13 @@ class PdfPageCollection {
           PdfDocumentHelper.getHelper(
             _helper.document!,
           ).catalog[PdfDictionaryProperties.pages];
-      final PdfDictionary? node =
-          PdfCrossTable.dereference(obj) as PdfDictionary?;
-      if (node != null) {
+      // A damaged file can leave `/Pages` pointing at an object that is not
+      // there, which dereferences to PdfNull rather than to a node. A cast
+      // would turn that into a TypeError — a defect report for what is only a
+      // broken document. It has no pages, and saying so lets the caller carry
+      // on.
+      final IPdfPrimitive? node = PdfCrossTable.dereference(obj);
+      if (node is PdfDictionary) {
         tempCount = _getNodeCount(node);
       }
       return tempCount;

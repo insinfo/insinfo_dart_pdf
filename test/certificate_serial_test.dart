@@ -59,13 +59,13 @@ void main() {
     });
 
     test('invalid input throws', () {
-      expect(() => CertificateSerial.fromHex('0x'), throwsArgumentError);
-      expect(() => CertificateSerial.fromHex('0xZZ'), throwsArgumentError);
-      expect(() => CertificateSerial.fromDecimal('-1'), throwsArgumentError);
-      expect(() => normalizeSerialToHex(''), throwsArgumentError);
+      expect(() => CertificateSerial.fromHex('0x'), throwsA(isA<PdfFormatException>()));
+      expect(() => CertificateSerial.fromHex('0xZZ'), throwsA(isA<PdfFormatException>()));
+      expect(() => CertificateSerial.fromDecimal('-1'), throwsA(isA<PdfFormatException>()));
+      expect(() => normalizeSerialToHex(''), throwsA(isA<PdfFormatException>()));
       expect(
         () => CertificateSerial.fromDerInteger(Uint8List(0)),
-        throwsArgumentError,
+        throwsA(isA<PdfFormatException>()),
       );
     });
   });

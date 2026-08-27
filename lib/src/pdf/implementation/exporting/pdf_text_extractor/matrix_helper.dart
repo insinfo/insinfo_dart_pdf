@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:dart_pdf/src/vector/ui.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// internal class
 class MatrixHelper {
@@ -124,7 +125,7 @@ class MatrixHelper {
     } else if (typeIndex == 4) {
       return MatrixTypes.unknown;
     } else {
-      throw ArgumentError.value(typeIndex, 'typeIndex', 'Invalid Type');
+      throw PdfFormatException('Invalid Type', source: typeIndex);
     }
   }
 

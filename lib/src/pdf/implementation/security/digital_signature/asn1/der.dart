@@ -5,6 +5,7 @@ import '../cryptography/signature_utilities.dart';
 import 'asn1.dart';
 import 'asn1_parser.dart';
 import 'asn1_stream.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class IAsn1String {
@@ -76,7 +77,7 @@ class DerAsciiString extends DerString {
   /// internal constructor
   DerAsciiString(String value, bool isValid) {
     if (isValid && !isAsciiString(value)) {
-      throw ArgumentError.value(value, 'value', 'Invalid characters found');
+      throw PdfFormatException('Invalid characters found', source: value);
     }
     _value = value;
   }
@@ -260,7 +261,7 @@ class DerBitString extends DerString {
     } else if (obj is DerBitString) {
       return obj;
     }
-    throw ArgumentError.value(obj, 'object', 'Invalid Entry');
+    throw PdfFormatException('Invalid Entry', source: obj);
   }
 
   /// internal method
@@ -374,7 +375,7 @@ class DerBoolean extends Asn1 {
   /// internal constructor
   DerBoolean.fromBytes(List<int> bytes) {
     if (bytes.length != 1) {
-      throw ArgumentError.value(bytes, 'bytes', 'Invalid length in bytes');
+      throw PdfFormatException('Invalid length in bytes', source: bytes);
     }
     _value = bytes[0];
   }
@@ -422,7 +423,7 @@ class DerInteger extends Asn1 {
   /// internal constructor
   DerInteger.fromNumber(BigInt? value) {
     if (value == null) {
-      throw ArgumentError.value(value, 'value', 'Invalid value');
+      throw PdfFormatException('Invalid value', source: value);
     }
     intValue = bigIntToBytes(value);
   }
@@ -471,7 +472,7 @@ class DerInteger extends Asn1 {
     if (obj == null || obj is DerInteger) {
       return obj as DerInteger?;
     }
-    throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+    throw PdfFormatException('Invalid entry', source: obj);
   }
 
   /// internal method
@@ -519,7 +520,7 @@ class DerObjectID extends Asn1 {
   /// internal constructor
   DerObjectID(this.id) {
     if (!isValidIdentifier(id!)) {
-      throw ArgumentError.value(id, 'id', 'Invalid ID');
+      throw PdfFormatException('Invalid ID', source: id);
     }
   }
 
@@ -532,7 +533,7 @@ class DerObjectID extends Asn1 {
   /// internal constructor
   DerObjectID.fromBranch(DerObjectID id, String branchId) {
     if (!isValidBranchID(branchId, 0)) {
-      throw ArgumentError.value(id, 'id', 'Invalid ID');
+      throw PdfFormatException('Invalid ID', source: id);
     }
     this.id = '${id.id!}.$branchId';
   }
@@ -645,7 +646,7 @@ class DerObjectID extends Asn1 {
     } else if (obj is List<int>) {
       return fromOctetString(obj);
     }
-    throw ArgumentError.value(obj, 'obj', 'Illegal object');
+    throw PdfFormatException('Illegal object', source: obj);
   }
 
   /// internal method
@@ -955,7 +956,7 @@ class DerStream {
     } else if (obj is Asn1Encode) {
       obj.getAsn1()!.encode(this);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid object specified');
+      throw PdfFormatException('Invalid object specified', source: obj);
     }
   }
 }

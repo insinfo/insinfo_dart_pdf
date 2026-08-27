@@ -339,10 +339,7 @@ class PdfStreamWriter implements IPdfWriter {
   @override
   //ignore:unused_element
   set document(PdfDocument? value) {
-    throw ArgumentError.value(
-      value,
-      'The method or operation is not implemented',
-    );
+    throw UnsupportedError('The method or operation is not implemented');
   }
 
   @override
@@ -352,10 +349,7 @@ class PdfStreamWriter implements IPdfWriter {
   @override
   //ignore:unused_element
   set length(int? value) {
-    throw ArgumentError.value(
-      value,
-      'The method or operation is not implemented',
-    );
+    throw UnsupportedError('The method or operation is not implemented');
   }
 
   @override
@@ -364,10 +358,7 @@ class PdfStreamWriter implements IPdfWriter {
   @override
   //ignore:unused_element
   set position(int? value) {
-    throw ArgumentError.value(
-      value,
-      'The method or operation is not implemented',
-    );
+    throw UnsupportedError('The method or operation is not implemented');
   }
 
   @override
@@ -391,10 +382,7 @@ class PdfStreamWriter implements IPdfWriter {
     } else if (pdfObject is List<int>) {
       stream!.write(pdfObject);
     } else {
-      throw ArgumentError.value(
-        pdfObject,
-        'The method or operation is not implemented',
-      );
+      throw UnsupportedError('The method or operation is not implemented');
     }
   }
 }

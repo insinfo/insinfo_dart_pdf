@@ -325,7 +325,7 @@ class PdfColor {
         break;
       // ignore: no_default_cases
       default:
-        throw ArgumentError.value('Unsupported colour space.');
+        throw UnsupportedError('Unsupported colour space.');
     }
     return array;
   }

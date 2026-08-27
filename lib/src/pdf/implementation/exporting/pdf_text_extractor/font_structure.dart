@@ -17,6 +17,7 @@ import '../../primitives/pdf_stream.dart';
 import '../../primitives/pdf_string.dart';
 import 'font_file2.dart';
 import 'xobject_element.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// internal class
 class FontStructure {
@@ -1058,7 +1059,7 @@ class FontStructure {
         fontFamily = PdfFontFamily.zapfDingbats;
         break;
       default:
-        throw ArgumentError.value(fontName, 'fontName', 'invalid font name');
+        throw PdfFormatException('invalid font name', source: fontName);
     }
     return fontFamily;
   }
@@ -1091,7 +1092,7 @@ class FontStructure {
         fontFamily = PdfCjkFontFamily.hanyangSystemsShinMyeongJoMedium;
         break;
       default:
-        throw ArgumentError.value(fontName, 'fontName', 'invalid font name');
+        throw PdfFormatException('invalid font name', source: fontName);
     }
     return fontFamily;
   }

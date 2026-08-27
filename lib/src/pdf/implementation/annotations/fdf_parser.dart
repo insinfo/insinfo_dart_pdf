@@ -17,6 +17,7 @@ import '../primitives/pdf_reference_holder.dart';
 import '../primitives/pdf_stream.dart';
 import '../primitives/pdf_string.dart';
 import 'json_parser.dart';
+import '../io/pdf_format_exception.dart';
 
 /// The class provides methods and properties to handle the loaded annotations from the existing PDF document for Fdf export and import.
 class FdfParser {
@@ -252,9 +253,7 @@ class FdfParser {
     final String header = utf8.decode(_data, allowMalformed: true);
     final int index = header.indexOf('%FDF-');
     if (index < 0) {
-      throw ArgumentError(
-        'The source is not a valid FDF file because it does not start with"%FDF-"',
-      );
+      throw PdfFormatException('The source is not a valid FDF file because it does not start with"%FDF-"');
     }
     return index + headerLength;
   }

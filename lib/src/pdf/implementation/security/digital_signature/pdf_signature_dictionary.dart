@@ -42,6 +42,7 @@ import 'pkcs/pfx_data.dart';
 import 'time_stamp_server/time_stamp_server.dart';
 import 'x509/ocsp_utils.dart';
 import 'x509/x509_certificates.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// Represents signature dictionary.
 class PdfSignatureDictionary implements IPdfWrapper {
@@ -1027,11 +1028,7 @@ class MessageDigestAlgorithms {
     } else if (lower == 'md5' || lower == 'md-5' || lower == 'md_5') {
       result = md5;
     } else {
-      throw ArgumentError.value(
-        hashAlgorithm,
-        'hashAlgorithm',
-        'Invalid message digest algorithm',
-      );
+      throw PdfFormatException('Invalid message digest algorithm', source: hashAlgorithm);
     }
     return result;
   }
@@ -1060,11 +1057,7 @@ class MessageDigestAlgorithms {
     } else if (lower == 'md5' || lower == 'md-5' || lower == 'md_5') {
       result = md5;
     } else {
-      throw ArgumentError.value(
-        hashAlgorithm,
-        'hashAlgorithm',
-        'Invalid message digest algorithm',
-      );
+      throw PdfFormatException('Invalid message digest algorithm', source: hashAlgorithm);
     }
     return result;
   }
@@ -1119,7 +1112,7 @@ class _SignaturePrivateKey {
     } else if (key is EcPrivateKeyParam) {
       _encryptionAlgorithm = 'ECDSA';
     } else {
-      throw ArgumentError.value(key, 'key', 'Invalid key');
+      throw PdfFormatException('Invalid key', source: key);
     }
   }
   //Fields
@@ -1262,7 +1255,7 @@ class SignerUtilities {
     } else if (mechanism == 'SHA-512withECDSA') {
       return _EcdsaSigner(DigestAlgorithms.sha512);
     } else {
-      throw ArgumentError.value('Signer $algorithm not recognised.');
+      throw PdfFormatException('Signer $algorithm not recognised.');
     }
     return result;
   }
@@ -1296,7 +1289,7 @@ class SignerUtilities {
     } else if (mechanism == 'SHA-512withECDSA') {
       return _EcdsaSigner(DigestAlgorithms.sha512);
     } else {
-      throw ArgumentError.value('Signer $algorithm not recognised.');
+      throw PdfFormatException('Signer $algorithm not recognised.');
     }
     return result;
   }
@@ -1319,7 +1312,7 @@ class _EcdsaSigner implements ISigner {
     if (digest == DigestAlgorithms.sha256) return sha256;
     if (digest == DigestAlgorithms.sha384) return sha384;
     if (digest == DigestAlgorithms.sha512) return sha512;
-    throw ArgumentError.value(digest, 'digest', 'Invalid digest');
+    throw PdfFormatException('Invalid digest', source: digest);
   }
 
   pc.SecureRandom _secureRandom() {
@@ -1339,10 +1332,10 @@ class _EcdsaSigner implements ISigner {
 
     if (isSigning) {
       if (parameters is! EcPrivateKeyParam) {
-        throw ArgumentError.value(parameters, 'parameters', 'EC private key required.');
+        throw PdfFormatException('EC private key required.', source: parameters);
       }
       if (!(parameters.isPrivate ?? false)) {
-        throw ArgumentError.value(parameters, 'parameters', 'Private key required.');
+        throw PdfFormatException('Private key required.', source: parameters);
       }
       _privateKey = parameters;
       _publicKey = null;
@@ -1350,10 +1343,10 @@ class _EcdsaSigner implements ISigner {
     }
 
     if (parameters is! EcPublicKeyParam) {
-      throw ArgumentError.value(parameters, 'parameters', 'EC public key required.');
+      throw PdfFormatException('EC public key required.', source: parameters);
     }
     if (parameters.isPrivate ?? false) {
-      throw ArgumentError.value(parameters, 'parameters', 'Public key required.');
+      throw PdfFormatException('Public key required.', source: parameters);
     }
     _publicKey = parameters;
     _privateKey = null;
@@ -1383,7 +1376,7 @@ class _EcdsaSigner implements ISigner {
   pc.ECSignature _derDecodeSig(List<int> signature) {
     final Asn1? parsed = Asn1Stream(PdfStreamReader(signature)).readAsn1();
     if (parsed is! Asn1Sequence || parsed.count < 2) {
-      throw ArgumentError('Invalid ECDSA signature encoding.');
+      throw PdfFormatException('Invalid ECDSA signature encoding.');
     }
     final DerInteger r = DerInteger.getNumber(parsed[0])!;
     final DerInteger s = DerInteger.getNumber(parsed[1])!;
@@ -1393,7 +1386,7 @@ class _EcdsaSigner implements ISigner {
   @override
   List<int>? generateSignature() {
     if (!_isSigning) {
-      throw ArgumentError.value('Invalid entry');
+      throw PdfFormatException('Invalid entry');
     }
     final EcPrivateKeyParam? k = _privateKey;
     if (k == null) {
@@ -1466,11 +1459,7 @@ class _PdfCmsSigner {
     _digestAlgorithm = MessageDigestAlgorithms();
     _digestAlgorithmOid = _digestAlgorithm.getAllowedDigests(hashAlgorithm);
     if (_digestAlgorithmOid == null) {
-      throw ArgumentError.value(
-        hashAlgorithm,
-        'hashAlgorithm',
-        'Unknown Hash Algorithm',
-      );
+      throw PdfFormatException('Unknown Hash Algorithm', source: hashAlgorithm);
     }
     _version = 1;
     _signerVersion = 1;
@@ -1487,11 +1476,7 @@ class _PdfCmsSigner {
       if (privateKey is RsaKeyParam) {
         _encryptionAlgorithmOid = _DigitalIdentifiers.rsa;
       } else {
-        throw ArgumentError.value(
-          privateKey,
-          'privateKey',
-          'Unknown key algorithm',
-        );
+        throw PdfFormatException('Unknown key algorithm', source: privateKey);
       }
     }
     if (hasRSAdata) {
@@ -1674,11 +1659,7 @@ class _PdfCmsSigner {
       } else if (digestEncryptionAlgorithm == 'ECDSA') {
         _encryptionAlgorithmOid = _DigitalIdentifiers.ecdsa;
       } else {
-        throw ArgumentError.value(
-          digestEncryptionAlgorithm,
-          'algorithm',
-          'Invalid entry',
-        );
+        throw PdfFormatException('Invalid entry', source: digestEncryptionAlgorithm);
       }
     }
   }
@@ -1698,11 +1679,7 @@ class _PdfCmsSigner {
       } else if (digestEncryptionAlgorithm == 'ECDSA') {
         _encryptionAlgorithmOid = _DigitalIdentifiers.ecdsa;
       } else {
-        throw ArgumentError.value(
-          digestEncryptionAlgorithm,
-          'algorithm',
-          'Invalid entry',
-        );
+        throw PdfFormatException('Invalid entry', source: digestEncryptionAlgorithm);
       }
     }
   }
@@ -2198,11 +2175,7 @@ class PdfCmsSigner {
       PdfStreamReader(certificateDer),
     );
     if (signerCert == null) {
-      throw ArgumentError.value(
-        certificateDer,
-        'certificateDer',
-        'Falha ao parsear certificado DER do signatário.',
-      );
+      throw PdfFormatException('Falha ao parsear certificado DER do signatário.', source: certificateDer);
     }
 
     final List<X509Certificate?> chain = <X509Certificate?>[signerCert];
@@ -2333,11 +2306,7 @@ class PdfCmsSigner {
       PdfStreamReader(certificateDer),
     );
     if (signerCert == null) {
-      throw ArgumentError.value(
-        certificateDer,
-        'certificateDer',
-        'Falha ao parsear certificado DER do signatário.',
-      );
+      throw PdfFormatException('Falha ao parsear certificado DER do signatário.', source: certificateDer);
     }
 
     final List<X509Certificate?> chain = <X509Certificate?>[signerCert];
@@ -2623,7 +2592,7 @@ class _RmdSigner implements ISigner {
     } else if (digest == DigestAlgorithms.sha512) {
       result = sha512;
     } else {
-      throw ArgumentError.value(digest, 'digest', 'Invalid digest');
+      throw PdfFormatException('Invalid digest', source: digest);
     }
     return result;
   }
@@ -2633,10 +2602,10 @@ class _RmdSigner implements ISigner {
     _isSigning = isSigning;
     final CipherParameter? k = parameters as CipherParameter?;
     if (isSigning && !k!.isPrivate!) {
-      throw ArgumentError.value('Private key required.');
+      throw PdfFormatException('Private key required.');
     }
     if (!isSigning && k!.isPrivate!) {
-      throw ArgumentError.value('Public key required.');
+      throw PdfFormatException('Public key required.');
     }
     reset();
     _rsaEngine.initialize(isSigning, parameters);
@@ -2650,7 +2619,7 @@ class _RmdSigner implements ISigner {
   @override
   List<int>? generateSignature() {
     if (!_isSigning) {
-      throw ArgumentError.value('Invalid entry');
+      throw PdfFormatException('Invalid entry');
     }
     _input.close();
     final List<int>? hash = _output.events.single.bytes as List<int>?;

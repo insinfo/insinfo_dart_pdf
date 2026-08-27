@@ -23,6 +23,7 @@ import 'pkcs/password_utility.dart';
 import 'pkcs/pfx_data.dart';
 import 'x509/x509_certificates.dart';
 import 'x509/x509_name.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// internal class
 class PdfPKCSCertificate {
@@ -129,11 +130,7 @@ class PdfPKCSCertificate {
                         attribute = attributeSet[0];
                         if (attributes.containsKey(algorithmId!.id)) {
                           if (attributes[algorithmId.id] != attribute) {
-                            throw ArgumentError.value(
-                              attributes,
-                              'attributes',
-                              'attempt to add existing attribute with different value',
-                            );
+                            throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
                           }
                         } else {
                           attributes[algorithmId.id] = attribute;
@@ -173,20 +170,12 @@ class PdfPKCSCertificate {
         } else if (type.id == PkcsObjectId.encryptedData.id) {
           final Asn1Sequence sequence1 = entry._content! as Asn1Sequence;
           if (sequence1.count != 2) {
-            throw ArgumentError.value(
-              entry,
-              'sequence',
-              'Invalid length of the sequence',
-            );
+            throw PdfFormatException('Invalid length of the sequence', source: entry);
           }
           final int version =
               (sequence1[0]! as DerInteger).value.toSigned(32).toInt();
           if (version != 0) {
-            throw ArgumentError.value(
-              version,
-              'version',
-              'Invalid sequence version',
-            );
+            throw PdfFormatException('Invalid sequence version', source: version);
           }
           final Asn1Sequence data = sequence1[1]! as Asn1Sequence;
           Asn1Octet? content;
@@ -254,11 +243,7 @@ class PdfPKCSCertificate {
                   attribute = attributeSet.objects[0] as Asn1Encode?;
                   if (attributes.containsKey(asn1Id!.id)) {
                     if (!(attributes[asn1Id.id] == attribute)) {
-                      throw ArgumentError.value(
-                        attributes,
-                        'attributes',
-                        'attempt to add existing attribute with different value',
-                      );
+                      throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
                     }
                   } else {
                     attributes[asn1Id.id] = attribute;
@@ -316,11 +301,7 @@ class PdfPKCSCertificate {
                   if (attributes.containsKey(id!.id)) {
                     final Asn1Encode? attr = attributes[id.id] as Asn1Encode?;
                     if (attr != null && attr != attribute) {
-                      throw ArgumentError.value(
-                        sq,
-                        'sequence',
-                        'attempt to add existing attribute with different value',
-                      );
+                      throw PdfFormatException('attempt to add existing attribute with different value', source: sq);
                     }
                   } else {
                     attributes[id.id] = attribute;
@@ -367,11 +348,7 @@ class PdfPKCSCertificate {
             final Asn1Encode? attr = attrSet[0];
             if (attributes.containsKey(aOid!.id)) {
               if (attributes[aOid.id] != attr) {
-                throw ArgumentError.value(
-                  attributes,
-                  'attributes',
-                  'attempt to add existing attribute with different value',
-                );
+                throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
               }
             } else {
               attributes[aOid.id] = attr;
@@ -423,7 +400,7 @@ class PdfPKCSCertificate {
     final IBufferedCipher? cipher =
         utility.createEncoder(id.id) as IBufferedCipher?;
     if (cipher == null) {
-      throw ArgumentError.value(id, 'id', 'Invalid encryption algorithm');
+      throw PdfFormatException('Invalid encryption algorithm', source: id);
     }
     final _Pkcs12PasswordParameter parameter =
         _Pkcs12PasswordParameter.getPbeParameter(id.parameters);
@@ -448,11 +425,7 @@ class PdfPKCSCertificate {
     final IBufferedCipher? cipher =
         pbeU.createEncoder(algID) as IBufferedCipher?;
     if (cipher == null) {
-      throw ArgumentError.value(
-        cipher,
-        'cipher',
-        'Unknown encryption algorithm',
-      );
+      throw PdfFormatException('Unknown encryption algorithm', source: cipher);
     }
     final ICipherParameter? cipherParameters = pbeU.generateCipherParameters(
       algID.id!.id!,
@@ -477,7 +450,7 @@ class PdfPKCSCertificate {
       );
       result = SubjectKeyID(information);
     } else {
-      throw ArgumentError.value(publicKey, 'publicKey', 'Invalid Key');
+      throw PdfFormatException('Invalid Key', source: publicKey);
     }
     return result;
   }
@@ -1102,7 +1075,7 @@ class _PasswordUtility {
         digest.contains('md-5')) {
       digest = DigestAlgorithms.hmacWithMd5;
     } else {
-      throw ArgumentError.value(algorithm, 'algorithm', 'Invalid message');
+      throw PdfFormatException('Invalid message', source: algorithm);
     }
     return digest;
   }
@@ -1119,11 +1092,7 @@ class _PasswordUtility {
     if (type == _pkcs12) {
       generator = _Pkcs12AlgorithmGenerator(digest, password);
     } else {
-      throw ArgumentError.value(
-        type,
-        'type',
-        'Invalid Password Based Encryption type',
-      );
+      throw PdfFormatException('Invalid Password Based Encryption type', source: type);
     }
     generator.init(key, salt, iterationCount);
     return generator;
@@ -1206,7 +1175,7 @@ class _Pkcs12AlgorithmGenerator extends _PasswordGenerator {
     } else if (digest == DigestAlgorithms.hmacWithMd5) {
       result = Hmac(md5, utf8.encode(password));
     } else {
-      throw ArgumentError.value(digest, 'digest', 'Invalid message digest');
+      throw PdfFormatException('Invalid message digest', source: digest);
     }
     return result;
   }
@@ -1328,11 +1297,7 @@ class _Pkcs12AlgorithmGenerator extends _PasswordGenerator {
 class _Pkcs12PasswordParameter extends Asn1Encode {
   _Pkcs12PasswordParameter(Asn1Sequence sequence) {
     if (sequence.count != 2) {
-      throw ArgumentError.value(
-        sequence,
-        'sequence',
-        'Invalid length in sequence',
-      );
+      throw PdfFormatException('Invalid length in sequence', source: sequence);
     }
     _octet = Asn1Octet.getOctetStringFromObject(sequence[0]);
     _iterations = DerInteger.getNumber(sequence[1]);
@@ -1348,7 +1313,7 @@ class _Pkcs12PasswordParameter extends Asn1Encode {
     } else if (obj is Asn1Sequence) {
       result = _Pkcs12PasswordParameter(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }
@@ -1405,11 +1370,7 @@ class _ParamUtility {
       }
     });
     if (name == null) {
-      throw ArgumentError.value(
-        algorithm,
-        'algorithm',
-        'Invalid entry. Algorithm',
-      );
+      throw PdfFormatException('Invalid entry. Algorithm', source: algorithm);
     }
     if (name == 'DES') {
       return _DataEncryptionParameter.fromLengthValue(bytes, offset, length!);
@@ -1428,11 +1389,7 @@ class _ParamUtility {
 class _DataEncryptionParameter extends KeyParameter {
   _DataEncryptionParameter(List<int> keys) : super(Uint8List.fromList(keys)) {
     if (checkKey(keys, 0)) {
-      throw ArgumentError.value(
-        keys,
-        'keys',
-        'Invalid Data Encryption keys creation',
-      );
+      throw PdfFormatException('Invalid Data Encryption keys creation', source: keys);
     }
   }
   _DataEncryptionParameter.fromLengthValue(
@@ -1441,11 +1398,7 @@ class _DataEncryptionParameter extends KeyParameter {
     int length,
   ) : super.fromLengthValue(Uint8List.fromList(keys), offset, length) {
     if (checkKey(keys, 0)) {
-      throw ArgumentError.value(
-        keys,
-        'keys',
-        'Invalid Data Encryption keys creation',
-      );
+      throw PdfFormatException('Invalid Data Encryption keys creation', source: keys);
     }
   }
   static List<int> dataEncryptionWeekKeys = <int>[
@@ -1581,7 +1534,7 @@ class _DataEncryptionParameter extends KeyParameter {
 
   static bool checkKey(List<int> bytes, int offset) {
     if (bytes.length - offset < 8) {
-      throw ArgumentError.value(bytes, 'bytes', 'Invalid length in bytes');
+      throw PdfFormatException('Invalid length in bytes', source: bytes);
     }
     for (int i = 0; i < 16; i++) {
       bool isMatch = false;
@@ -1614,18 +1567,10 @@ class _DesedeAlgorithmParameter extends _DataEncryptionParameter {
         List.copyRange(tmp, 0, key, keyOffset, keyOffset + 24);
         break;
       default:
-        throw ArgumentError.value(
-          keyLength,
-          'keyLen',
-          'Bad length for DESede key',
-        );
+        throw PdfFormatException('Bad length for DESede key', source: keyLength);
     }
     if (checkKeyValue(tmp, 0, tmp.length)) {
-      throw ArgumentError.value(
-        key,
-        'key',
-        'Attempt to create weak DESede key',
-      );
+      throw PdfFormatException('Attempt to create weak DESede key', source: key);
     }
     return tmp;
   }
@@ -1711,11 +1656,7 @@ class _CipherUtils {
           break;
         // ignore: no_default_cases
         default:
-          throw ArgumentError.value(
-            cipherPadding,
-            'cpiher padding algorithm',
-            'Invalid cipher algorithm',
-          );
+          throw PdfFormatException('Invalid cipher algorithm', source: cipherPadding);
       }
     }
     String mode = '';
@@ -1753,11 +1694,7 @@ class _CipherUtils {
       }
       return BufferedBlockPadding(blockCipher);
     }
-    throw ArgumentError.value(
-      blockCipher,
-      'Cipher Algorithm',
-      'Invalid cipher algorithm',
-    );
+    throw PdfFormatException('Invalid cipher algorithm', source: blockCipher);
   }
 
   _CipherAlgorithm getAlgorithm(String name) {
@@ -1776,7 +1713,7 @@ class _CipherUtils {
         result = _CipherAlgorithm.rsa;
         break;
       default:
-        throw ArgumentError.value(name, 'name', 'Invalid algorithm name');
+        throw PdfFormatException('Invalid algorithm name', source: name);
     }
     return result;
   }
@@ -1797,7 +1734,7 @@ class _CipherUtils {
         result = _CipherMode.cts;
         break;
       default:
-        throw ArgumentError.value(mode, 'CipherMode', 'Invalid mode');
+        throw PdfFormatException('Invalid mode', source: mode);
     }
     return result;
   }
@@ -1836,7 +1773,7 @@ class _CipherUtils {
         result = _CipherPaddingType.x923Padding;
         break;
       default:
-        throw ArgumentError.value(type, 'PaddingType', 'Invalid padding type');
+        throw PdfFormatException('Invalid padding type', source: type);
     }
     return result;
   }
@@ -1878,11 +1815,7 @@ class _KeyIdentifier extends Asn1Encode {
             _serialNumber = DerInteger.getNumberFromTag(entry, false);
             break;
           default:
-            throw ArgumentError.value(
-              sequence,
-              'sequence',
-              'Invalid entry in sequence',
-            );
+            throw PdfFormatException('Invalid entry in sequence', source: sequence);
         }
       }
     });
@@ -1902,7 +1835,7 @@ class _KeyIdentifier extends Asn1Encode {
     } else if (obj is X509Extension) {
       result = getKeyIdentifier(X509Extension.convertValueToObject(obj));
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }
@@ -1941,15 +1874,11 @@ class _DesEdeAlogorithm extends _DataEncryption {
   @override
   void initialize(bool? forEncryption, ICipherParameter? parameters) {
     if (parameters is! KeyParameter) {
-      throw ArgumentError.value(parameters, 'parameters', 'Invalid parameter');
+      throw PdfFormatException('Invalid parameter', source: parameters);
     }
     final List<int> keyMaster = parameters.keys;
     if (keyMaster.length != 24 && keyMaster.length != 16) {
-      throw ArgumentError.value(
-        parameters,
-        'parameters',
-        'Invalid key size. Size must be 16 or 24 bytes.',
-      );
+      throw PdfFormatException('Invalid key size. Size must be 16 or 24 bytes.', source: parameters);
     }
     _isEncryption = forEncryption;
     final List<int> key1 = List<int>.generate(8, (int i) => 0);
@@ -1976,18 +1905,10 @@ class _DesEdeAlogorithm extends _DataEncryption {
   ]) {
     ArgumentError.checkNotNull(_key1);
     if ((inOffset! + _blockSize!) > inputBytes!.length) {
-      throw ArgumentError.value(
-        inOffset,
-        'inOffset',
-        'Invalid length in input bytes',
-      );
+      throw PdfFormatException('Invalid length in input bytes', source: inOffset);
     }
     if ((outOffset! + _blockSize!) > outputBytes!.length) {
-      throw ArgumentError.value(
-        inOffset,
-        'inOffset',
-        'Invalid length in output bytes',
-      );
+      throw PdfFormatException('Invalid length in output bytes', source: inOffset);
     }
     final List<int> tempBytes = List<int>.generate(_blockSize!, (int i) => 0);
     if (_isEncryption!) {
@@ -2705,7 +2626,7 @@ class _DataEncryption extends ICipher {
   @override
   void initialize(bool? isEncryption, ICipherParameter? parameters) {
     if (parameters is! KeyParameter) {
-      throw ArgumentError.value(parameters, 'parameters', 'Invalid parameter');
+      throw PdfFormatException('Invalid parameter', source: parameters);
     }
     _keys = generateWorkingKey(isEncryption, parameters.keys);
   }
@@ -2719,18 +2640,10 @@ class _DataEncryption extends ICipher {
   ) {
     ArgumentError.checkNotNull(_keys);
     if ((inOffset + _blockSize!) > inBytes!.length) {
-      throw ArgumentError.value(
-        inOffset,
-        'inOffset',
-        'Invalid length in input bytes',
-      );
+      throw PdfFormatException('Invalid length in input bytes', source: inOffset);
     }
     if ((outOffset! + _blockSize!) > outBytes!.length) {
-      throw ArgumentError.value(
-        outOffset,
-        'outOffset',
-        'Invalid length in output bytes',
-      );
+      throw PdfFormatException('Invalid length in output bytes', source: outOffset);
     }
     encryptData(_keys, inBytes, inOffset, outBytes, outOffset);
     return <String, dynamic>{'length': _blockSize, 'output': outBytes};
@@ -3340,17 +3253,13 @@ class _PfxData extends Asn1Encode {
 class _ContentInformation extends Asn1Encode {
   _ContentInformation(Asn1Sequence sequence) {
     if (sequence.count < 1 || sequence.count > 2) {
-      throw ArgumentError.value(
-        sequence,
-        'sequence',
-        'Invalid length in sequence',
-      );
+      throw PdfFormatException('Invalid length in sequence', source: sequence);
     }
     _contentType = sequence[0] as DerObjectID?;
     if (sequence.count > 1) {
       final Asn1Tag tagged = sequence[1]! as Asn1Tag;
       if (!tagged.explicit! || tagged.tagNumber != 0) {
-        throw ArgumentError.value(tagged, 'tagged', 'Invalid tag');
+        throw PdfFormatException('Invalid tag', source: tagged);
       }
       _content = tagged.getObject();
     }
@@ -3366,7 +3275,7 @@ class _ContentInformation extends Asn1Encode {
     } else if (obj is Asn1Sequence) {
       result = _ContentInformation(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }
@@ -3405,7 +3314,7 @@ class _MacInformation extends Asn1Encode {
     } else if (obj is Asn1Sequence) {
       result = _MacInformation(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }
@@ -3426,11 +3335,7 @@ class _MacInformation extends Asn1Encode {
 class EncryptedPrivateKey extends Asn1Encode {
   EncryptedPrivateKey(Asn1Sequence sequence) {
     if (sequence.count != 2) {
-      throw ArgumentError.value(
-        sequence,
-        'sequence',
-        'Invalid length in sequence',
-      );
+      throw PdfFormatException('Invalid length in sequence', source: sequence);
     }
     _algorithms = Algorithms.getAlgorithms(sequence[0]);
     _octet = Asn1Octet.getOctetStringFromObject(sequence[1]);
@@ -3453,7 +3358,7 @@ class EncryptedPrivateKey extends Asn1Encode {
     if (obj is Asn1Sequence) {
       return EncryptedPrivateKey(obj);
     }
-    throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+    throw PdfFormatException('Invalid entry in sequence', source: obj);
   }
 }
 
@@ -3481,13 +3386,13 @@ class KeyInformation extends Asn1Encode {
                 PdfStreamReader(privateKeyValue.getOctets()),
               ).readAsn1();
         } catch (e) {
-          throw ArgumentError.value(sequence, 'sequence', 'Invalid sequence');
+          throw PdfFormatException('Invalid sequence', source: sequence);
         }
         if (objects.length > 3) {
           _attributes = Asn1Set.getAsn1Set(objects[3]! as Asn1Tag?, false);
         }
       } else {
-        throw ArgumentError.value(sequence, 'sequence', 'Invalid sequence');
+        throw PdfFormatException('Invalid sequence', source: sequence);
       }
     }
   }
@@ -3545,7 +3450,7 @@ class _RsaKey extends Asn1Encode {
   _RsaKey.fromSequence(Asn1Sequence sequence) {
     final BigInt version = (sequence[0]! as DerInteger).value;
     if (version.toSigned(32).toInt() != 0) {
-      throw ArgumentError.value(sequence, 'sequence', 'Invalid RSA key');
+      throw PdfFormatException('Invalid RSA key', source: sequence);
     }
     _modulus = (sequence[1]! as DerInteger).value;
     _publicExponent = (sequence[2]! as DerInteger).value;
@@ -3606,7 +3511,7 @@ class SubjectKeyID extends Asn1Encode {
       );
       return information;
     } else {
-      throw ArgumentError.value(publicKey, 'publicKey', 'Invalid Key');
+      throw PdfFormatException('Invalid Key', source: publicKey);
     }
   }
 

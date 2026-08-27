@@ -4,6 +4,7 @@ import '../../../io/stream_reader.dart';
 import 'asn1.dart';
 import 'asn1_parser.dart';
 import 'der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class BerOctet extends DerOctet {
@@ -148,11 +149,7 @@ class BerTagHelper implements IAsn1Tag {
   IAsn1? getParser(int tagNumber, bool isExplicit) {
     if (isExplicit) {
       if (!_isConstructed!) {
-        throw ArgumentError.value(
-          isExplicit,
-          'isExplicit',
-          'Implicit tags identified',
-        );
+        throw PdfFormatException('Implicit tags identified', source: isExplicit);
       }
       return _helper.readObject();
     }

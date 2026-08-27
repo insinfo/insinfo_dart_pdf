@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'cipher_block_chaining_mode.dart';
 import 'ipadding.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class Pkcs1Encoding implements ICipherBlock {
@@ -44,7 +45,7 @@ class Pkcs1Encoding implements ICipherBlock {
   /// internal method
   List<int>? encodeBlock(List<int> input, int inOff, int inLen) {
     if (inLen > inputBlock!) {
-      throw ArgumentError.value(inLen, 'inLen', 'Input data too large');
+      throw PdfFormatException('Input data too large', source: inLen);
     }
     List<int> block = List<int>.generate(_cipher!.inputBlock!, (int i) => 0);
     if (_isPrivateKey!) {
@@ -73,18 +74,14 @@ class Pkcs1Encoding implements ICipherBlock {
   List<int> decodeBlock(List<int> input, int inOff, int inLen) {
     final List<int> block = _cipher!.processBlock(input, inOff, inLen)!;
     if (block.length < outputBlock!) {
-      throw ArgumentError.value(
-        inLen,
-        'inLen',
-        'Invalid block. Block truncated',
-      );
+      throw PdfFormatException('Invalid block. Block truncated', source: inLen);
     }
     final int type = block[0];
     if (type != 1 && type != 2) {
-      throw ArgumentError.value(type, 'type', 'Invalid block type');
+      throw PdfFormatException('Invalid block type', source: type);
     }
     if (block.length != _cipher!.outputBlock) {
-      throw ArgumentError.value(type, 'type', 'Invalid size');
+      throw PdfFormatException('Invalid size', source: type);
     }
     int start;
     for (start = 1; start != block.length; start++) {
@@ -93,12 +90,12 @@ class Pkcs1Encoding implements ICipherBlock {
         break;
       }
       if (type == 1 && pad != 0xff.toUnsigned(8)) {
-        throw ArgumentError.value(type, 'type', 'Invalid block padding');
+        throw PdfFormatException('Invalid block padding', source: type);
       }
     }
     start++;
     if (start > block.length || start < 10) {
-      throw ArgumentError.value(start, 'start', 'no data in block');
+      throw PdfFormatException('no data in block', source: start);
     }
     final List<int> result = List<int>.generate(
       block.length - start,

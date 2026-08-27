@@ -669,9 +669,7 @@ class PdfAnnotationHelper {
       if (base is PdfActionAnnotation &&
           PdfDocumentHelper.getHelper(document).conformanceLevel ==
               PdfConformanceLevel.a1b) {
-        throw ArgumentError(
-          'The specified annotation type is not supported by PDF/A1-B or PDF/A1-A standard documents.',
-        );
+        throw UnsupportedError('The specified annotation type is not supported by PDF/A1-B or PDF/A1-A standard documents.');
       }
       //This is needed to attain specific PDF/A conformance.
       if (base is! PdfLinkAnnotation &&

@@ -2,6 +2,7 @@ import '../enums.dart';
 import 'decompressed_output.dart';
 import 'huffman_tree.dart';
 import 'in_buffer.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// internal class
 class Inflater {
@@ -209,7 +210,7 @@ class Inflater {
       _bLength = _blBuffer[0] + (_blBuffer[1]) * 256;
       if (_bLength.toUnsigned(16) !=
           (~(_blBuffer[2] + (_blBuffer[3]) * 256)).toUnsigned(16)) {
-        throw ArgumentError.value('Ivalid block length.');
+        throw PdfFormatException('Ivalid block length.');
       }
     }
     _inflaterstate = _getInflaterState(
@@ -254,7 +255,7 @@ class Inflater {
               _extraBits = 0;
             } else {
               if (symbol < 0 || symbol >= _extraLengthBits.length) {
-                throw ArgumentError.value('Invalid data.');
+                throw PdfFormatException('Invalid data.');
               }
               _extraBits = _extraLengthBits[symbol];
             }
@@ -323,7 +324,7 @@ class Inflater {
         return <String, dynamic>{'value': false, 'fb': fb};
       }
       if (_length < 0 || _length >= _lengthBase.length) {
-        throw ArgumentError.value('Invalid data.');
+        throw PdfFormatException('Invalid data.');
       }
       _length = _lengthBase[_length] + bits;
     }
@@ -503,12 +504,12 @@ class Inflater {
         int repeatCount;
         if (_lengthCode == 16) {
           if (_loopCounter == 0) {
-            throw ArgumentError.value('Invalid data.');
+            throw PdfFormatException('Invalid data.');
           }
           final int previousCode = _codeList[_loopCounter - 1].toUnsigned(8);
           repeatCount = _input.getBits(2) + 3;
           if (_loopCounter + repeatCount > _caSize) {
-            throw ArgumentError.value('Invalid data.');
+            throw PdfFormatException('Invalid data.');
           }
           for (int j = 0; j < repeatCount; j++) {
             _codeList[_loopCounter++] = previousCode;
@@ -516,7 +517,7 @@ class Inflater {
         } else if (_lengthCode == 17) {
           repeatCount = _input.getBits(3) + 3;
           if (_loopCounter + repeatCount > _caSize) {
-            throw ArgumentError.value('Invalid data.');
+            throw PdfFormatException('Invalid data.');
           }
           for (int j = 0; j < repeatCount; j++) {
             _codeList[_loopCounter++] = 0;
@@ -524,7 +525,7 @@ class Inflater {
         } else {
           repeatCount = _input.getBits(7) + 11;
           if (_loopCounter + repeatCount > _caSize) {
-            throw ArgumentError.value('Invalid data.');
+            throw PdfFormatException('Invalid data.');
           }
           for (int j = 0; j < repeatCount; j++) {
             _codeList[_loopCounter++] = 0;
