@@ -162,12 +162,12 @@ class PdfPage implements IPdfWrapper {
         if (!_helper.dictionary!.containsKey(PdfDictionaryProperties.annots)) {
           _helper.dictionary![PdfDictionaryProperties.annots] =
               PdfAnnotationCollectionHelper.getHelper(
-                _helper._annotations!,
-              ).internalAnnotations;
+            _helper._annotations!,
+          ).internalAnnotations;
         }
         PdfAnnotationCollectionHelper.getHelper(
-              _helper._annotations!,
-            ).internalAnnotations =
+          _helper._annotations!,
+        ).internalAnnotations =
             _helper.dictionary![PdfDictionaryProperties.annots] as PdfArray?;
       }
     } else {
@@ -345,8 +345,8 @@ class PdfPage implements IPdfWrapper {
     return _helper.isLoadedPage
         ? size
         : PdfSectionHelper.getHelper(
-          _helper.section!,
-        ).getActualBounds(this, true).size.size;
+            _helper.section!,
+          ).getActualBounds(this, true).size.size;
   }
 
   /// Creates a template from the page content.
@@ -430,8 +430,7 @@ class PdfPage implements IPdfWrapper {
         if (parent[PdfDictionaryProperties.rotate] is PdfReferenceHolder) {
           angle =
               (parent[PdfDictionaryProperties.rotate]! as PdfReferenceHolder)
-                      .object
-                  as PdfNumber?;
+                  .object as PdfNumber?;
         } else {
           angle = parent[PdfDictionaryProperties.rotate] as PdfNumber?;
         }
@@ -440,10 +439,9 @@ class PdfPage implements IPdfWrapper {
         IPdfPrimitive? parentPrimitive = parent[PdfDictionaryProperties.parent];
         if (parentPrimitive != null) {
           parentPrimitive = PdfCrossTable.dereference(parentPrimitive);
-          parent =
-              parentPrimitive != null && parentPrimitive is PdfDictionary
-                  ? parentPrimitive
-                  : null;
+          parent = parentPrimitive != null && parentPrimitive is PdfDictionary
+              ? parentPrimitive
+              : null;
         } else {
           parent = null;
         }
@@ -531,8 +529,23 @@ class PdfPageHelper {
   /// internal method
   bool isLoadedPage = false;
 
+  PdfCrossTable? _crossTable;
+
   /// internal method
-  PdfCrossTable? crossTable;
+  ///
+  /// A page built in memory carries no cross table of its own. Everything that
+  /// reads a page -- annotations above all -- reached for it and dereferenced
+  /// it with `!`, so those paths crashed on any document that had not been
+  /// saved and loaded back. The document always has one, and for an in-memory
+  /// page it is the right one: that is where the page's objects will be
+  /// written.
+  PdfCrossTable? get crossTable =>
+      _crossTable ??
+      (document != null
+          ? PdfDocumentHelper.getHelper(document!).crossTable
+          : null);
+
+  set crossTable(PdfCrossTable? value) => _crossTable = value;
 
   /// internal method
   final List<PdfDictionary> terminalAnnotation = <PdfDictionary>[];
@@ -600,10 +613,9 @@ class PdfPageHelper {
       );
       if (cBox != null && cBox is PdfArray) {
         final double width = (cBox[2]! as PdfNumber).value!.toDouble();
-        final double height =
-            (cBox[3]! as PdfNumber).value != 0
-                ? (cBox[3]! as PdfNumber).value!.toDouble()
-                : (cBox[1]! as PdfNumber).value!.toDouble();
+        final double height = (cBox[3]! as PdfNumber).value != 0
+            ? (cBox[3]! as PdfNumber).value!.toDouble()
+            : (cBox[1]! as PdfNumber).value!.toDouble();
         final double x = (cBox[0]! as PdfNumber).value!.toDouble();
         final double y = (cBox[1]! as PdfNumber).value!.toDouble();
         _cBox = _calculateBounds(x, y, width, height);
@@ -621,10 +633,9 @@ class PdfPageHelper {
       );
       if (mBox != null && mBox is PdfArray) {
         final double width = (mBox[2]! as PdfNumber).value!.toDouble();
-        final double height =
-            (mBox[3]! as PdfNumber).value != 0
-                ? (mBox[3]! as PdfNumber).value!.toDouble()
-                : (mBox[1]! as PdfNumber).value!.toDouble();
+        final double height = (mBox[3]! as PdfNumber).value != 0
+            ? (mBox[3]! as PdfNumber).value!.toDouble()
+            : (mBox[1]! as PdfNumber).value!.toDouble();
         final double x = (mBox[0]! as PdfNumber).value!.toDouble();
         final double y = (mBox[1]! as PdfNumber).value!.toDouble();
         _mBox = _calculateBounds(x, y, width, height);
@@ -779,11 +790,9 @@ class PdfPageHelper {
           _resources = PdfResources(dic);
           dictionary![PdfDictionaryProperties.resources] = _resources;
           if (dictionary!.containsKey(PdfDictionaryProperties.parent)) {
-            final PdfDictionary? parentDic =
-                PdfCrossTable.dereference(
-                      dictionary![PdfDictionaryProperties.parent],
-                    )
-                    as PdfDictionary?;
+            final PdfDictionary? parentDic = PdfCrossTable.dereference(
+              dictionary![PdfDictionaryProperties.parent],
+            ) as PdfDictionary?;
             if (parentDic != null &&
                 parentDic.containsKey(PdfDictionaryProperties.resources)) {
               final IPdfPrimitive? resource =
@@ -815,22 +824,27 @@ class PdfPageHelper {
 
   /// internal method
   void createAnnotations(List<int> widgetReferences) {
+    // A page built in memory has no cross table: its objects are held directly
+    // rather than looked up by reference. Resolving through it unconditionally
+    // crashed when exporting annotations from a document that had not been
+    // saved and reloaded first.
+    IPdfPrimitive? resolve(IPdfPrimitive? object) => crossTable != null
+        ? crossTable!.getObject(object)
+        : PdfCrossTable.dereference(object);
+
     IPdfPrimitive? annots;
     if (dictionary!.containsKey(PdfDictionaryProperties.annots)) {
-      annots = crossTable!.getObject(
-        dictionary![PdfDictionaryProperties.annots],
-      );
+      annots = resolve(dictionary![PdfDictionaryProperties.annots]);
       if (annots != null && annots is PdfArray) {
         for (int count = 0; count < annots.count; ++count) {
+          final IPdfPrimitive? entry = resolve(annots[count]);
           PdfDictionary? annotDictionary;
-          if (crossTable!.getObject(annots[count]) is PdfDictionary) {
-            annotDictionary =
-                crossTable!.getObject(annots[count]) as PdfDictionary?;
+          if (entry is PdfDictionary) {
+            annotDictionary = entry;
           }
           PdfReferenceHolder? annotReference;
-          if (crossTable!.getObject(annots[count]) is PdfReferenceHolder) {
-            annotReference =
-                crossTable!.getObject(annots[count]) as PdfReferenceHolder?;
+          if (entry is PdfReferenceHolder) {
+            annotReference = entry;
           }
           if (document != null &&
               PdfDocumentHelper.getHelper(document!).crossTable.encryptor !=
@@ -840,10 +854,9 @@ class PdfPageHelper {
               ).crossTable.encryptor!.encryptAttachmentOnly!) {
             if (annotDictionary != null &&
                 annotDictionary.containsKey(PdfDictionaryProperties.subtype)) {
-              final IPdfPrimitive? primitive =
-                  annotDictionary.items![PdfName(
-                    PdfDictionaryProperties.subtype,
-                  )];
+              final IPdfPrimitive? primitive = annotDictionary.items![PdfName(
+                PdfDictionaryProperties.subtype,
+              )];
               if (primitive is PdfName &&
                   primitive.name == 'FileAttachment' &&
                   annotDictionary.containsKey(PdfDictionaryProperties.fs)) {
@@ -917,9 +930,8 @@ class PdfPageHelper {
           }
           if (annotDictionary != null &&
               annotDictionary.containsKey(PdfDictionaryProperties.subtype)) {
-            final PdfName? name =
-                annotDictionary.items![PdfName(PdfDictionaryProperties.subtype)]
-                    as PdfName?;
+            final PdfName? name = annotDictionary
+                .items![PdfName(PdfDictionaryProperties.subtype)] as PdfName?;
             if (name != null && name.name.toString() != 'Widget') {
               if (!terminalAnnotation.contains(annotDictionary)) {
                 terminalAnnotation.add(annotDictionary);
@@ -928,11 +940,9 @@ class PdfPageHelper {
               if (annotDictionary.containsKey(PdfDictionaryProperties.parent)) {
                 final PdfDictionary? annotParentDictionary =
                     (annotDictionary.items![PdfName(
-                                  PdfDictionaryProperties.parent,
-                                )]!
-                                as PdfReferenceHolder)
-                            .object
-                        as PdfDictionary?;
+                  PdfDictionaryProperties.parent,
+                )]! as PdfReferenceHolder)
+                        .object as PdfDictionary?;
                 if (annotParentDictionary != null) {
                   if (!annotParentDictionary.containsKey(
                     PdfDictionaryProperties.fields,
@@ -973,12 +983,10 @@ class PdfPageHelper {
                       PdfFormHelper.getHelper(document!.form).widgetDictionary;
                 }
                 if (annotDictionary.containsKey(PdfDictionaryProperties.t)) {
-                  final String? fieldName =
-                      (annotDictionary.items![PdfName(
-                                PdfDictionaryProperties.t,
-                              )]!
-                              as PdfString)
-                          .value;
+                  final String? fieldName = (annotDictionary.items![PdfName(
+                    PdfDictionaryProperties.t,
+                  )]! as PdfString)
+                      .value;
                   if (widgetDictionary!.containsKey(fieldName)) {
                     final List<PdfDictionary> dict =
                         widgetDictionary[fieldName]!;
@@ -1045,15 +1053,12 @@ class PdfPageHelper {
   }
 
   PdfTemplate _getContent() {
-    final List<int> combinedData =
-        PdfPageLayerCollectionHelper.getHelper(
-          base.layers,
-        ).combineContent(false)!;
-    final PdfDictionary? resources =
-        PdfCrossTable.dereference(
-              dictionary![PdfDictionaryProperties.resources],
-            )
-            as PdfDictionary?;
+    final List<int> combinedData = PdfPageLayerCollectionHelper.getHelper(
+      base.layers,
+    ).combineContent(false)!;
+    final PdfDictionary? resources = PdfCrossTable.dereference(
+      dictionary![PdfDictionaryProperties.resources],
+    ) as PdfDictionary?;
     final PdfTemplate template = PdfTemplateHelper.internal(
       origin,
       base.size,
@@ -1079,8 +1084,8 @@ class PdfPageHelper {
         );
         final Map<String, dynamic> widgetReference =
             PdfDocumentHelper.getHelper(
-              document!,
-            ).objects.getReference(widget, false);
+          document!,
+        ).objects.getReference(widget, false);
         widgetReferences.add(
           ((widgetReference['isNew'] as bool)
                   ? crossTable!.getReference(widget).objNum
