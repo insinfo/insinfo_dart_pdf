@@ -20,10 +20,18 @@ import 'package:test/test.dart';
 // and it keeps telling us as the code changes. Converting throw sites by hand
 // would only ever cover the ones somebody remembered.
 
-/// Sources to mutate: a generated document plus real files from `test/assets`.
+/// Sources to mutate: a document this library wrote, plus real files from
+/// `test/assets`.
 List<_Sample> _samples() {
-  final List<_Sample> samples = <_Sample>[_Sample('generated', _generated())];
+  final List<_Sample> samples = <_Sample>[];
   const List<String> assets = <String>[
+    // Written by this library and committed rather than generated on the
+    // spot: saving the same document twice does not produce the same bytes,
+    // because each save names its font resources with fresh UUIDs. A fuzz
+    // that lands on different bytes every run cannot be reproduced, and a
+    // test that fails only sometimes teaches nobody anything. Regenerate it
+    // with tool/ if the shape of what this library writes ever matters here.
+    'test/assets/generated_three_pages.pdf',
     'test/assets/Invoice.pdf',
     'test/assets/sample_no_signature.pdf',
     'test/assets/doc_assinado_icp_brasil_thais.pdf',
@@ -143,7 +151,7 @@ void main() {
     }
 
     test('a damaged document merged next to a healthy one', () {
-      final List<int> healthy = _generated();
+      final List<int> healthy = samples.first.bytes;
       for (final _Sample sample in samples) {
         for (final MapEntry<String, List<int> Function(List<int>)> mutation
             in mutations.entries) {
@@ -244,25 +252,6 @@ List<int> Function(List<int>) _breakToken(String token) {
   };
 }
 
-List<int> _generated() {
-  final PdfDocument document = PdfDocument();
-  // Pinned so the mutations below land on the same bytes every run: a moving
-  // creation date would make this a different fuzz each time, and a test that
-  // fails only sometimes teaches nobody anything.
-  document.documentInformation.creationDate = DateTime.utc(2020);
-  final PdfFont font = PdfStandardFont(PdfFontFamily.helvetica, 14);
-  for (int i = 0; i < 3; i++) {
-    document.pages.add().graphics.drawString(
-      'Contract page ${i + 1}',
-      font,
-      brush: PdfBrushes.black,
-      bounds: const Rect.fromLTWH(40, 40, 400, 30),
-    );
-  }
-  final List<int> bytes = document.saveSync();
-  document.dispose();
-  return bytes;
-}
 
 class _Sample {
   _Sample(this.name, this.bytes);

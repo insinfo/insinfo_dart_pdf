@@ -132,6 +132,15 @@ class PdfReferenceHolder implements IPdfPrimitive {
   @override
   void save(IPdfWriter? writer) {
     if (writer != null) {
+      // A holder whose target will not resolve points at an object that is
+      // not in the file, and a damaged cross reference table leaves plenty of
+      // those. By the specification an indirect reference to an undefined
+      // object is not an error: it reads as null. Write that, instead of
+      // dereferencing nothing and taking the whole save down with it.
+      if (object == null) {
+        PdfNull().save(writer);
+        return;
+      }
       if (!PdfDocumentHelper.getHelper(writer.document!).isLoadedDocument) {
         object!.isSaving = true;
       }

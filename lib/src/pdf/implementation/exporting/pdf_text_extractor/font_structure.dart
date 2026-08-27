@@ -895,6 +895,56 @@ class FontStructure {
         _fontGlyphWidth = null;
       }
     }
+    if (_fontGlyphWidth == null || _fontGlyphWidth!.isEmpty) {
+      _fillStandardGlyphWidths();
+    }
+  }
+
+  // Any of the standard fourteen fonts may be declared with no /Widths: a
+  // viewer is expected to know their metrics already. Nothing here did, so
+  // every glyph came out zero wide and a whole page of text reported empty
+  // rectangles -- a line of Helvetica had its left edge and its right edge in
+  // the same place, and there was nothing to highlight or measure. Take the
+  // widths from the same tables the writing side uses.
+  void _fillStandardGlyphWidths() {
+    // Not _checkStandardFont: that one first asks whether the dictionary
+    // looks fully specified, and /FirstChar alone makes it say yes. These
+    // fonts carry /FirstChar and /LastChar and no /Widths at all, which is
+    // exactly the case to catch. The base font name is what decides.
+    IPdfPrimitive? primitive = fontDictionary[PdfDictionaryProperties.baseFont];
+    if (primitive is PdfReferenceHolder) {
+      primitive = primitive.object;
+    }
+    if (primitive is! PdfName) {
+      return;
+    }
+    _standardFontName = primitive.name;
+    if (!standardFontNames.contains(_resolveFontName(_standardFontName))) {
+      return;
+    }
+    final PdfFont? standard = createStandardFont(1);
+    if (standard is! PdfStandardFont) {
+      return;
+    }
+    final PdfStandardFontHelper helper = PdfStandardFontHelper.getHelper(
+      standard,
+    );
+    final Map<int, int> widths = <int, int>{};
+    // The encoding of a standard font without /Widths is WinAnsi or the
+    // font's own; either way it is a single byte, so the whole range is 256
+    // entries. A character the font does not carry simply has no width.
+    for (int code = 0; code < 256; code++) {
+      try {
+        widths[code] = helper
+            .getCharWidthInternal(String.fromCharCode(code))
+            .toInt();
+      } catch (_) {
+        continue;
+      }
+    }
+    if (widths.isNotEmpty) {
+      _fontGlyphWidth = widths;
+    }
   }
 
   bool _checkStandardFont() {
