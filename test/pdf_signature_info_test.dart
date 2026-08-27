@@ -57,7 +57,9 @@ void main() {
     expect(sig1.signingTime, isNotNull);
     expect(sig2.signingTime, isNotNull);
 
-    final DateTime t1 = sig1.signingTime!;
+    // Signature1 has a signing time in its CMS attributes, which is UT by
+    // definition; asserting in UT keeps this independent of where it runs.
+    final DateTime t1 = sig1.signingTime!.toUtc();
     expect(t1.year, 2025);
     expect(t1.month, 12);
     expect(t1.day, 29);
@@ -65,11 +67,18 @@ void main() {
     expect(t1.minute, 5);
     expect(t1.second, 15);
 
-    final DateTime t2 = sig2.signingTime!;
+    // Signature2 carries no signing time in its CMS attributes, so the value
+    // comes from the /M entry of the signature dictionary, which reads
+    // `D:20251229135822-03'00'` -- 13:58:22 at three hours behind UT, which is
+    // 16:58:22 UT. It used to be reported as the digits with the offset thrown
+    // away, so the same report gave Signature1 in UT and Signature2 in
+    // whatever zone the file was written in, and `signing_time` in the JSON
+    // came out differently depending on which machine ran the check.
+    final DateTime t2 = sig2.signingTime!.toUtc();
     expect(t2.year, 2025);
     expect(t2.month, 12);
     expect(t2.day, 29);
-    expect(t2.hour, 13);
+    expect(t2.hour, 16);
     expect(t2.minute, 58);
     expect(t2.second, 22);
 

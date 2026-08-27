@@ -46,9 +46,18 @@ class PdfPKCSCertificate {
 
   //Implementation
   void _loadCertificate(List<int> certificateBytes, String password) {
-    final Asn1Sequence sequence =
-        Asn1Stream(PdfStreamReader(certificateBytes)).readAsn1()!
-            as Asn1Sequence;
+    // The bytes are a file somebody chose, so they can be anything at all --
+    // the wrong file, a truncated one, nothing. Dereferencing the parse
+    // result made that a TypeError, which a caller cannot catch without also
+    // swallowing real defects.
+    final IAsn1? parsed =
+        Asn1Stream(PdfStreamReader(certificateBytes)).readAsn1();
+    if (parsed is! Asn1Sequence) {
+      throw PdfFormatException(
+        'The certificate data could not be read as a PKCS#12 file.',
+      );
+    }
+    final Asn1Sequence sequence = parsed;
     final _PfxData pfxData = _PfxData(sequence);
     final _ContentInformation information = pfxData._contentInformation!;
     bool isUnmarkedKey = false;
@@ -82,14 +91,14 @@ class PdfPKCSCertificate {
                   PkcsObjectId.pkcs8ShroudedKeyBag.id) {
                 final EncryptedPrivateKey encryptedInformation =
                     EncryptedPrivateKey.getEncryptedPrivateKeyInformation(
-                      subSequenceCollection.value,
-                    );
+                  subSequenceCollection.value,
+                );
                 final KeyInformation privateKeyInformation =
                     createPrivateKeyInfo(
-                      password,
-                      isInvalidPassword,
-                      encryptedInformation,
-                    )!;
+                  password,
+                  isInvalidPassword,
+                  encryptedInformation,
+                )!;
                 RsaPrivateKeyParam? rsaparam;
                 if (privateKeyInformation._algorithms!.id!.id ==
                         PkcsObjectId.rsaEncryption.id ||
@@ -130,7 +139,9 @@ class PdfPKCSCertificate {
                         attribute = attributeSet[0];
                         if (attributes.containsKey(algorithmId!.id)) {
                           if (attributes[algorithmId.id] != attribute) {
-                            throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
+                            throw PdfFormatException(
+                                'attempt to add existing attribute with different value',
+                                source: attributes);
                           }
                         } else {
                           attributes[algorithmId.id] = attribute;
@@ -170,12 +181,14 @@ class PdfPKCSCertificate {
         } else if (type.id == PkcsObjectId.encryptedData.id) {
           final Asn1Sequence sequence1 = entry._content! as Asn1Sequence;
           if (sequence1.count != 2) {
-            throw PdfFormatException('Invalid length of the sequence', source: entry);
+            throw PdfFormatException('Invalid length of the sequence',
+                source: entry);
           }
           final int version =
               (sequence1[0]! as DerInteger).value.toSigned(32).toInt();
           if (version != 0) {
-            throw PdfFormatException('Invalid sequence version', source: version);
+            throw PdfFormatException('Invalid sequence version',
+                source: version);
           }
           final Asn1Sequence data = sequence1[1]! as Asn1Sequence;
           Asn1Octet? content;
@@ -202,14 +215,13 @@ class PdfPKCSCertificate {
                 PkcsObjectId.pkcs8ShroudedKeyBag.id) {
               final EncryptedPrivateKey encryptedPrivateKeyInformation =
                   EncryptedPrivateKey.getEncryptedPrivateKeyInformation(
-                    subSequenceCollection.value,
-                  );
-              final KeyInformation privateInformation =
-                  createPrivateKeyInfo(
-                    password,
-                    isInvalidPassword,
-                    encryptedPrivateKeyInformation,
-                  )!;
+                subSequenceCollection.value,
+              );
+              final KeyInformation privateInformation = createPrivateKeyInfo(
+                password,
+                isInvalidPassword,
+                encryptedPrivateKeyInformation,
+              )!;
               RsaPrivateKeyParam? rsaParameter;
               if (privateInformation._algorithms!.id!.id ==
                       PkcsObjectId.rsaEncryption.id ||
@@ -243,7 +255,9 @@ class PdfPKCSCertificate {
                   attribute = attributeSet.objects[0] as Asn1Encode?;
                   if (attributes.containsKey(asn1Id!.id)) {
                     if (!(attributes[asn1Id.id] == attribute)) {
-                      throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
+                      throw PdfFormatException(
+                          'attempt to add existing attribute with different value',
+                          source: attributes);
                     }
                   } else {
                     attributes[asn1Id.id] = attribute;
@@ -301,7 +315,9 @@ class PdfPKCSCertificate {
                   if (attributes.containsKey(id!.id)) {
                     final Asn1Encode? attr = attributes[id.id] as Asn1Encode?;
                     if (attr != null && attr != attribute) {
-                      throw PdfFormatException('attempt to add existing attribute with different value', source: sq);
+                      throw PdfFormatException(
+                          'attempt to add existing attribute with different value',
+                          source: sq);
                     }
                   } else {
                     attributes[id.id] = attribute;
@@ -348,7 +364,9 @@ class PdfPKCSCertificate {
             final Asn1Encode? attr = attrSet[0];
             if (attributes.containsKey(aOid!.id)) {
               if (attributes[aOid.id] != attr) {
-                throw PdfFormatException('attempt to add existing attribute with different value', source: attributes);
+                throw PdfFormatException(
+                    'attempt to add existing attribute with different value',
+                    source: attributes);
               }
             } else {
               attributes[aOid.id] = attr;
@@ -509,17 +527,15 @@ class PdfPKCSCertificate {
       }
       if (id != null) {
         if (_keyCertificates.containsKey(id)) {
-          certificates =
-              _keyCertificates[id] is X509Certificates
-                  ? _keyCertificates[id]
-                  : null;
+          certificates = _keyCertificates[id] is X509Certificates
+              ? _keyCertificates[id]
+              : null;
         }
       } else {
         if (_keyCertificates.containsKey(key)) {
-          certificates =
-              _keyCertificates[key] is X509Certificates
-                  ? _keyCertificates[key]
-                  : null;
+          certificates = _keyCertificates[key] is X509Certificates
+              ? _keyCertificates[key]
+              : null;
         }
       }
       return certificates as X509Certificates?;
@@ -538,17 +554,15 @@ class PdfPKCSCertificate {
       }
       if (id != null) {
         if (_keyCertificates.containsKey(id)) {
-          certificates =
-              _keyCertificates[id] is X509Certificates
-                  ? _keyCertificates[id]
-                  : null;
+          certificates = _keyCertificates[id] is X509Certificates
+              ? _keyCertificates[id]
+              : null;
         }
       } else {
         if (_keyCertificates.containsKey(key)) {
-          certificates =
-              _keyCertificates[key] is X509Certificates
-                  ? _keyCertificates[key]
-                  : null;
+          certificates = _keyCertificates[key] is X509Certificates
+              ? _keyCertificates[key]
+              : null;
         }
       }
       return certificates as X509Certificates?;
@@ -656,8 +670,7 @@ class PdfPKCSCertificate {
                 if (x509CertEntry == null) {
                   continue;
                 }
-                final X509Certificate certificate =
-                    x509CertEntry.certificate!;
+                final X509Certificate certificate = x509CertEntry.certificate!;
                 if (certificate.c!.subject == issuer) {
                   nextCertificate = x509CertEntry;
                   break;
@@ -754,10 +767,9 @@ class _CertificateTable {
 
 class _CertificateIdentifier {
   _CertificateIdentifier({CipherParameter? pubKey, List<int>? id}) {
-    this.id =
-        pubKey != null
-            ? PdfPKCSCertificate.createSubjectKeyID(pubKey)._bytes
-            : id;
+    this.id = pubKey != null
+        ? PdfPKCSCertificate.createSubjectKeyID(pubKey)._bytes
+        : id;
   }
   //Fields
   List<int>? id;
@@ -1092,7 +1104,8 @@ class _PasswordUtility {
     if (type == _pkcs12) {
       generator = _Pkcs12AlgorithmGenerator(digest, password);
     } else {
-      throw PdfFormatException('Invalid Password Based Encryption type', source: type);
+      throw PdfFormatException('Invalid Password Based Encryption type',
+          source: type);
     }
     generator.init(key, salt, iterationCount);
     return generator;
@@ -1389,7 +1402,8 @@ class _ParamUtility {
 class _DataEncryptionParameter extends KeyParameter {
   _DataEncryptionParameter(List<int> keys) : super(Uint8List.fromList(keys)) {
     if (checkKey(keys, 0)) {
-      throw PdfFormatException('Invalid Data Encryption keys creation', source: keys);
+      throw PdfFormatException('Invalid Data Encryption keys creation',
+          source: keys);
     }
   }
   _DataEncryptionParameter.fromLengthValue(
@@ -1398,7 +1412,8 @@ class _DataEncryptionParameter extends KeyParameter {
     int length,
   ) : super.fromLengthValue(Uint8List.fromList(keys), offset, length) {
     if (checkKey(keys, 0)) {
-      throw PdfFormatException('Invalid Data Encryption keys creation', source: keys);
+      throw PdfFormatException('Invalid Data Encryption keys creation',
+          source: keys);
     }
   }
   static List<int> dataEncryptionWeekKeys = <int>[
@@ -1554,7 +1569,7 @@ class _DataEncryptionParameter extends KeyParameter {
 
 class _DesedeAlgorithmParameter extends _DataEncryptionParameter {
   _DesedeAlgorithmParameter(List<int> key, int keyOffset, int? keyLength)
-    : super(fixKey(key, keyOffset, keyLength));
+      : super(fixKey(key, keyOffset, keyLength));
   //Implementation
   static List<int> fixKey(List<int> key, int keyOffset, int? keyLength) {
     final List<int> tmp = List<int>.generate(24, (int i) => 0);
@@ -1567,10 +1582,12 @@ class _DesedeAlgorithmParameter extends _DataEncryptionParameter {
         List.copyRange(tmp, 0, key, keyOffset, keyOffset + 24);
         break;
       default:
-        throw PdfFormatException('Bad length for DESede key', source: keyLength);
+        throw PdfFormatException('Bad length for DESede key',
+            source: keyLength);
     }
     if (checkKeyValue(tmp, 0, tmp.length)) {
-      throw PdfFormatException('Attempt to create weak DESede key', source: key);
+      throw PdfFormatException('Attempt to create weak DESede key',
+          source: key);
     }
     return tmp;
   }
@@ -1656,7 +1673,8 @@ class _CipherUtils {
           break;
         // ignore: no_default_cases
         default:
-          throw PdfFormatException('Invalid cipher algorithm', source: cipherPadding);
+          throw PdfFormatException('Invalid cipher algorithm',
+              source: cipherPadding);
       }
     }
     String mode = '';
@@ -1815,7 +1833,8 @@ class _KeyIdentifier extends Asn1Encode {
             _serialNumber = DerInteger.getNumberFromTag(entry, false);
             break;
           default:
-            throw PdfFormatException('Invalid entry in sequence', source: sequence);
+            throw PdfFormatException('Invalid entry in sequence',
+                source: sequence);
         }
       }
     });
@@ -1878,7 +1897,8 @@ class _DesEdeAlogorithm extends _DataEncryption {
     }
     final List<int> keyMaster = parameters.keys;
     if (keyMaster.length != 24 && keyMaster.length != 16) {
-      throw PdfFormatException('Invalid key size. Size must be 16 or 24 bytes.', source: parameters);
+      throw PdfFormatException('Invalid key size. Size must be 16 or 24 bytes.',
+          source: parameters);
     }
     _isEncryption = forEncryption;
     final List<int> key1 = List<int>.generate(8, (int i) => 0);
@@ -1905,10 +1925,12 @@ class _DesEdeAlogorithm extends _DataEncryption {
   ]) {
     ArgumentError.checkNotNull(_key1);
     if ((inOffset! + _blockSize!) > inputBytes!.length) {
-      throw PdfFormatException('Invalid length in input bytes', source: inOffset);
+      throw PdfFormatException('Invalid length in input bytes',
+          source: inOffset);
     }
     if ((outOffset! + _blockSize!) > outputBytes!.length) {
-      throw PdfFormatException('Invalid length in output bytes', source: inOffset);
+      throw PdfFormatException('Invalid length in output bytes',
+          source: inOffset);
     }
     final List<int> tempBytes = List<int>.generate(_blockSize!, (int i) => 0);
     if (_isEncryption!) {
@@ -2640,10 +2662,12 @@ class _DataEncryption extends ICipher {
   ) {
     ArgumentError.checkNotNull(_keys);
     if ((inOffset + _blockSize!) > inBytes!.length) {
-      throw PdfFormatException('Invalid length in input bytes', source: inOffset);
+      throw PdfFormatException('Invalid length in input bytes',
+          source: inOffset);
     }
     if ((outOffset! + _blockSize!) > outBytes!.length) {
-      throw PdfFormatException('Invalid length in output bytes', source: outOffset);
+      throw PdfFormatException('Invalid length in output bytes',
+          source: outOffset);
     }
     encryptData(_keys, inBytes, inOffset, outBytes, outOffset);
     return <String, dynamic>{'length': _blockSize, 'output': outBytes};
@@ -3381,10 +3405,9 @@ class KeyInformation extends Asn1Encode {
         _algorithms = Algorithms.getAlgorithms(objects[1]);
         final dynamic privateKeyValue = objects[2];
         try {
-          _privateKey =
-              Asn1Stream(
-                PdfStreamReader(privateKeyValue.getOctets()),
-              ).readAsn1();
+          _privateKey = Asn1Stream(
+            PdfStreamReader(privateKeyValue.getOctets()),
+          ).readAsn1();
         } catch (e) {
           throw PdfFormatException('Invalid sequence', source: sequence);
         }
@@ -3535,10 +3558,10 @@ class CertificateIdentity {
     );
     try {
       final String algorithm = algorithms.id!.id!;
-      final X509Name? issuerName =
-          SingnedCertificate.getCertificate(
-            Asn1.fromByteArray(issuerCert.getTbsCertificate()!),
-          )!.subject;
+      final X509Name? issuerName = SingnedCertificate.getCertificate(
+        Asn1.fromByteArray(issuerCert.getTbsCertificate()!),
+      )!
+          .subject;
       MessageDigestFinder utilities = MessageDigestFinder();
       final List<int> issuerNameHash = utilities.getDigest(
         algorithm,

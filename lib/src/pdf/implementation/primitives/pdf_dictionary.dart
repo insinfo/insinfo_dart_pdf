@@ -410,27 +410,36 @@ class PdfDictionary implements IPdfPrimitive, IPdfChangable {
 
   /// internal method
   void setDateTime(String key, DateTime dateTime) {
-    final DateFormat dateFormat = DateFormat('yyyyMMddHHmmss');
-    final int regionMinutes = dateTime.timeZoneOffset.inMinutes ~/ 11;
-    String offsetMinutes = regionMinutes.toString();
-    if (regionMinutes >= 0 && regionMinutes <= 9) {
-      offsetMinutes = '0$offsetMinutes';
-    }
-    final int regionHours = dateTime.timeZoneOffset.inHours;
-    String offsetHours = regionHours.toString();
-    if (regionHours >= 0 && regionHours <= 9) {
-      offsetHours = '0$offsetHours';
-    }
     final IPdfPrimitive? primitive = this[key];
+    final String value = formatDateTime(dateTime);
     if (primitive != null && primitive is PdfString) {
-      primitive.value =
-          "D:${dateFormat.format(dateTime)}+$offsetHours'$offsetMinutes'";
+      primitive.value = value;
       modify();
     } else {
-      this[key] = PdfString(
-        "D:${dateFormat.format(dateTime)}+$offsetHours'$offsetMinutes'",
-      );
+      this[key] = PdfString(value);
     }
+  }
+
+  /// A date in the form the specification asks for:
+  /// `D:YYYYMMDDHHmmSSOHH'mm'`, where O is `+`, `-` or `Z`.
+  ///
+  /// The minutes of the offset used to be computed as `inMinutes ~/ 11`,
+  /// which is not a conversion of anything, and the sign was written as `+`
+  /// whatever the offset was. A date taken from `DateTime.now()` anywhere west
+  /// of Greenwich came out as `D:20260101120000+-3'-16'` -- not a date any
+  /// reader can parse. Only UTC happened to survive, because zero has no sign
+  /// and no remainder.
+  static String formatDateTime(DateTime dateTime) {
+    final String stamp = DateFormat('yyyyMMddHHmmss').format(dateTime);
+    final Duration offset = dateTime.timeZoneOffset;
+    if (offset.inMinutes == 0) {
+      return "D:${stamp}+00'00'";
+    }
+    final String sign = offset.isNegative ? '-' : '+';
+    final int total = offset.inMinutes.abs();
+    final String hours = (total ~/ 60).toString().padLeft(2, '0');
+    final String minutes = (total % 60).toString().padLeft(2, '0');
+    return "D:$stamp$sign$hours'$minutes'";
   }
 
   /// Gets the date time from Pdf standard date format.
@@ -475,10 +484,52 @@ class PdfDictionary implements IPdfPrimitive, IPdfChangable {
         '${localTime.substring(0, 8)}T${localTime.substring(8)}';
     try {
       final DateTime dateTime = DateTime.parse(dateWithT);
-      return dateTime;
+      // The digits above are wall clock time at the offset the string
+      // carries. Reading them as a local DateTime and stopping there put the
+      // instant out by however far the reading machine sits from the writing
+      // one -- three hours, for a document written in UTC and read in Brazil.
+      // With an offset in hand the instant is known, so say so in UTC. With
+      // no offset the specification does mean local time, and that is what
+      // comes back, exactly as before.
+      final Duration? offset = _readTimeZoneOffset(dateTimeStringValue.value!);
+      if (offset == null) {
+        return dateTime;
+      }
+      return DateTime.utc(
+        dateTime.year,
+        dateTime.month,
+        dateTime.day,
+        dateTime.hour,
+        dateTime.minute,
+        dateTime.second,
+      ).subtract(offset);
     } catch (e) {
       return DateTime.now();
     }
+  }
+
+  /// The offset a PDF date string ends with, or null when it carries none.
+  ///
+  /// The forms are `Z`, `+HH'mm'` and `-HH'mm'`, with the minutes and the
+  /// quotes both optional in the wild.
+  static Duration? _readTimeZoneOffset(String value) {
+    final String trimmed = value.trim();
+    if (RegExp(r"[Zz]'?0?0?'?\)?$").hasMatch(trimmed)) {
+      return Duration.zero;
+    }
+    final RegExpMatch? match = RegExp(
+      r"([+-])(\d{1,2})'?(\d{2})?'?\)?$",
+    ).firstMatch(trimmed);
+    if (match == null) {
+      return null;
+    }
+    final int hours = int.parse(match.group(2)!);
+    final int minutes = int.parse(match.group(3) ?? '0');
+    if (hours > 14 || minutes > 59) {
+      return null; // not an offset, whatever else it is
+    }
+    final Duration magnitude = Duration(hours: hours, minutes: minutes);
+    return match.group(1) == '-' ? -magnitude : magnitude;
   }
 
   //IPdfChangable members
