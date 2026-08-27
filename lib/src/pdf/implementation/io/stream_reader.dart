@@ -1,3 +1,4 @@
+import 'pdf_format_exception.dart';
 /// internal class
 class PdfStreamReader {
   //Constructor
@@ -19,7 +20,7 @@ class PdfStreamReader {
   int get position => _position!;
   set position(int value) {
     if (value < 0) {
-      throw ArgumentError.value(value, 'position', 'Invalid position');
+      throw PdfFormatException('Invalid position', source: value);
     }
     _position = value;
   }

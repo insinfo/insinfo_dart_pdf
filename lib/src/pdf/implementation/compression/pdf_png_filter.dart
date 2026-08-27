@@ -1,3 +1,4 @@
+import '../io/pdf_format_exception.dart';
 /// internal class
 class PdfPngFilter {
   /// internal constructor
@@ -261,7 +262,7 @@ class PdfPngFilter {
     } else if (type == 4) {
       result = _Type.paeth;
     } else {
-      throw ArgumentError.value(type, 'Invalid type');
+      throw PdfFormatException('Invalid type', source: type);
     }
     return result;
   }

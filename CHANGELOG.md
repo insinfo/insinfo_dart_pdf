@@ -48,27 +48,37 @@
   `trailer` dictionary still present, or synthesized around whichever rebuilt
   object is the document catalog. A file a browser can render now loads and
   merges.
-- **Breaking, and narrower than it looks:** loading a document now reports bad
-  data as `PdfFormatException`, which extends `FormatException`. Reading a file
-  a user supplied is not a programming error, so an `Error` was the wrong
-  contract — `on ArgumentError` forces callers toward `catch (e)`, which also
-  swallows `StackOverflowError` and `TypeError`.
+- **Breaking:** the library no longer reports bad data as an `Error`. Every
+  `throw ArgumentError` was reclassified against one question — what can the
+  caller do about it?
 
-  What is covered: `PdfDocument(inputBytes:)` and
-  `PdfDocument.fromBase64String`. The whole parse is guarded, so a failure
-  raised anywhere underneath — lexer, decompressor, ASN.1 reader — surfaces as
-  `PdfFormatException` with the original in `PdfFormatException.cause`.
+  | Failure | Type | What the caller does |
+  |---|---|---|
+  | the bytes are bad | `PdfFormatException` | show the user, move on |
+  | the caller passed something wrong | `ArgumentError` | fix the code |
+  | a library invariant broke | `StateError` | report the bug |
+  | the file needs a feature this library lacks | `UnsupportedError` | take another route |
 
-  What is **not** covered: everything outside document loading. The library
-  still throws `ArgumentError` from roughly 430 places — certificate and ASN.1
-  parsing, the signature dictionary, `PdfExternalSigning`, the compression
-  reader — when reached by any other route. **Do not replace `on
-  ArgumentError` with `on PdfFormatException` wholesale**: for those paths the
-  failure type has not changed. Keep both, or catch `on Exception` plus `on
-  ArgumentError` where you handle untrusted input outside the load path.
+  Of 431 sites: 214 became `PdfFormatException`, 39 `UnsupportedError`, 5
+  `StateError`, and 173 stayed `ArgumentError` because they really are caller
+  contracts — a null argument, a page index out of range, a negative count.
+  Signature structure failures in `PdfExternalSigning`, previously `StateError`,
+  became `PdfFormatException` for the same reason.
 
-  Extending `FormatException` means `on FormatException` — what Dart code
-  already writes for malformed data — catches it as well.
+  `PdfFormatException` extends `FormatException`, so `on FormatException` —
+  what Dart code already writes for malformed data — catches it, and it carries
+  the offending value in `source` plus, when it wraps another failure, `cause`.
+
+  **Migration:** replace `on ArgumentError` with `on PdfFormatException` where
+  you handle files supplied by users. Keep `on ArgumentError` only where you
+  are guarding against your own mistakes. Catching `on Exception` covers the
+  data cases and, deliberately, leaves `StateError` and `TypeError` to surface
+  as the defects they are.
+
+  This is enforced rather than promised: `test/api_contract_test.dart` runs the
+  corpus through twelve mutations — truncation, wiped keywords, flipped bytes —
+  against document loading, merging, signature reading and signature
+  validation, and fails if an `Error` escapes any of them.
 - Drop the signature dictionary from the output instead of leaving it
   unreachable. Removing `/V` from the cloned widget detached it from
   `/AcroForm /Fields` but left the PKCS#7 blob registered as an orphan object —

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../pdf/implementation/io/pdf_format_exception.dart';
 
 /// Immutable serial-number value object with canonical representations.
 ///
@@ -27,7 +28,7 @@ class CertificateSerial {
   factory CertificateSerial.fromHex(String input) {
     final cleaned = _cleanHex(input);
     if (cleaned.isEmpty) {
-      throw ArgumentError.value(input, 'input', 'Invalid hex serial.');
+      throw PdfFormatException('Invalid hex serial.', source: input);
     }
     final bytes = _hexToBytes(cleaned);
     return CertificateSerial._(
@@ -40,11 +41,11 @@ class CertificateSerial {
   factory CertificateSerial.fromDecimal(String input) {
     final cleaned = input.trim();
     if (cleaned.isEmpty) {
-      throw ArgumentError.value(input, 'input', 'Invalid decimal serial.');
+      throw PdfFormatException('Invalid decimal serial.', source: input);
     }
     final value = BigInt.parse(cleaned);
     if (value < BigInt.zero) {
-      throw ArgumentError.value(input, 'input', 'Serial must be non-negative.');
+      throw PdfFormatException('Serial must be non-negative.', source: input);
     }
     final bytes = _bigIntToBytes(value);
     return CertificateSerial._(
@@ -61,22 +62,20 @@ class CertificateSerial {
   /// - raw integer content bytes.
   factory CertificateSerial.fromDerInteger(Uint8List derInteger) {
     if (derInteger.isEmpty) {
-      throw ArgumentError.value(derInteger, 'derInteger', 'Empty DER integer.');
+      throw PdfFormatException('Empty DER integer.', source: derInteger);
     }
 
     Uint8List content;
     if (derInteger[0] == 0x02) {
       if (derInteger.length < 3) {
-        throw ArgumentError.value(
-            derInteger, 'derInteger', 'Invalid DER INTEGER.');
+        throw PdfFormatException('Invalid DER INTEGER.', source: derInteger);
       }
       final lenInfo = _readDerLength(derInteger, 1);
       final int start = 1 + lenInfo.$1;
       final int length = lenInfo.$2;
       final int end = start + length;
       if (start < 0 || end > derInteger.length || length <= 0) {
-        throw ArgumentError.value(
-            derInteger, 'derInteger', 'Invalid DER INTEGER length.');
+        throw PdfFormatException('Invalid DER INTEGER length.', source: derInteger);
       }
       content = Uint8List.sublistView(derInteger, start, end);
     } else {
@@ -116,7 +115,7 @@ String normalizeSerialToDecimal(String input) =>
 CertificateSerial _parseSerialFlex(String input) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) {
-    throw ArgumentError.value(input, 'input', 'Empty serial.');
+    throw PdfFormatException('Empty serial.', source: input);
   }
   if (_looksLikeHex(trimmed)) {
     return CertificateSerial.fromHex(trimmed);
@@ -139,7 +138,7 @@ String _cleanHex(String input) {
     s = s.substring(2);
   }
   if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(s)) {
-    throw ArgumentError.value(input, 'input', 'Invalid hex serial.');
+    throw PdfFormatException('Invalid hex serial.', source: input);
   }
   s = s.toLowerCase();
   s = s.replaceFirst(RegExp(r'^0+'), '');
@@ -204,7 +203,7 @@ bool _bytesEqual(Uint8List a, Uint8List b) {
 /// Returns `(lengthBytesCount, valueLength)`.
 (int, int) _readDerLength(Uint8List bytes, int offset) {
   if (offset >= bytes.length) {
-    throw ArgumentError('Invalid DER length offset.');
+    throw PdfFormatException('Invalid DER length offset.');
   }
   final first = bytes[offset];
   if ((first & 0x80) == 0) {
@@ -212,7 +211,7 @@ bool _bytesEqual(Uint8List a, Uint8List b) {
   }
   final count = first & 0x7f;
   if (count == 0 || count > 4 || offset + count >= bytes.length) {
-    throw ArgumentError('Unsupported DER length.');
+    throw UnsupportedError('Unsupported DER length.');
   }
   var value = 0;
   for (int i = 0; i < count; i++) {

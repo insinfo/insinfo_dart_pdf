@@ -20,6 +20,7 @@ import 'pdf_constants.dart';
 import 'pdf_cross_table.dart';
 import 'pdf_lexer.dart';
 import 'pdf_reader.dart';
+import 'pdf_format_exception.dart';
 
 const bool _debugXref =
     bool.fromEnvironment('PDF_DEBUG_XREF', defaultValue: false);
@@ -205,7 +206,7 @@ class PdfParser {
     } else if (_next == PdfTokenType.number) {
       result = true;
     } else {
-      throw ArgumentError.value(result, 'Invalid format');
+      throw PdfFormatException('Invalid format', source: result);
     }
     return result;
   }
@@ -880,7 +881,12 @@ class PdfParser {
       message = '$message$additional before ${_lexer!.position}';
     }
 
-    throw ArgumentError.value(error, message);
+    // Everything this function reports is a complaint about the bytes being
+    // parsed. It fires while an object is being read, which for a lazily
+    // parsed document happens long after the constructor returned — so the
+    // type has to be right here rather than depending on a guard at the entry
+    // point.
+    throw PdfFormatException(message, source: error);
   }
 }
 

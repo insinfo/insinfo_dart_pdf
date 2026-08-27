@@ -501,7 +501,7 @@ class CrossTable {
     Map<int, ObjectInformation>? objects,
   ) {
     if (stream == null) {
-      throw ArgumentError.value(stream, 'Invalid format');
+      throw PdfFormatException('Invalid format', source: stream);
     }
     stream.decompress();
     final List<_SubSection> subSections = _getSections(stream);
@@ -610,7 +610,7 @@ class CrossTable {
       }
     }
     if (count == 0) {
-      throw ArgumentError.value(count, 'Invalid Format');
+      throw PdfFormatException('Invalid Format', source: count);
     }
     final IPdfPrimitive? obj = stream[PdfDictionaryProperties.index];
     if (obj == null) {
@@ -620,7 +620,7 @@ class CrossTable {
       if (primitive != null && primitive is PdfArray) {
         final PdfArray indices = primitive;
         if ((indices.count & 1) != 0) {
-          throw ArgumentError.value(count, 'Invalid Format');
+          throw PdfFormatException('Invalid Format', source: count);
         }
         for (int i = 0; i < indices.count; ++i) {
           int n = 0, c = 0;
@@ -809,10 +809,7 @@ class ObjectInformation {
         }
         final int index = _archive!._index;
         if (index * 2 >= indices.length) {
-          throw ArgumentError.value(
-            _archive!._archiveNumber,
-            'Missing indexes in archive',
-          );
+          throw PdfFormatException('Missing indexes in archive', source: _archive!._archiveNumber);
         }
         _offset = indices[index * 2 + 1];
         final int first =

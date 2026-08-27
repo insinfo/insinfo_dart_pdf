@@ -18,6 +18,7 @@ import '../primitives/pdf_reference_holder.dart';
 import '../primitives/pdf_string.dart';
 import '../security/pdf_encryptor.dart';
 import '../security/pdf_security.dart';
+import '../io/pdf_format_exception.dart';
 
 /// internal class
 class PdfStream extends PdfDictionary {
@@ -181,7 +182,7 @@ class PdfStream extends PdfDictionary {
           }
         }
       } else {
-        throw ArgumentError.value(filterName, 'Invalid format');
+        throw PdfFormatException('Invalid format', source: filterName);
       }
     }
     return decompressedData;
@@ -253,7 +254,7 @@ class PdfStream extends PdfDictionary {
       }
       if (decodeParams == null) {
         if (decodeParamsArr == null) {
-          throw ArgumentError.value(filter, 'Invalid Format');
+          throw PdfFormatException('Invalid Format', source: filter);
         }
       }
       if (decodeParamsArr != null) {
@@ -289,7 +290,7 @@ class PdfStream extends PdfDictionary {
       if (predictor == 1) {
         return data;
       } else if (predictor == 2) {
-        throw ArgumentError.value(predictor, 'Unsupported predictor: TIFF 2.');
+        throw UnsupportedError('Unsupported predictor: TIFF 2.');
       } else if (predictor < 16 && predictor > 2) {
         int colors = 1;
         int columns = 1;
@@ -304,7 +305,7 @@ class PdfStream extends PdfDictionary {
         data = PdfPngFilter().decompress(data, colors * columns);
         return data;
       } else {
-        throw ArgumentError.value(filter, 'Invalid Format');
+        throw PdfFormatException('Invalid Format', source: filter);
       }
     }
     return data;
@@ -354,10 +355,7 @@ class PdfStream extends PdfDictionary {
       data!.addAll(pdfObject);
       _modify();
     } else {
-      throw ArgumentError.value(
-        pdfObject,
-        'The method or operation is not implemented',
-      );
+      throw UnsupportedError('The method or operation is not implemented');
     }
   }
 

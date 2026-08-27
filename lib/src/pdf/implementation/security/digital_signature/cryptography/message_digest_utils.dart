@@ -2,6 +2,7 @@ import 'package:crypto/crypto.dart';
 import '../asn1/der.dart';
 import '../pdf_signature_dictionary.dart';
 import '../pkcs/pfx_data.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// Internal class
 class MessageDigestFinder {
@@ -61,11 +62,7 @@ class MessageDigestFinder {
       digest.updateWithBytes(bytes, 0, bytes.length);
       return doFinal(digest);
     } else {
-      throw ArgumentError.value(
-        algorithm,
-        'hashAlgorithm',
-        'Invalid message digest algorithm',
-      );
+      throw PdfFormatException('Invalid message digest algorithm', source: algorithm);
     }
   }
 

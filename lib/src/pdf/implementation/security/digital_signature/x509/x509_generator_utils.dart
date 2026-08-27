@@ -7,6 +7,7 @@ import 'package:pointycastle/export.dart' as pc;
 
 import '../asn1/asn1.dart';
 import '../asn1/der.dart';
+import '../../../io/pdf_format_exception.dart';
 import '../pkcs/pfx_data.dart'; // For Algorithms
 import 'x509_name.dart'; // For X509Name
 
@@ -238,7 +239,7 @@ class X509GeneratorUtils {
     if (signature is pc.RSASignature) {
       return signature.bytes;
     }
-    throw ArgumentError('Signature generation failed to produce RSASignature bytes');
+    throw PdfFormatException('Signature generation failed to produce RSASignature bytes');
   }
 
   static String _toPem(List<int> der, String type) {

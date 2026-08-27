@@ -4261,7 +4261,7 @@ class AdobeGlyphList {
       if (name.startsWith('u')) {
         return parseHex(name.substring(1, name.length));
       }
-      throw ArgumentError('The encoding is not supported.');
+      throw UnsupportedError('The encoding is not supported.');
     }
   }
 }

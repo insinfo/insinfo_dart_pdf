@@ -1,5 +1,6 @@
 import 'enums.dart';
 import 'pdf_reader.dart';
+import 'pdf_format_exception.dart';
 
 /// internal class
 class PdfLexer {
@@ -470,7 +471,7 @@ class PdfLexer {
         }
       } else {
         if (noState == lastAcceptState) {
-          throw ArgumentError.value(noState, 'Lexical Error: Unmatched Input.');
+          throw PdfFormatException('Lexical Error: Unmatched Input.', source: noState);
         } else {
           anchor = accept[lastAcceptState!];
           if (0 != (end & anchor)) {
@@ -890,12 +891,9 @@ class PdfLexer {
   void _error(_Error code, bool fatal) {
     if (fatal) {
       if (objectName != null) {
-        throw ArgumentError.value(
-          code,
-          'Fatal Error occurred at $position.\n When reading object type of ${objectName!}',
-        );
+        throw PdfFormatException('Fatal Error occurred at $position.\n When reading object type of ${objectName!}', source: code);
       } else {
-        throw ArgumentError.value(code, 'Fatal Error occurred at $position');
+        throw PdfFormatException('Fatal Error occurred at $position', source: code);
       }
     }
   }

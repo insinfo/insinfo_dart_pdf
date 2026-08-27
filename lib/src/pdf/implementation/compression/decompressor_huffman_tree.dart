@@ -59,10 +59,7 @@ class DecompressorHuffmanTree {
       }
       _distanceTree = DecompressorHuffmanTree(lengths);
     } catch (e) {
-      throw ArgumentError.value(
-        e,
-        'DecompressorHuffmanTree: fixed trees generation failed',
-      );
+      throw StateError('DecompressorHuffmanTree: fixed trees generation failed');
     }
   }
 

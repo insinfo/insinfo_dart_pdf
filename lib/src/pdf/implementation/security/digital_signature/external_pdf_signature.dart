@@ -19,6 +19,7 @@ import '../../io/pdf_cross_table.dart';
 import '../enum.dart';
 import 'pdf_external_signer.dart';
 import 'pdf_signature.dart';
+import '../../io/pdf_format_exception.dart';
 
 /// Result of preparing a PDF for external signing.
 class PdfExternalSigningResult {
@@ -210,7 +211,7 @@ class PdfExternalSigning {
         }
       } catch (e) {
         // If the token is truly absent, avoid decoding the whole file.
-        if (e is StateError && e.message == 'ByteRange not found') {
+        if (e is PdfFormatException && e.message == 'ByteRange not found') {
           throw e;
         }
         // Otherwise fall through to attempt recovery.
@@ -229,7 +230,7 @@ class PdfExternalSigning {
     // Last resort: full parser.
     final List<int> range = extractByteRangeInternal(pdfBytes);
     if (!_isValidByteRange(pdfBytes.length, range)) {
-      throw StateError('ByteRange found but inconsistent');
+      throw PdfFormatException('ByteRange found but inconsistent');
     }
     return range;
   }
@@ -240,7 +241,7 @@ class PdfExternalSigning {
       r'/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]',
     ).allMatches(s);
     if (matches.isEmpty) {
-      throw StateError('ByteRange not found');
+      throw PdfFormatException('ByteRange not found');
     }
     final RegExpMatch match = matches.last;
     return <int>[
@@ -263,7 +264,7 @@ class PdfExternalSigning {
       hexUp = '0$hexUp';
     }
     if (hexUp.length > availableChars) {
-      throw StateError(
+      throw PdfFormatException(
         'Signature larger than placeholder: ${hexUp.length} > $availableChars',
       );
     }
@@ -304,7 +305,7 @@ class PdfExternalSigning {
         }
       } catch (e) {
         // If /ByteRange is not present, we can fail fast.
-        if (e is StateError && e.message == 'ByteRange not found') {
+        if (e is PdfFormatException && e.message == 'ByteRange not found') {
           throw e;
         }
         // Otherwise fall through.
@@ -322,7 +323,7 @@ class PdfExternalSigning {
 
     final _ContentsRange r = _findContentsRangeInternal(pdfBytes);
     if (!_isValidContentsRange(pdfBytes, r)) {
-      throw StateError('Contents range found but inconsistent');
+      throw PdfFormatException('Contents range found but inconsistent');
     }
     return r;
   }
@@ -331,21 +332,21 @@ class PdfExternalSigning {
     final String s = latin1.decode(pdfBytes, allowInvalid: true);
     final int sigPos = s.lastIndexOf('/Type /Sig');
     if (sigPos == -1) {
-      throw StateError('No /Type /Sig');
+      throw PdfFormatException('No /Type /Sig');
     }
     final int dictStart = s.lastIndexOf('<<', sigPos);
     final int dictEnd = s.indexOf('>>', sigPos);
     if (dictStart == -1 || dictEnd == -1 || dictEnd <= dictStart) {
-      throw StateError('Could not find signature dictionary bounds');
+      throw PdfFormatException('Could not find signature dictionary bounds');
     }
     final int contentsLabelPos = s.indexOf('/Contents', dictStart);
     if (contentsLabelPos == -1 || contentsLabelPos > dictEnd) {
-      throw StateError('No /Contents found in signature dictionary');
+      throw PdfFormatException('No /Contents found in signature dictionary');
     }
     final int lt = s.indexOf('<', contentsLabelPos);
     final int gt = s.indexOf('>', lt + 1);
     if (lt == -1 || gt == -1 || gt > dictEnd || gt <= lt) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     return _ContentsRange(lt + 1, gt);
   }
@@ -426,7 +427,7 @@ class PdfExternalSigning {
               final PdfNumber? number =
                   PdfCrossTable.dereference(range[i]) as PdfNumber?;
               if (number == null || number.value == null) {
-                throw StateError('Invalid ByteRange entry at index $i');
+                throw PdfFormatException('Invalid ByteRange entry at index $i');
               }
               values.add(number.value!.toInt());
             }
@@ -435,7 +436,7 @@ class PdfExternalSigning {
         }
       }
       if (lastRange == null) {
-        throw StateError('ByteRange not found via internal parser');
+        throw PdfFormatException('ByteRange not found via internal parser');
       }
       return lastRange;
     } finally {
@@ -446,12 +447,12 @@ class PdfExternalSigning {
   static _ContentsRange _findContentsRangeInternal(Uint8List pdfBytes) {
     final List<int> range = extractByteRangeInternal(pdfBytes);
     if (range.length != 4) {
-      throw StateError('Invalid ByteRange length');
+      throw PdfFormatException('Invalid ByteRange length');
     }
     final int gapStart = range[0] + range[1];
     final int gapEnd = range[2];
     if (gapStart < 0 || gapEnd <= gapStart || gapEnd > pdfBytes.length) {
-      throw StateError('Invalid ByteRange gap for /Contents');
+      throw PdfFormatException('Invalid ByteRange gap for /Contents');
     }
     int lt = -1;
     for (int i = gapStart; i < gapEnd; i++) {
@@ -461,7 +462,7 @@ class PdfExternalSigning {
       }
     }
     if (lt == -1) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     int gt = -1;
     for (int i = lt + 1; i < gapEnd; i++) {
@@ -471,7 +472,7 @@ class PdfExternalSigning {
       }
     }
     if (gt == -1 || gt <= lt) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     return _ContentsRange(lt + 1, gt);
   }
@@ -483,7 +484,7 @@ class PdfExternalSigning {
   static List<int> extractByteRangeFast(Uint8List pdfBytes) {
     final int tokenPos = _lastIndexOfSequence(pdfBytes, _byteRangeToken);
     if (tokenPos == -1) {
-      throw StateError('ByteRange not found');
+      throw PdfFormatException('ByteRange not found');
     }
 
     final int end = pdfBytes.length;
@@ -492,7 +493,7 @@ class PdfExternalSigning {
 
     // Find '[' after /ByteRange
     if (i >= end) {
-      throw StateError('Invalid ByteRange syntax');
+      throw PdfFormatException('Invalid ByteRange syntax');
     }
     if (pdfBytes[i] != 0x5B /* [ */) {
       // Scan forward a little to find the bracket.
@@ -506,7 +507,7 @@ class PdfExternalSigning {
         }
       }
       if (!found) {
-        throw StateError('Invalid ByteRange syntax');
+        throw PdfFormatException('Invalid ByteRange syntax');
       }
     }
     i++; // skip '['
@@ -534,12 +535,12 @@ class PdfExternalSigning {
   static _ContentsRange findContentsRangeFast(Uint8List pdfBytes) {
     final List<int> range = extractByteRangeFast(pdfBytes);
     if (range.length != 4) {
-      throw StateError('Invalid ByteRange length');
+      throw PdfFormatException('Invalid ByteRange length');
     }
     final int gapStart = range[0] + range[1];
     final int gapEnd = range[2];
     if (gapStart < 0 || gapEnd <= gapStart || gapEnd > pdfBytes.length) {
-      throw StateError('Invalid ByteRange gap for /Contents');
+      throw PdfFormatException('Invalid ByteRange gap for /Contents');
     }
 
     // Search /Contents inside the gap for robustness.
@@ -566,7 +567,7 @@ class PdfExternalSigning {
       }
     }
     if (lt == -1) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
 
     int gt = -1;
@@ -577,7 +578,7 @@ class PdfExternalSigning {
       }
     }
     if (gt == -1 || gt <= lt) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     return _ContentsRange(lt + 1, gt);
   }
@@ -595,7 +596,7 @@ class PdfExternalSigning {
       }
     }
     if (lt == -1) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     int gt = -1;
     for (int i = lt + 1; i < gapEnd; i++) {
@@ -605,7 +606,7 @@ class PdfExternalSigning {
       }
     }
     if (gt == -1 || gt <= lt) {
-      throw StateError('Contents hex string not found');
+      throw PdfFormatException('Contents hex string not found');
     }
     return _ContentsRange(lt + 1, gt);
   }
@@ -676,7 +677,7 @@ class PdfExternalSigning {
     int end,
   ) {
     if (i >= end) {
-      throw StateError('Unexpected end while parsing int');
+      throw PdfFormatException('Unexpected end while parsing int');
     }
     bool neg = false;
     if (bytes[i] == 0x2D /* - */) {
@@ -684,7 +685,7 @@ class PdfExternalSigning {
       i++;
     }
     if (i >= end) {
-      throw StateError('Unexpected end while parsing int');
+      throw PdfFormatException('Unexpected end while parsing int');
     }
     int value = 0;
     int digits = 0;
@@ -696,7 +697,7 @@ class PdfExternalSigning {
       digits++;
     }
     if (digits == 0) {
-      throw StateError('Invalid integer');
+      throw PdfFormatException('Invalid integer');
     }
     return (value: neg ? -value : value, nextIndex: i);
   }

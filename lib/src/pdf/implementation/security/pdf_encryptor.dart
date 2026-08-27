@@ -884,10 +884,7 @@ class PdfEncryptor {
     if (obj != null &&
         obj is PdfName &&
         obj.name != PdfDictionaryProperties.standard) {
-      throw ArgumentError.value(
-        obj,
-        'Invalid Format: Unsupported security filter',
-      );
+      throw UnsupportedError('Invalid Format: Unsupported security filter');
     }
     _permissionValue = dictionary.getInt(PdfDictionaryProperties.p);
     _updatePermissions(_permissionValue! & ~_permissionSet!);
@@ -973,9 +970,7 @@ class PdfEncryptor {
     if (keyLength != 0 &&
         keyLength! % 8 != 0 &&
         (keySize == 1 || keySize == 2 || keySize == 3)) {
-      throw ArgumentError.value(
-        'Invalid format: Invalid/Unsupported security dictionary.',
-      );
+      throw UnsupportedError('Invalid format: Invalid/Unsupported security dictionary.');
     }
     hasComputedPasswordValues = true;
   }

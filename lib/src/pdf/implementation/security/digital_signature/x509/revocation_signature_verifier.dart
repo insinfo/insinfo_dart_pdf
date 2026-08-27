@@ -78,7 +78,7 @@ class RevocationSignatureVerifier {
       case '1.2.840.10045.4.3.4':
         return pc.SHA512Digest();
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported ECDSA signature OID');
+    throw UnsupportedError('Unsupported ECDSA signature OID');
   }
 
   static String _pcSignerNameForRsaPkcs1(String oid) {
@@ -92,7 +92,7 @@ class RevocationSignatureVerifier {
       case '1.2.840.113549.1.1.13':
         return 'SHA-512/RSA';
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported RSA signature OID');
+    throw UnsupportedError('Unsupported RSA signature OID');
   }
 
   static pc.RSAPublicKey? _tryBuildRsaPublicKey(X509Certificate cert) {
@@ -151,7 +151,7 @@ class RevocationSignatureVerifier {
       case '1.3.132.0.35':
         return 'secp521r1';
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported named curve OID');
+    throw UnsupportedError('Unsupported named curve OID');
   }
 
   static bool _verifyEcdsa({
@@ -227,7 +227,7 @@ class RevocationSignatureVerifier {
       case '2.16.840.1.101.3.4.2.3':
         return pc.SHA512Digest();
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported digest OID');
+    throw UnsupportedError('Unsupported digest OID');
   }
 
   static ({String hashOid, String mgfHashOid, int saltLength})

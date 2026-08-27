@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'pdf_constants.dart';
 import 'stream_reader.dart';
+import 'pdf_format_exception.dart';
 
 /// internal class
 class PdfReader {
@@ -73,7 +74,7 @@ class PdfReader {
 
   int _skipWhiteSpaceBack() {
     if (position == 0) {
-      throw ArgumentError.value(position, 'Invalid PDF Document Format');
+      throw PdfFormatException('Invalid PDF Document Format', source: position);
     }
     position -= 1;
     while (_spaceCharacters.contains(String.fromCharCode(_read()))) {
@@ -198,7 +199,7 @@ class PdfReader {
 
   String _readBack(int length) {
     if (position < length) {
-      throw ArgumentError.value(position, 'Invalid PDF Document Format');
+      throw PdfFormatException('Invalid PDF Document Format', source: position);
     }
     position -= length;
     return String.fromCharCodes(readBytes(length));
@@ -220,7 +221,7 @@ class PdfReader {
     pos = position - token.length;
     while (str != token) {
       if (pos < 0) {
-        throw ArgumentError.value(pos, 'Invalid PDF Document Format');
+        throw PdfFormatException('Invalid PDF Document Format', source: pos);
       }
       position -= 1;
       if (position < token.length) {
@@ -236,7 +237,7 @@ class PdfReader {
         str = PdfOperators.startCrossReference;
         while (str != token) {
           if (pos < 0) {
-            throw ArgumentError.value(pos, 'Invalid PDF Document Format');
+            throw PdfFormatException('Invalid PDF Document Format', source: pos);
           }
           position -= 1;
           if (position < token.length) {

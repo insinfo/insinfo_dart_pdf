@@ -6,6 +6,7 @@ import '../pkcs/pfx_data.dart';
 import 'asn1_stream.dart';
 import 'ber.dart';
 import 'der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class IAsn1 {
@@ -474,7 +475,7 @@ class Asn1Octet extends Asn1 implements IAsn1Octet {
   /// internal method
   @override
   void encode(DerStream stream) {
-    throw ArgumentError.value(stream, 'stream', 'Not Implemented');
+    throw UnsupportedError('Not Implemented');
   }
 
   //Static methods
@@ -495,7 +496,7 @@ class Asn1Octet extends Asn1 implements IAsn1Octet {
     if (obj is Asn1Tag) {
       return getOctetStringFromObject(obj.getObject());
     }
-    throw ArgumentError.value(obj, 'obj', 'Invalid object entry');
+    throw PdfFormatException('Invalid object entry', source: obj);
   }
 }
 
@@ -581,17 +582,13 @@ class Asn1Sequence extends Asn1 {
           return primitive;
         }
       } else {
-        throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+        throw PdfFormatException('Invalid entry in sequence', source: obj);
       }
     } else if (obj is Asn1Tag) {
       final Asn1? inner = obj.getObject();
       if (explicitly) {
         if (!obj.explicit!) {
-          throw ArgumentError.value(
-            explicitly,
-            'explicitly',
-            'Invalid entry in sequence',
-          );
+          throw PdfFormatException('Invalid entry in sequence', source: explicitly);
         }
         result = inner as Asn1Sequence?;
       } else if (obj.explicit!) {
@@ -603,7 +600,7 @@ class Asn1Sequence extends Asn1 {
         if (inner is Asn1Sequence) {
           result = inner;
         } else {
-          throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+          throw PdfFormatException('Invalid entry in sequence', source: obj);
         }
       }
     }
@@ -701,7 +698,7 @@ class Asn1Sequence extends Asn1 {
 
   @override
   void encode(DerStream derOut) {
-    throw ArgumentError.value('Not Implemented');
+    throw UnsupportedError('Not Implemented');
   }
 
   /// internal method
@@ -865,7 +862,7 @@ class Asn1Set extends Asn1 {
 
   @override
   void encode(DerStream derOut) {
-    throw ArgumentError.value('Not Implemented');
+    throw UnsupportedError('Not Implemented');
   }
 
   /// internal method
@@ -915,13 +912,13 @@ class Asn1Set extends Asn1 {
           result = asn1;
         }
       } else {
-        throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+        throw PdfFormatException('Invalid entry in sequence', source: obj);
       }
     } else if (obj is Asn1Tag) {
       final Asn1? inner = obj.getObject();
       if (isExplicit) {
         if (!obj.explicit!) {
-          throw ArgumentError.value(obj, 'obj', 'Tagged object is implicit.');
+          throw PdfFormatException('Tagged object is implicit.', source: obj);
         }
         result = (inner is Asn1Set) ? inner : null;
       } else if (obj.explicit! && inner is Asn1Encode) {
@@ -936,7 +933,7 @@ class Asn1Set extends Asn1 {
             );
         result = DerSet(collection: collection, isSort: false);
       } else {
-        throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+        throw PdfFormatException('Invalid entry in sequence', source: obj);
       }
     }
     return result;
@@ -1004,12 +1001,12 @@ class Asn1Tag extends Asn1 implements IAsn1Tag {
       if (isExplicit) {
         return obj.getObject() as Asn1Tag?;
       }
-      throw ArgumentError.value(obj, 'obj', 'Explicit tag is not used');
+      throw PdfFormatException('Explicit tag is not used', source: obj);
     } else {
       if (obj == null || obj is Asn1Tag) {
         return obj as Asn1Tag?;
       }
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry in sequence');
+      throw PdfFormatException('Invalid entry in sequence', source: obj);
     }
   }
 
@@ -1044,7 +1041,7 @@ class Asn1Tag extends Asn1 implements IAsn1Tag {
   @override
   // ignore: avoid_renaming_method_parameters
   void encode(DerStream stream) {
-    throw ArgumentError.value(stream, 'stream', 'Not Implemented');
+    throw UnsupportedError('Not Implemented');
   }
 
   /// internal method
@@ -1068,11 +1065,7 @@ class Asn1Tag extends Asn1 implements IAsn1Tag {
     if (isExplicit) {
       return getObject();
     }
-    throw ArgumentError.value(
-      tagNumber,
-      'tagNumber',
-      'Implicit tagging is not supported',
-    );
+    throw UnsupportedError('Implicit tagging is not supported');
   }
 }
 
@@ -1302,7 +1295,7 @@ class GeneralizedTime extends Asn1 {
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes, avoid_renaming_method_parameters
   bool operator ==(Object asn1Object) {
-    throw ArgumentError.value('Not implemented');
+    throw UnsupportedError('Not implemented');
   }
 
   @override

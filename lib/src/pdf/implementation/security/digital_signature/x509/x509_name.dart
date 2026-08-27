@@ -1,6 +1,7 @@
 import '../asn1/asn1.dart';
 import '../asn1/der.dart';
 import '../pkcs/pfx_data.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class X509Name extends Asn1Encode {
@@ -15,11 +16,7 @@ class X509Name extends Asn1Encode {
         final Asn1Sequence asn1Sequence =
             Asn1Sequence.getSequence(asn1Set[i]!.getAsn1())!;
         if (asn1Sequence.count != 2) {
-          throw ArgumentError.value(
-            sequence,
-            'sequence',
-            'Invalid length in sequence',
-          );
+          throw PdfFormatException('Invalid length in sequence', source: sequence);
         }
         _ordering.add(DerObjectID.getID(asn1Sequence[0]!.getAsn1()));
         final Asn1? asn1 = asn1Sequence[1]!.getAsn1();
@@ -145,7 +142,7 @@ class X509Name extends Asn1Encode {
       } else if (obj != null) {
         result = X509Name(Asn1Sequence.getSequence(obj)!);
       } else {
-        throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+        throw PdfFormatException('Invalid entry', source: obj);
       }
     }
     return result;

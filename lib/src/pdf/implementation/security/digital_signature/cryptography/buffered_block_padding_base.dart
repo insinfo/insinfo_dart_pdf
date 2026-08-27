@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../asn1/asn1.dart';
 import 'ipadding.dart';
+import '../../../io/pdf_format_exception.dart';
 
 abstract class BufferedBlockPaddingBase extends IBufferedCipher {
   /// internal constructor
@@ -32,7 +33,7 @@ abstract class BufferedBlockPaddingBase extends IBufferedCipher {
       return <String, dynamic>{'length': 0, 'output': output};
     }
     if (outOff + outBytes.length > output.length) {
-      throw ArgumentError.value(output, 'output', 'output buffer too short');
+      throw PdfFormatException('output buffer too short', source: output);
     }
     int j = 0;
     for (int i = outOff; i < output.length && j < outBytes.length; i++) {
@@ -71,7 +72,7 @@ abstract class BufferedBlockPaddingBase extends IBufferedCipher {
       return <String, dynamic>{'length': 0, 'output': output};
     }
     if (outOff + outBytes.length > output!.length) {
-      throw ArgumentError.value(output, 'output', 'output buffer too short');
+      throw PdfFormatException('output buffer too short', source: output);
     }
     int j = 0;
     for (int i = outOff; i < output.length && j < outBytes.length; i++) {
@@ -94,7 +95,7 @@ abstract class BufferedBlockPaddingBase extends IBufferedCipher {
   Map<String, dynamic> writeFinal(List<int> output, int outOff) {
     final List<int> outBytes = doFinal()!;
     if (outOff + outBytes.length > output.length) {
-      throw ArgumentError.value(output, 'output', 'output buffer too short');
+      throw PdfFormatException('output buffer too short', source: output);
     }
     int j = 0;
     for (int i = outOff; i < output.length && j < outBytes.length; i++) {
@@ -209,7 +210,7 @@ class BufferedCipher extends BufferedBlockPaddingBase {
     _offset = _offset! + 1;
     if (_offset == _bytes!.length) {
       if ((outOff + _bytes!.length) > output!.length) {
-        throw ArgumentError.value(output, 'output', 'output buffer too short');
+        throw PdfFormatException('output buffer too short', source: output);
       }
       _offset = 0;
       return _cipher.processBlock(_bytes, 0, output, outOff);
@@ -433,13 +434,13 @@ class BufferedBlockPadding extends BufferedCipher {
     int outOffset,
   ) {
     if (length < 0) {
-      throw ArgumentError.value(length, 'length', 'Invalid length');
+      throw PdfFormatException('Invalid length', source: length);
     }
     final int? blockSize = this.blockSize;
     final int outLength = getUpdateOutputSize(length);
     if (outLength > 0) {
       if ((outOffset + outLength) > output!.length) {
-        throw ArgumentError.value(length, 'length', 'Invalid buffer length');
+        throw PdfFormatException('Invalid buffer length', source: length);
       }
     }
     int resultLength = 0;
@@ -480,11 +481,7 @@ class BufferedBlockPadding extends BufferedCipher {
       if (_offset == blockSize) {
         if ((outOff! + 2 * blockSize!) > output!.length) {
           reset();
-          throw ArgumentError.value(
-            output,
-            'output',
-            'output buffer too short',
-          );
+          throw PdfFormatException('output buffer too short', source: output);
         }
         result = _cipher.processBlock(_bytes, 0, output, outOff);
         resultLen = result!['length'] as int;
@@ -504,7 +501,7 @@ class BufferedBlockPadding extends BufferedCipher {
         _offset = 0;
       } else {
         reset();
-        throw ArgumentError.value(output, 'output', 'incomplete in decryption');
+        throw PdfFormatException('incomplete in decryption', source: output);
       }
       try {
         resultLen -= _padding.count(Uint8List.fromList(_bytes!));
@@ -558,9 +555,7 @@ class PaddedCipherMode extends IBufferedCipher {
       outputBlocks = (data.length + blockSize) ~/ blockSize;
     } else {
       if ((data.length % blockSize) != 0) {
-        throw ArgumentError(
-          'Input data length is not a multiple of the size of cipher block',
-        );
+        throw PdfFormatException('Input data length is not a multiple of the size of cipher block');
       }
       outputBlocks = inputBlocks;
     }
@@ -654,11 +649,11 @@ class Pkcs7Padding implements IPadding {
   int count(Uint8List input) {
     final int count = _clipByte(input[input.length - 1]);
     if (count < 1 || count > input.length) {
-      throw ArgumentError.value(input, 'input', 'Invalid pad');
+      throw PdfFormatException('Invalid pad', source: input);
     }
     for (int i = 1; i <= count; i++) {
       if (input[input.length - i] != count) {
-        throw ArgumentError.value(input, 'input', 'Invalid pad');
+        throw PdfFormatException('Invalid pad', source: input);
       }
     }
     return count;

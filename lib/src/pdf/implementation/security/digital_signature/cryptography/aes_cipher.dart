@@ -4,6 +4,7 @@ import 'aes_engine.dart';
 import 'buffered_block_padding_base.dart';
 import 'cipher_block_chaining_mode.dart';
 import 'ipadding.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class AesCipher {
@@ -33,9 +34,7 @@ class AesCipher {
   List<int>? update(List<int> input, int inputOffset, int inputLength) {
     final blockSize = cipher.blockSize;
     if (input.length % blockSize != 0) {
-      throw ArgumentError.value(
-        'Data length is not a multiple of block size: ${input.length}',
-      );
+      throw PdfFormatException('Data length is not a multiple of block size: ${input.length}');
     }
 
     final output = Uint8List(input.length);
@@ -73,9 +72,7 @@ class AesCipherNoPadding {
   Uint8List process(Uint8List data) {
     final blockSize = _cbc.blockSize!;
     if (data.length % blockSize != 0) {
-      throw ArgumentError.value(
-        'Data length is not a multiple of block size: ${data.length}',
-      );
+      throw PdfFormatException('Data length is not a multiple of block size: ${data.length}');
     }
 
     final output = Uint8List(data.length);

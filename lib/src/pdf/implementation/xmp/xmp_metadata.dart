@@ -8,6 +8,7 @@ import '../pdf_document/pdf_document_information.dart';
 import '../primitives/pdf_dictionary.dart';
 import '../primitives/pdf_name.dart';
 import '../primitives/pdf_stream.dart';
+import '../io/pdf_format_exception.dart';
 
 /// Represents XMP metadata of the document.
 class XmpMetadata implements IPdfWrapper {
@@ -71,9 +72,7 @@ class XmpMetadata implements IPdfWrapper {
         node = element;
         count++;
         if (count > 1) {
-          throw ArgumentError(
-            'More than one element satisfies the specified condition',
-          );
+          throw PdfFormatException('More than one element satisfies the specified condition');
         }
       }
     }

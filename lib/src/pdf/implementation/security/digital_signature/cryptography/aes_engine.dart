@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'cipher_block_chaining_mode.dart';
 import 'ipadding.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class AesEngine extends IBlockCipher {
@@ -118,7 +119,7 @@ class AesEngine extends IBlockCipher {
     final key = params.keys;
     final keyLen = key.length;
     if (keyLen < 16 || keyLen > 32 || (keyLen & 7) != 0) {
-      throw ArgumentError('Invalid key length : $keyLen');
+      throw PdfFormatException('Invalid key length : $keyLen');
     }
     final kc = _shiftRight32(keyLen, 2);
     rounds = kc + 6;
@@ -263,15 +264,11 @@ class AesEngine extends IBlockCipher {
     int? outputOffset,
   ]) {
     if ((inputOffset! + (32 / 2)) > inputBytes!.lengthInBytes) {
-      throw ArgumentError(
-        'Invalid length in input buffer : ${inputBytes.lengthInBytes}',
-      );
+      throw PdfFormatException('Invalid length in input buffer : ${inputBytes.lengthInBytes}');
     }
 
     if ((outputOffset! + (32 / 2)) > outputBytes!.lengthInBytes) {
-      throw ArgumentError(
-        'Invalid length in output buffer : ${outputBytes.lengthInBytes}',
-      );
+      throw PdfFormatException('Invalid length in output buffer : ${outputBytes.lengthInBytes}');
     }
     if (_isEncryption!) {
       encryptBlock(inputBytes, inputOffset, outputBytes, outputOffset, _key!);

@@ -3,6 +3,7 @@ import 'asn1.dart';
 import 'asn1_stream.dart';
 import 'ber.dart';
 import 'der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class Asn1Parser {
@@ -23,7 +24,7 @@ class Asn1Parser {
   IAsn1 readImplicit(bool? constructed, int tagNumber) {
     if (_stream is Asn1LengthStream) {
       if (!constructed!) {
-        throw ArgumentError.value('Invalid length specified');
+        throw PdfFormatException('Invalid length specified');
       }
       return readIndefinite(tagNumber);
     }
@@ -39,26 +40,14 @@ class Asn1Parser {
     } else {
       switch (tagNumber) {
         case Asn1Tags.setTag:
-          throw ArgumentError.value(
-            tagNumber,
-            'tagNumber',
-            'Constructed encoding is not used in the set',
-          );
+          throw PdfFormatException('Constructed encoding is not used in the set', source: tagNumber);
         case Asn1Tags.sequence:
-          throw ArgumentError.value(
-            tagNumber,
-            'tagNumber',
-            'Constructed encoding is not used in the sequence',
-          );
+          throw PdfFormatException('Constructed encoding is not used in the sequence', source: tagNumber);
         case Asn1Tags.octetString:
           return DerOctetHelper(_stream as Asn1StreamHelper?);
       }
     }
-    throw ArgumentError.value(
-      tagNumber,
-      'tagNumber',
-      'Implicit tagging is not supported',
-    );
+    throw UnsupportedError('Implicit tagging is not supported');
   }
 
   /// internal method
@@ -86,11 +75,7 @@ class Asn1Parser {
       case Asn1Tags.sequence:
         return BerSequenceHelper(this);
       default:
-        throw ArgumentError.value(
-          tagValue,
-          'tagValue',
-          'Invalid entry in sequence',
-        );
+        throw PdfFormatException('Invalid entry in sequence', source: tagValue);
     }
   }
 
@@ -123,7 +108,7 @@ class Asn1Parser {
     final int length = Asn1Stream.getLength(_stream!, _limit);
     if (length < 0) {
       if (!isConstructed) {
-        throw ArgumentError.value(length, 'length', 'Invalid length specified');
+        throw PdfFormatException('Invalid length specified', source: length);
       }
       final Asn1LengthStream stream = Asn1LengthStream(_stream, _limit);
       final Asn1Parser helper = Asn1Parser(stream, _limit);

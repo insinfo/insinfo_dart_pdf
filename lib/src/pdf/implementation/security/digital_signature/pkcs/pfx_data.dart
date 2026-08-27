@@ -1,5 +1,6 @@
 import '../asn1/asn1.dart';
 import '../asn1/der.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class Algorithms extends Asn1Encode {
@@ -21,7 +22,7 @@ class Algorithms extends Asn1Encode {
   /// internal constructor
   Algorithms.fromSequence(Asn1Sequence sequence) {
     if (sequence.count < 1 || sequence.count > 2) {
-      throw ArgumentError.value('Invalid length in sequence');
+      throw PdfFormatException('Invalid length in sequence');
     }
     id = DerObjectID.getID(sequence[0]);
     _parametersDefined = sequence.count == 2;
@@ -86,7 +87,7 @@ class DigestInformation extends Asn1Encode {
   /// internal constructor
   DigestInformation.fromSequence(Asn1Sequence sequence) {
     if (sequence.count != 2) {
-      throw ArgumentError.value('Invalid length in sequence');
+      throw PdfFormatException('Invalid length in sequence');
     }
     _algorithms = Algorithms.getAlgorithms(sequence[0]);
     _bytes = Asn1Octet.getOctetStringFromObject(sequence[1])!.getOctets();
@@ -104,7 +105,7 @@ class DigestInformation extends Asn1Encode {
     } else if (obj is Asn1Sequence) {
       result = DigestInformation.fromSequence(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }

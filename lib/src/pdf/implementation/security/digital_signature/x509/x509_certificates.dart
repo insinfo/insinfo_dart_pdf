@@ -14,6 +14,7 @@ import '../pdf_signature_dictionary.dart';
 import '../pkcs/pfx_data.dart';
 import 'x509_name.dart';
 import 'x509_time.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class IX509Extension {
@@ -126,11 +127,7 @@ class X509Extensions extends Asn1Encode {
       final Asn1Encode ae = seq.objects![i] as Asn1Encode;
       final Asn1Sequence s = Asn1Sequence.getSequence(ae.getAsn1())!;
       if (s.count < 2 || s.count > 3) {
-        throw ArgumentError.value(
-          seq,
-          'count',
-          'Bad sequence size: ${s.count}',
-        );
+        throw PdfFormatException('Bad sequence size: ${s.count}', source: seq);
       }
       final DerObjectID? oid = DerObjectID.getID(s[0]!.getAsn1());
       final bool isCritical =
@@ -154,7 +151,7 @@ class X509Extensions extends Asn1Encode {
       } else if (obj is Asn1Tag) {
         result = getInstance(obj.getObject());
       } else {
-        throw ArgumentError.value(obj, 'obj', 'unknown object in factory');
+        throw PdfFormatException('unknown object in factory', source: obj);
       }
     } else {
       result = getInstance(Asn1Sequence.getSequence(obj, explicitly));
@@ -290,11 +287,7 @@ class X509Certificate extends X509ExtensionBase {
       final Asn1Encode? params = algID.parameters;
       final DerObjectID? curveOid = params is DerObjectID ? params : null;
       if (curveOid?.id == null) {
-        throw ArgumentError.value(
-          keyInfo,
-          'keyInfo',
-          'Unsupported EC public key parameters (expected named curve OID)',
-        );
+        throw UnsupportedError('Unsupported EC public key parameters (expected named curve OID)');
       }
 
       final String domainName = _ecDomainNameForOid(curveOid!.id!);
@@ -302,20 +295,16 @@ class X509Certificate extends X509ExtensionBase {
 
       final List<int>? qEncoded = keyInfo.publicKey?.getBytes();
       if (qEncoded == null || qEncoded.isEmpty) {
-        throw ArgumentError.value(keyInfo, 'keyInfo', 'Missing EC public key bytes');
+        throw PdfFormatException('Missing EC public key bytes', source: keyInfo);
       }
       final pc.ECPoint? q = domain.curve.decodePoint(Uint8List.fromList(qEncoded));
       if (q == null) {
-        throw ArgumentError.value(keyInfo, 'keyInfo', 'Could not decode EC public key point');
+        throw PdfFormatException('Could not decode EC public key point', source: keyInfo);
       }
 
       result = EcPublicKeyParam(pc.ECPublicKey(q, domain));
     } else {
-      throw ArgumentError.value(
-        keyInfo,
-        'keyInfo',
-        'algorithm identifier in key not recognised',
-      );
+      throw PdfFormatException('algorithm identifier in key not recognised', source: keyInfo);
     }
     return result;
   }
@@ -365,7 +354,7 @@ class X509Certificate extends X509ExtensionBase {
       case '1.2.840.10045.4.3.4':
         return pc.SHA512Digest();
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported ECDSA signature OID');
+    throw UnsupportedError('Unsupported ECDSA signature OID');
   }
 
   static String _ecDomainNameForOid(String oid) {
@@ -380,12 +369,12 @@ class X509Certificate extends X509ExtensionBase {
       case '1.3.132.0.35':
         return 'secp521r1';
     }
-    throw ArgumentError.value(oid, 'oid', 'Unsupported named curve OID');
+    throw UnsupportedError('Unsupported named curve OID');
   }
 
   void _verifyEcdsa(String sigOid, CipherParameter publicKey) {
     if (publicKey is! EcPublicKeyParam) {
-      throw ArgumentError.value(publicKey, 'publicKey', 'ECDSA requires an EC public key');
+      throw PdfFormatException('ECDSA requires an EC public key', source: publicKey);
     }
 
     if (!isAlgIDEqual(c!.signatureAlgorithm!, c!.tbsCertificate!.signature!)) {
@@ -428,11 +417,7 @@ class X509Certificate extends X509ExtensionBase {
 
   void _verifyRsassaPss(CipherParameter publicKey) {
     if (publicKey is! RsaKeyParam) {
-      throw ArgumentError.value(
-        publicKey,
-        'publicKey',
-        'RSASSA-PSS requires an RSA public key',
-      );
+      throw PdfFormatException('RSASSA-PSS requires an RSA public key', source: publicKey);
     }
 
     if (!isAlgIDEqual(c!.signatureAlgorithm!, c!.tbsCertificate!.signature!)) {
@@ -491,7 +476,7 @@ class X509Certificate extends X509ExtensionBase {
         return pc.SHA512Digest();
     }
 
-    throw ArgumentError.value(oid, 'oid', 'Unsupported digest OID');
+    throw UnsupportedError('Unsupported digest OID');
   }
 
   static ({String hashOid, String mgfHashOid, int saltLength})
@@ -617,7 +602,7 @@ class X509CertificateStructure extends Asn1Encode {
     } else {
       _tbsCert = SingnedCertificate.getCertificate(seq[0]);
       if (_tbsCert == null) {
-        throw ArgumentError('Invalid TBSCertificate');
+        throw PdfFormatException('Invalid TBSCertificate');
       }
       _sigAlgID = Algorithms.getAlgorithms(seq[1]);
       _sig = DerBitString.getDetBitString(seq[2]);
@@ -794,11 +779,7 @@ class PublicKeyInformation extends Asn1Encode {
   /// internal constructor
   PublicKeyInformation.fromSequence(Asn1Sequence sequence) {
     if (sequence.count != 2) {
-      throw ArgumentError.value(
-        sequence,
-        'sequence',
-        'Invalid length in sequence',
-      );
+      throw PdfFormatException('Invalid length in sequence', source: sequence);
     }
     _algorithms = Algorithms.getAlgorithms(sequence[0]);
     _publicKey = DerBitString.getDetBitString(sequence[1]);
@@ -865,7 +846,7 @@ class RsaPublicKey extends Asn1Encode {
     } else if (obj is Asn1Sequence) {
       result = RsaPublicKey.fromSequence(obj);
     } else {
-      throw ArgumentError.value(obj, 'obj', 'Invalid entry');
+      throw PdfFormatException('Invalid entry', source: obj);
     }
     return result;
   }

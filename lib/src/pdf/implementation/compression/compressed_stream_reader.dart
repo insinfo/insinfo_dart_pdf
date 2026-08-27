@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'compressed_stream_writer.dart';
 import 'decompressor_huffman_tree.dart';
+import '../io/pdf_format_exception.dart';
 
 /// internal class
 class CompressedStreamReader {
@@ -217,29 +218,20 @@ class CompressedStreamReader {
   void _readZlibHeader() {
     final int header = _readInt16();
     if (header == -1) {
-      throw ArgumentError.value(
-        header,
-        'Header of the stream can not be read.',
-      );
+      throw PdfFormatException('Header of the stream can not be read.', source: header);
     }
     if (header % 31 != 0) {
-      throw ArgumentError.value(header, 'Header checksum illegal');
+      throw PdfFormatException('Header checksum illegal', source: header);
     }
     if ((header & _defHeaderMethodMask) != (8 << 8)) {
-      throw ArgumentError.value(header, 'Unsupported compression method.');
+      throw UnsupportedError('Unsupported compression method.');
     }
     _windowSize = pow(2, ((header & _defHeaderInfoMask) >> 12) + 8) as int;
     if (_windowSize > _maxValue) {
-      throw ArgumentError.value(
-        header,
-        'Unsupported window size for deflate compression method.',
-      );
+      throw UnsupportedError('Unsupported window size for deflate compression method.');
     }
     if ((header & _defHeaderFlagsFdict) >> 5 == 1) {
-      throw ArgumentError.value(
-        header,
-        'Custom dictionary is not supported at the moment.',
-      );
+      throw UnsupportedError('Custom dictionary is not supported at the moment.');
     }
   }
 
@@ -268,10 +260,7 @@ class CompressedStreamReader {
         }
 
         if (length > _maxValue) {
-          throw ArgumentError.value(
-            length,
-            'Uncompressed block length can not be more than 65535.',
-          );
+          throw PdfFormatException('Uncompressed block length can not be more than 65535.', source: length);
         }
 
         _uncompressedDataLength = length;
@@ -296,7 +285,7 @@ class CompressedStreamReader {
             result['distanceTree'] as DecompressorHuffmanTree;
         break;
       default:
-        throw ArgumentError.value(blockType, 'Wrong block type');
+        throw PdfFormatException('Wrong block type', source: blockType);
     }
     return true;
   }
@@ -314,7 +303,7 @@ class CompressedStreamReader {
     int iCodeLengthsCount = _readBits(4);
 
     if (iLengthsCount < 0 || iDistancesCount < 0 || iCodeLengthsCount < 0) {
-      throw ArgumentError.value(iLengthsCount, 'Wrong dynamic huffman codes.');
+      throw PdfFormatException('Wrong dynamic huffman codes.', source: iLengthsCount);
     }
 
     iLengthsCount += 257;
@@ -334,7 +323,7 @@ class CompressedStreamReader {
       final int len = _readBits(3);
 
       if (len < 0) {
-        throw ArgumentError.value(len, 'Wrong dynamic huffman codes.');
+        throw PdfFormatException('Wrong dynamic huffman codes.', source: len);
       }
 
       arrDecoderCodeLengths[CompressedStreamWriter
@@ -367,13 +356,13 @@ class CompressedStreamReader {
       }
 
       if (symbol < 0) {
-        throw ArgumentError.value(symbol, 'Wrong dynamic huffman codes.');
+        throw PdfFormatException('Wrong dynamic huffman codes.', source: symbol);
       }
 
       if (symbol >= 17) {
         bLastSymbol = 0;
       } else if (iCurrentCode == 0) {
-        throw ArgumentError.value(iCurrentCode, 'Wrong dynamic huffman codes.');
+        throw PdfFormatException('Wrong dynamic huffman codes.', source: iCurrentCode);
       }
 
       final int iRepSymbol = symbol - 16;
@@ -382,13 +371,13 @@ class CompressedStreamReader {
       int count = _readBits(bits);
 
       if (count < 0) {
-        throw ArgumentError.value(count, 'Wrong dynamic huffman codes.');
+        throw PdfFormatException('Wrong dynamic huffman codes.', source: count);
       }
 
       count += defHuffmanDyntreeRepeatMinimums[iRepSymbol];
 
       if (iCurrentCode + count > iResultingCodeLengthsCount) {
-        throw ArgumentError.value(iCurrentCode, 'Wrong dynamic huffman codes.');
+        throw PdfFormatException('Wrong dynamic huffman codes.', source: iCurrentCode);
       }
 
       while (count-- > 0) {
@@ -560,13 +549,10 @@ class CompressedStreamReader {
   /// internal method
   Map<String, dynamic> read(List<int> buffer, int offset, int length) {
     if (offset < 0 || offset > buffer.length - 1) {
-      throw ArgumentError.value(
-        offset,
-        'Offset does not belong to specified buffer.',
-      );
+      throw PdfFormatException('Offset does not belong to specified buffer.', source: offset);
     }
     if (length < 0 || length > buffer.length - offset) {
-      throw ArgumentError.value(length, 'Length is illegal.');
+      throw PdfFormatException('Length is illegal.', source: length);
     }
     final int initialLength = length;
     while (length > 0) {
@@ -619,10 +605,7 @@ class CompressedStreamReader {
               dataToRead,
             );
             if (dataToRead != dataRead) {
-              throw ArgumentError.value(
-                dataToRead,
-                'Not enough data in stream.',
-              );
+              throw PdfFormatException('Not enough data in stream.', source: dataToRead);
             }
             _uncompressedDataLength -= dataRead;
             _dataLength += dataRead;
@@ -680,14 +663,11 @@ class CompressedStreamReader {
     }
 
     if (length > buffer.length - offset) {
-      throw ArgumentError.value(length, 'Length is too large.');
+      throw PdfFormatException('Length is too large.', source: length);
     }
 
     if ((bufferedBits & 7) != 0) {
-      throw ArgumentError.value(
-        buffer,
-        'Reading of unalligned data is not supported.',
-      );
+      throw UnsupportedError('Reading of unalligned data is not supported.');
     }
 
     if (length == 0) {
@@ -728,14 +708,14 @@ class CompressedStreamReader {
 
       if (symbol < defHuffmanLengthMinimumCode) {
         if (symbol < defHuffmanEndBlock) {
-          throw ArgumentError.value(symbol, 'Illegal code.');
+          throw PdfFormatException('Illegal code.', source: symbol);
         }
         _canReadMoreData = _decodeBlockHeader();
         return dataRead | _canReadMoreData;
       }
 
       if (symbol > defHuffmanLengthMaximumCode) {
-        throw ArgumentError.value(symbol, 'Illegal repeat code length.');
+        throw PdfFormatException('Illegal repeat code length.', source: symbol);
       }
 
       int iRepeatLength =
@@ -747,7 +727,7 @@ class CompressedStreamReader {
       if (iRepeatExtraBits > 0) {
         final int extra = _readBits(iRepeatExtraBits);
         if (extra < 0) {
-          throw ArgumentError.value(extra, 'Wrong data.');
+          throw PdfFormatException('Wrong data.', source: extra);
         }
         iRepeatLength += extra;
       }
@@ -756,14 +736,14 @@ class CompressedStreamReader {
       symbol = _currentDistanceTree!.unpackSymbol(this);
 
       if (symbol < 0 || symbol > defHuffmanRepeatDistanseBase.length) {
-        throw ArgumentError.value(symbol, 'Wrong distance code.');
+        throw PdfFormatException('Wrong distance code.', source: symbol);
       }
       int iRepeatDistance = defHuffmanRepeatDistanseBase[symbol];
       iRepeatExtraBits = defHuffmanRepeatDistanseExtension[symbol];
       if (iRepeatExtraBits > 0) {
         final int extra = _readBits(iRepeatExtraBits);
         if (extra < 0) {
-          throw ArgumentError.value(extra, 'Wrong data.');
+          throw PdfFormatException('Wrong data.', source: extra);
         }
         iRepeatDistance += extra;
       }

@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal method
 BigInt bigIntFromBytes(List<int>? data, [int? sign]) {
@@ -91,7 +92,7 @@ BigInt getMod(BigInt n, BigInt m) {
 BigInt bigIntFromRamdom(int value, Random? random) {
   BigInt result;
   if (value < 0) {
-    throw ArgumentError.value(value, 'value', 'Invalid entry');
+    throw PdfFormatException('Invalid entry', source: value);
   }
   if (value == 0) {
     result = BigInt.from(0);

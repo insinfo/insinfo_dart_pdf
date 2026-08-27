@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart' as pc;
 import 'ipadding.dart';
+import '../../../io/pdf_format_exception.dart';
 
 /// internal class
 class CipherBlockChainingMode extends IBlockCipher {
@@ -55,10 +56,7 @@ class CipherBlockChainingMode extends IBlockCipher {
       }
       reset();
     } else if (oldEncryption != _isEncryption) {
-      throw ArgumentError.value(
-        oldEncryption,
-        'cannot change encrypting state without providing key.',
-      );
+      throw PdfFormatException('cannot change encrypting state without providing key.', source: oldEncryption);
     }
   }
 
@@ -89,7 +87,7 @@ class CipherBlockChainingMode extends IBlockCipher {
     int outputOffset,
   ) {
     if ((inputOffset + _size!) > inputBytes.length) {
-      throw ArgumentError.value('Invalid length in input bytes');
+      throw PdfFormatException('Invalid length in input bytes');
     }
     for (int i = 0; i < _size!; i++) {
       _cbcBytes![i] ^= inputBytes[inputOffset + i];
@@ -115,7 +113,7 @@ class CipherBlockChainingMode extends IBlockCipher {
     int? outputOffset,
   ) {
     if ((inputOffset + _size!) > inputBytes.length) {
-      throw ArgumentError.value('Invalid length in input bytes');
+      throw PdfFormatException('Invalid length in input bytes');
     }
     List.copyRange(
       _cbcNextBytes!,
@@ -160,7 +158,7 @@ class CipherBlockChainingMode extends IBlockCipher {
     int outputOffset,
   ) {
     if ((inputOffset + _size!) > inputBytes!.length) {
-      throw ArgumentError.value('Invalid length in input bytes');
+      throw PdfFormatException('Invalid length in input bytes');
     }
     for (int i = 0; i < _size!; i++) {
       _cbcBytes![i] ^= inputBytes[inputOffset + i];
@@ -191,7 +189,7 @@ class CipherBlockChainingMode extends IBlockCipher {
     int outputOffset,
   ) {
     if ((inputOffset + _size!) > inputBytes.length) {
-      throw ArgumentError.value('Invalid length in input bytes');
+      throw PdfFormatException('Invalid length in input bytes');
     }
     _cbcNextBytes!.setRange(
       0,
@@ -367,7 +365,7 @@ class RsaPrivateKeyParam extends RsaKeyParam {
   /// internal method
   void validateValue(BigInt number) {
     if (number.sign <= 0) {
-      throw ArgumentError.value(number, 'number', 'Invalid RSA entry');
+      throw PdfFormatException('Invalid RSA entry', source: number);
     }
   }
 
