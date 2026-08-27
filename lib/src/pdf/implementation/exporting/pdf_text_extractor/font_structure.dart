@@ -947,6 +947,41 @@ class FontStructure {
     }
   }
 
+  // The Adobe glyph list, built once. It is four thousand entries, so the
+  // one place that used to reach for it built a fresh copy per character and
+  // cleared it again afterwards -- and that branch was unreachable anyway,
+  // sitting inside an `if` that asked whether a key was absent from a map the
+  // enclosing `if` had just found it in. So the list never ran at all.
+  static AdobeGlyphList? _glyphList;
+
+  /// The character a `/Differences` glyph name stands for.
+  ///
+  /// [resolved] is what the hand written Latin and special tables made of
+  /// [glyphName]; when they did not know the name it comes back unchanged,
+  /// and then the full Adobe list decides -- including the algorithmic
+  /// `uniXXXX` and `uXXXX` forms, which nothing handled on the extraction
+  /// path, so `/uni00E7` was read out as the literal text `uni00E7` instead
+  /// of a c cedilla. A name nobody knows stays as it is rather than becoming
+  /// a null character: the raw name is at least a clue.
+  static String _resolveGlyphName(String glyphName, String? resolved) {
+    if (resolved == null || resolved.isEmpty) {
+      return resolved ?? glyphName;
+    }
+    if (resolved != glyphName || glyphName.length <= 1) {
+      return resolved;
+    }
+    try {
+      _glyphList ??= AdobeGlyphList();
+      final String? unicode = _glyphList!.getUnicodeForName(glyphName);
+      if (unicode != null && unicode.isNotEmpty && unicode != ' ') {
+        return unicode;
+      }
+    } catch (_) {
+      // The list does not know this name either; keep it as written.
+    }
+    return resolved;
+  }
+
   bool _checkStandardFont() {
     bool result = !_checkStandardFontDictionary();
     if (result &&
@@ -1785,8 +1820,10 @@ class FontStructure {
                       .toString()] = getLatinCharacter(text);
                   differenceCount++;
                 } else {
+                  final String glyphName = text!;
                   text = getLatinCharacter(text);
                   text = getSpecialCharacter(text);
+                  text = _resolveGlyphName(glyphName, text);
                   if (!differencesDictionary.containsKey(
                     differenceCount.toString(),
                   )) {
