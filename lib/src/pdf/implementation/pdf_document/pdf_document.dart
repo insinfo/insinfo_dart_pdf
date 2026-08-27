@@ -2057,6 +2057,11 @@ class PdfDocumentHelper {
           json += '"$i":{ "shapeAnnotation":[';
           isAnnotationAdded = true;
         }
+        // The separator goes before each entry after the first one actually
+        // written. Deciding it from the loop index instead leaves a comma
+        // dangling before the closing bracket whenever the type filter drops
+        // the remaining annotations, and the result is not valid JSON.
+        bool wroteAnnotation = false;
         for (int j = 0; j < pageHelper.terminalAnnotation.length; j++) {
           final PdfDictionary annotationDictionary =
               pageHelper.terminalAnnotation[j];
@@ -2068,10 +2073,11 @@ class PdfDocumentHelper {
               i,
               annotationDictionary,
             );
-            json += jsonDocument.convertToJson(table);
-            if (j < pageHelper.terminalAnnotation.length - 1) {
+            if (wroteAnnotation) {
               json += ',';
             }
+            json += jsonDocument.convertToJson(table);
+            wroteAnnotation = true;
             table.clear();
           }
         }

@@ -200,9 +200,8 @@ class PdfAnnotationHelper {
     isLoadedAnnotation = true;
     PdfName? name;
     if (dictionary.containsKey(PdfDictionaryProperties.subtype)) {
-      name =
-          dictionary.items![PdfName(PdfDictionaryProperties.subtype)]
-              as PdfName?;
+      name = dictionary.items![PdfName(PdfDictionaryProperties.subtype)]
+          as PdfName?;
     }
     if (name != null) {
       if (name.name == PdfDictionaryProperties.circle ||
@@ -309,12 +308,11 @@ class PdfAnnotationHelper {
       return rectangle.rect;
     } else {
       final PdfRectangle rect = _getBounds(dictionary!, crossTable);
-      rect.y =
-          page != null
-              ? rect.y == 0 && rect.height == 0
-                  ? rect.y + rect.height
-                  : page!.size.height - (rect.y + rect.height)
-              : rect.y - rect.height;
+      rect.y = page != null
+          ? rect.y == 0 && rect.height == 0
+              ? rect.y + rect.height
+              : page!.size.height - (rect.y + rect.height)
+          : rect.y - rect.height;
       return rect.rect;
     }
   }
@@ -412,12 +410,11 @@ class PdfAnnotationHelper {
       annotationColor = value;
       PdfColorSpace? cs = PdfColorSpace.rgb;
       if (page != null && !PdfPageHelper.getHelper(page!).isLoadedPage) {
-        cs =
-            PdfSectionCollectionHelper.getHelper(
-              PdfSectionHelper.getHelper(
-                PdfPageHelper.getHelper(page!).section!,
-              ).parent!,
-            ).document!.colorSpace;
+        cs = PdfSectionCollectionHelper.getHelper(
+          PdfSectionHelper.getHelper(
+            PdfPageHelper.getHelper(page!).section!,
+          ).parent!,
+        ).document!.colorSpace;
       }
       final PdfArray colours = PdfColorHelper.toArray(annotationColor, cs);
       dictionary!.setProperty(PdfDictionaryProperties.c, colours);
@@ -644,13 +641,11 @@ class PdfAnnotationHelper {
         PdfPageHelper.getHelper(
           page!,
         ).dictionary!.containsKey(PdfDictionaryProperties.annots)) {
-      annotation =
-          PdfCrossTable.dereference(
-                PdfPageHelper.getHelper(
-                  page!,
-                ).dictionary![PdfDictionaryProperties.annots],
-              )
-              as PdfArray?;
+      annotation = PdfCrossTable.dereference(
+        PdfPageHelper.getHelper(
+          page!,
+        ).dictionary![PdfDictionaryProperties.annots],
+      ) as PdfArray?;
       if (annotation != null &&
           annotation.elements.isNotEmpty &&
           annotation.contains(annotation.elements[0]!)) {
@@ -669,7 +664,8 @@ class PdfAnnotationHelper {
       if (base is PdfActionAnnotation &&
           PdfDocumentHelper.getHelper(document).conformanceLevel ==
               PdfConformanceLevel.a1b) {
-        throw UnsupportedError('The specified annotation type is not supported by PDF/A1-B or PDF/A1-A standard documents.');
+        throw UnsupportedError(
+            'The specified annotation type is not supported by PDF/A1-B or PDF/A1-A standard documents.');
       }
       //This is needed to attain specific PDF/A conformance.
       if (base is! PdfLinkAnnotation &&
@@ -738,11 +734,9 @@ class PdfAnnotationHelper {
       if (cropOrMediaBox.count > 2) {
         if ((cropOrMediaBox[0]! as PdfNumber).value != 0 ||
             (cropOrMediaBox[1]! as PdfNumber).value != 0) {
-          nativeRectangle.x =
-              nativeRectangle.x +
+          nativeRectangle.x = nativeRectangle.x +
               (cropOrMediaBox[0]! as PdfNumber).value!.toDouble();
-          nativeRectangle.y =
-              nativeRectangle.y +
+          nativeRectangle.y = nativeRectangle.y +
               (cropOrMediaBox[1]! as PdfNumber).value!.toDouble();
         }
       }
@@ -757,11 +751,9 @@ class PdfAnnotationHelper {
           PdfCrossTable.dereference(dictionary[PdfDictionaryProperties.cropBox])
               as PdfArray?;
     } else if (dictionary.containsKey(PdfDictionaryProperties.mediaBox)) {
-      cropOrMediaBox =
-          PdfCrossTable.dereference(
-                dictionary[PdfDictionaryProperties.mediaBox],
-              )
-              as PdfArray?;
+      cropOrMediaBox = PdfCrossTable.dereference(
+        dictionary[PdfDictionaryProperties.mediaBox],
+      ) as PdfArray?;
     }
     return cropOrMediaBox;
   }
@@ -779,9 +771,8 @@ class PdfAnnotationHelper {
             pdfPage.graphics; //Accessed for creating page content.
         ArgumentError.checkNotNull(graphics);
         if (dictionary!.containsKey(PdfDictionaryProperties.subtype)) {
-          final PdfName? name =
-              dictionary!.items![PdfName(PdfDictionaryProperties.subtype)]
-                  as PdfName?;
+          final PdfName? name = dictionary!
+              .items![PdfName(PdfDictionaryProperties.subtype)] as PdfName?;
           if (name != null) {
             if (name.name == PdfDictionaryProperties.text ||
                 name.name == PdfDictionaryProperties.square ||
@@ -804,9 +795,8 @@ class PdfAnnotationHelper {
         final PdfCatalog catalog =
             PdfDocumentHelper.getHelper(document).catalog;
         if (dictionary!.containsKey(PdfDictionaryProperties.subtype)) {
-          final PdfName? name =
-              dictionary!.items![PdfName(PdfDictionaryProperties.subtype)]
-                  as PdfName?;
+          final PdfName? name = dictionary!
+              .items![PdfName(PdfDictionaryProperties.subtype)] as PdfName?;
           catalog.beginSaveList ??= <SavePdfPrimitiveCallback>[];
           if (name != null) {
             if (name.name == PdfDictionaryProperties.circle ||
@@ -841,9 +831,8 @@ class PdfAnnotationHelper {
   PdfRectangle _getBounds(PdfDictionary dictionary, PdfCrossTable crossTable) {
     PdfArray? array;
     if (dictionary.containsKey(PdfDictionaryProperties.rect)) {
-      array =
-          crossTable.getObject(dictionary[PdfDictionaryProperties.rect])
-              as PdfArray?;
+      array = crossTable.getObject(dictionary[PdfDictionaryProperties.rect])
+          as PdfArray?;
     }
     return array!.toRectangle();
   }
@@ -870,9 +859,8 @@ class PdfAnnotationHelper {
         }
       }
     } else if (dictionary!.containsKey(PdfDictionaryProperties.bs)) {
-      final PdfDictionary lbDic =
-          crossTable.getObject(dictionary![PdfDictionaryProperties.bs])!
-              as PdfDictionary;
+      final PdfDictionary lbDic = crossTable
+          .getObject(dictionary![PdfDictionaryProperties.bs])! as PdfDictionary;
       if (lbDic.containsKey(PdfDictionaryProperties.w)) {
         final PdfNumber? value = lbDic[PdfDictionaryProperties.w] as PdfNumber?;
         if (value != null) {
@@ -906,11 +894,9 @@ class PdfAnnotationHelper {
   String? _obtainText() {
     String tempText;
     if (dictionary!.containsKey(PdfDictionaryProperties.contents)) {
-      final PdfString? mText =
-          PdfCrossTable.dereference(
-                dictionary![PdfDictionaryProperties.contents],
-              )
-              as PdfString?;
+      final PdfString? mText = PdfCrossTable.dereference(
+        dictionary![PdfDictionaryProperties.contents],
+      ) as PdfString?;
       if (mText != null) {
         textValue = mText.value.toString();
       }
@@ -1059,15 +1045,12 @@ class PdfAnnotationHelper {
           PdfCrossTable.dereference(dictionary![PdfDictionaryProperties.iC])
               as PdfArray?;
       if (colours != null && colours.count > 0) {
-        final int red = ((colours[0]! as PdfNumber).value! * 255)
-            .round()
-            .toUnsigned(8);
-        final int green = ((colours[1]! as PdfNumber).value! * 255)
-            .round()
-            .toUnsigned(8);
-        final int blue = ((colours[2]! as PdfNumber).value! * 255)
-            .round()
-            .toUnsigned(8);
+        final int red =
+            ((colours[0]! as PdfNumber).value! * 255).round().toUnsigned(8);
+        final int green =
+            ((colours[1]! as PdfNumber).value! * 255).round().toUnsigned(8);
+        final int blue =
+            ((colours[2]! as PdfNumber).value! * 255).round().toUnsigned(8);
         color = PdfColor(red, green, blue);
       }
     }
@@ -1106,15 +1089,13 @@ class PdfAnnotationHelper {
     String subject,
     String text,
   ) {
-    final Size clientSize =
-        PdfPageHelper.getHelper(page).isLoadedPage
-            ? page.size
-            : page.getClientSize();
+    final Size clientSize = PdfPageHelper.getHelper(page).isLoadedPage
+        ? page.size
+        : page.getClientSize();
     final double x = clientSize.width - 180;
-    final double y =
-        (annotBounds.top + 142) < clientSize.height
-            ? annotBounds.top
-            : clientSize.height - 142;
+    final double y = (annotBounds.top + 142) < clientSize.height
+        ? annotBounds.top
+        : clientSize.height - 142;
     Rect bounds = Rect.fromLTWH(x, y, 180, 142);
     // Draw annotation based on bounds
     if (dictionary![PdfDictionaryProperties.popup] != null) {
@@ -1122,11 +1103,9 @@ class PdfAnnotationHelper {
       final PdfDictionary? tempDictionary =
           PdfCrossTable.dereference(obj) as PdfDictionary?;
       if (tempDictionary != null) {
-        final PdfArray? rectValue =
-            PdfCrossTable.dereference(
-                  tempDictionary[PdfDictionaryProperties.rect],
-                )
-                as PdfArray?;
+        final PdfArray? rectValue = PdfCrossTable.dereference(
+          tempDictionary[PdfDictionaryProperties.rect],
+        ) as PdfArray?;
         final PdfCrossTable? crosstable =
             PdfPageHelper.getHelper(page).crossTable;
         if (rectValue != null) {
@@ -2068,14 +2047,12 @@ class PdfAnnotationHelper {
     PdfPath path = PdfPath();
     for (int i = 0; i < circles.length; i++) {
       final _CloudStyleArc curr = circles[i];
-      final double angle =
-          curr.startAngle < 0
-              ? ((curr.startAngle * -1) % 360) * -1
-              : curr.startAngle % 360;
-      final double angle1 =
-          curr.endAngle < 0
-              ? ((curr.endAngle * -1) % 360) * -1
-              : curr.endAngle % 360;
+      final double angle = curr.startAngle < 0
+          ? ((curr.startAngle * -1) % 360) * -1
+          : curr.startAngle % 360;
+      final double angle1 = curr.endAngle < 0
+          ? ((curr.endAngle * -1) % 360) * -1
+          : curr.endAngle % 360;
       double sweepAngel = 0;
       if (angle > 0 && angle1 < 0) {
         sweepAngel = (180 - angle) + (180 - (angle1 < 0 ? -angle1 : angle1));
@@ -2118,11 +2095,11 @@ class PdfAnnotationHelper {
     if (isAppearance) {
       for (int i = 0; i < PdfPathHelper.getHelper(path).points.length; i++) {
         PdfPathHelper.getHelper(pdfPath).points.add(
-          Offset(
-            PdfPathHelper.getHelper(path).points[i].dx,
-            -PdfPathHelper.getHelper(path).points[i].dy,
-          ),
-        );
+              Offset(
+                PdfPathHelper.getHelper(path).points[i].dx,
+                -PdfPathHelper.getHelper(path).points[i].dy,
+              ),
+            );
       }
     } else {
       PdfPathHelper.getHelper(
@@ -2155,11 +2132,11 @@ class PdfAnnotationHelper {
     if (isAppearance) {
       for (int i = 0; i < PdfPathHelper.getHelper(path).points.length; i++) {
         PdfPathHelper.getHelper(pdfPath).points.add(
-          Offset(
-            PdfPathHelper.getHelper(path).points[i].dx,
-            -PdfPathHelper.getHelper(path).points[i].dy,
-          ),
-        );
+              Offset(
+                PdfPathHelper.getHelper(path).points[i].dx,
+                -PdfPathHelper.getHelper(path).points[i].dy,
+              ),
+            );
       }
     } else {
       PdfPathHelper.getHelper(
@@ -2211,12 +2188,11 @@ class PdfAnnotationHelper {
     PdfDictionary? dic = dictionary;
     while ((primitive == null) && (dic != null)) {
       if (dic.containsKey(value)) {
-        primitive = crossTable!.getObject(dic[value]);
+        primitive = _resolve(crossTable, dic[value]);
       } else {
         if (dic.containsKey(PdfDictionaryProperties.parent)) {
-          dic =
-              crossTable!.getObject(dic[PdfDictionaryProperties.parent])
-                  as PdfDictionary?;
+          dic = _resolve(crossTable, dic[PdfDictionaryProperties.parent])
+              as PdfDictionary?;
         } else {
           dic = null;
         }
@@ -2224,6 +2200,18 @@ class PdfAnnotationHelper {
     }
     return primitive;
   }
+
+  // An annotation on a page that was built in memory has no cross table: its
+  // objects are held directly instead of being looked up by reference. Both
+  // callers below declare the table as nullable and then dereferenced it with
+  // `!`, so reading any annotation of an unsaved document crashed.
+  static IPdfPrimitive? _resolve(
+    PdfCrossTable? crossTable,
+    IPdfPrimitive? object,
+  ) =>
+      crossTable != null
+          ? crossTable.getObject(object)
+          : PdfCrossTable.dereference(object);
 
   /// internal method
   static IPdfPrimitive? getValue(
@@ -2234,7 +2222,7 @@ class PdfAnnotationHelper {
   ) {
     IPdfPrimitive? primitive;
     if (dictionary.containsKey(value)) {
-      primitive = crossTable!.getObject(dictionary[value]);
+      primitive = _resolve(crossTable, dictionary[value]);
     } else {
       if (inheritable) {
         primitive = _searchInParents(dictionary, crossTable, value);
