@@ -1,3 +1,4 @@
+import '../io/pdf_repair_options.dart';
 import 'pdf_imported_page.dart';
 
 /// Specifies how pages are transferred from a source document into the
@@ -48,6 +49,8 @@ class PdfMergeOptions {
     this.keepInvalidSignatures = false,
     this.removeSignatureAppearance = false,
     this.groupBookmarksPerDocument = false,
+    this.strictness = PdfStrictnessLevel.lenient,
+    this.repairScan = PdfRepairScan.thorough,
     this.onPageImported,
   });
 
@@ -92,6 +95,29 @@ class PdfMergeOptions {
   /// Whether the document information (title, author, ...) of the first merged
   /// document is copied into the destination.
   bool copyDocumentInfoFromFirst;
+
+  /// How strictly the source documents are read.
+  ///
+  /// Unlike [PdfDocument], which defaults to
+  /// [PdfStrictnessLevel.conservative], merging defaults to
+  /// [PdfStrictnessLevel.lenient]: a file a browser renders should merge, and
+  /// the cross-reference table is the part most often damaged. A merge also
+  /// writes a fresh document rather than appending to the damaged one, so the
+  /// recovered reading never reaches the output as a broken table.
+  ///
+  /// Only applies to the documents [PdfDocument.merge] and
+  /// [PdfDocument.mergeSync] load themselves; a [PdfDocument] handed to
+  /// [PdfDocumentMerger.append] was already read under its own setting.
+  ///
+  /// Set it to [PdfStrictnessLevel.conservative] to refuse damaged sources.
+  PdfStrictnessLevel strictness;
+
+  /// How much of a damaged source the recovery scan reads.
+  ///
+  /// Defaults to [PdfRepairScan.thorough], like everywhere else. Set it to
+  /// [PdfRepairScan.skipStreams] when merging large scanned documents, where
+  /// the difference is minutes per file.
+  PdfRepairScan repairScan;
 
   /// Whether merging a source that carries digital signatures is refused.
   ///

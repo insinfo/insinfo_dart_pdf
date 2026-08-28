@@ -26,6 +26,7 @@ import 'object_info.dart';
 import 'pdf_archive_stream.dart';
 import 'pdf_constants.dart';
 import 'pdf_main_object_collection.dart';
+import 'pdf_repair_options.dart';
 import 'pdf_writer.dart';
 import 'pdf_format_exception.dart';
 
@@ -34,13 +35,18 @@ import 'pdf_format_exception.dart';
 class PdfCrossTable {
   //Constructor
   /// internal constructor
-  PdfCrossTable([PdfDocument? document, List<int>? data]) {
+  PdfCrossTable([
+    PdfDocument? document,
+    List<int>? data,
+    PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
+    PdfRepairScan repairScan = PdfRepairScan.thorough,
+  ]) {
     if (document != null) {
       this.document = document;
       objNumbers = Queue<PdfReference>();
       if (data != null) {
         _data = data;
-        _initializeCrossTable();
+        _initializeCrossTable(strictness, repairScan);
         this.document = document;
       }
     }
@@ -125,8 +131,18 @@ class PdfCrossTable {
   /// internal property
   PdfDictionary? get documentCatalog {
     if (pdfDocumentCatalog == null && crossTable != null) {
-      pdfDocumentCatalog =
-          dereference(crossTable!.documentCatalog) as PdfDictionary?;
+      final IPdfPrimitive? catalog = dereference(crossTable!.documentCatalog);
+      if (catalog != null && catalog is! PdfDictionary) {
+        // `/Root` names an object the table cannot deliver — a dangling
+        // reference, the shape a file gets when its cross-reference table
+        // describes a document that is no longer there. Bad data, not a bug
+        // in the caller: a cast failure here used to surface as a TypeError.
+        throw PdfFormatException(
+          'The document catalog (/Root) does not resolve to a dictionary.',
+          source: catalog,
+        );
+      }
+      pdfDocumentCatalog = catalog as PdfDictionary?;
     }
     return pdfDocumentCatalog;
   }
@@ -201,9 +217,18 @@ class PdfCrossTable {
   }
 
   //Implementation
-  void _initializeCrossTable() {
-    crossTable = CrossTable(_data, this);
+  void _initializeCrossTable(
+    PdfStrictnessLevel strictness,
+    PdfRepairScan repairScan,
+  ) {
+    crossTable = CrossTable(_data, this, strictness, repairScan);
   }
+
+  /// internal property
+  ///
+  /// Whether the object table came from scanning the file rather than from a
+  /// cross-reference table the file itself supplied.
+  bool get isRepaired => crossTable != null && crossTable!.isRepaired;
 
   void _markTrailerReferences() {
     trailer!.items!.forEach((PdfName? name, IPdfPrimitive? element) {

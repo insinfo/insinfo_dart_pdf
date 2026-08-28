@@ -14,6 +14,8 @@ import 'enums.dart';
 import 'pdf_cross_table.dart';
 import 'pdf_format_exception.dart';
 import 'pdf_parser.dart';
+import 'pdf_repair_options.dart';
+import 'pdf_repair_scanner.dart';
 import 'pdf_reader.dart';
 
 const bool _debugXref =
@@ -30,7 +32,12 @@ void _debugXrefLog(String message) {
 class CrossTable {
   //Constructor
   /// internal constructor
-  CrossTable(List<int>? data, PdfCrossTable crossTable) {
+  CrossTable(
+    List<int>? data,
+    PdfCrossTable crossTable, [
+    this.strictness = PdfStrictnessLevel.conservative,
+    this.repairScan = PdfRepairScan.thorough,
+  ]) {
     if (data == null || data.isEmpty) {
       throw PdfFormatException('The PDF data is empty.');
     }
@@ -59,6 +66,23 @@ class CrossTable {
 
   /// internal field
   int startCrossReference = 0;
+
+  /// internal field
+  ///
+  /// How much damage the reader is allowed to work around. See
+  /// [PdfStrictnessLevel].
+  PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative;
+
+  /// internal field
+  ///
+  /// How much of the file the recovery scan reads. See [PdfRepairScan].
+  PdfRepairScan repairScan = PdfRepairScan.thorough;
+
+  /// internal field
+  ///
+  /// Whether the object table came from scanning the file rather than from a
+  /// cross-reference table the file itself supplied.
+  bool isRepaired = false;
 
   /// internal field
   bool validateSyntax = false;
@@ -354,34 +378,58 @@ class CrossTable {
   /// download, a byte range copied wrong, or a tool that appended without
   /// fixing the offsets.
   void _rebuildByScanning(PdfParser parser) {
-    parser.rebuildXrefTable(objects, this);
-    _debugXrefLog('rebuilt ${objects.length} object(s) by scanning');
-    trailer = _recoverTrailer() ?? _synthesizeTrailer();
+    if (strictness == PdfStrictnessLevel.conservative) {
+      // Recovery is opt-in: reconstructing the object table guesses at what
+      // the file meant, and a caller that is about to sign — or to trust — the
+      // result has to be the one deciding that a guess will do.
+      throw PdfFormatException(
+        'The cross-reference table is missing, out of range or unreadable. '
+        'Pass strictness: PdfStrictnessLevel.lenient to recover the document '
+        'by scanning the file for objects, the way a viewer does.',
+      );
+    }
+    final PdfRepairScanResult scanned = parser.rebuildXrefTable(
+      objects,
+      this,
+      scan: repairScan,
+    );
+    _debugXrefLog(
+      'rebuilt ${objects.length} object(s) by scanning, '
+      '${scanned.trailerOffsets.length} trailer(s), '
+      'catalog=${scanned.catalogNumber}',
+    );
+    trailer = _recoverTrailer(scanned) ?? _synthesizeTrailer(scanned);
     if (trailer == null) {
       throw PdfFormatException(
         'The cross-reference table is unusable and scanning the file found no '
         'document catalog. The data is not a recoverable PDF.',
       );
     }
+    // The offset `startxref` named is the damaged one. Keeping it would send
+    // an incremental save's `/Prev` back to nothing.
+    startCrossReference = 0;
+    isRepaired = true;
     _isStructureAltered = true;
   }
 
   /// Looks for a `trailer` dictionary that still parses and names a `/Root`.
-  PdfDictionary? _recoverTrailer() {
-    final PdfReader reader = PdfReader(_data);
-    int searchFrom = _data.length;
+  ///
+  /// The positions come from the scan, which noted every `trailer` keyword on
+  /// its way through — the same thing iText does in `rebuildXref`. Searching
+  /// for them again afterwards would mean a second pass over the file.
+  PdfDictionary? _recoverTrailer(PdfRepairScanResult scanned) {
+    final List<int> offsets = scanned.trailerOffsets;
     // Walk the trailers backwards: the last one that resolves wins, but an
     // incremental update may have left a damaged one at the very end.
-    for (int attempt = 0; attempt < 8; attempt++) {
-      reader.position = searchFrom;
-      final int position = reader.searchBack(PdfOperators.trailer);
-      if (position < 0) {
-        return null;
-      }
-      searchFrom = position;
+    int attempts = 0;
+    for (int i = offsets.length - 1; i >= 0 && attempts < 8; i--, attempts++) {
+      final int position = offsets[i];
       try {
-        final PdfParser trailerParser = PdfParser(this, PdfReader(_data),
-            _crossTable);
+        final PdfParser trailerParser = PdfParser(
+          this,
+          PdfReader(_data),
+          _crossTable,
+        );
         trailerParser.setOffset(position);
         final IPdfPrimitive? candidate = trailerParser.trailer();
         if (candidate is PdfDictionary && _hasUsableRoot(candidate)) {
@@ -391,19 +439,19 @@ class CrossTable {
       } catch (_) {
         // Try the one before it.
       }
-      if (searchFrom <= 0) {
-        return null;
-      }
     }
     return null;
   }
 
   /// Builds a minimal trailer around the catalog found among the rebuilt
   /// objects.
-  PdfDictionary? _synthesizeTrailer() {
+  PdfDictionary? _synthesizeTrailer(PdfRepairScanResult scanned) {
     final List<int> numbers = objects.keys.toList()..sort();
-    int? catalogNumber;
-    for (int i = numbers.length - 1; i >= 0; i--) {
+    int? catalogNumber = scanned.catalogNumber;
+    // The scan reads the head of every object dictionary it passes, so it
+    // normally already knows which one is the catalog. Parsing objects back to
+    // front is the fallback for when it did not see one.
+    for (int i = numbers.length - 1; i >= 0 && catalogNumber == null; i--) {
       final int number = numbers[i];
       final ObjectInformation? info = objects[number];
       if (info == null) {
