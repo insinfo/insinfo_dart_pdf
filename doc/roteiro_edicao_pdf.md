@@ -43,7 +43,7 @@ página.
 | Alterar metadados | Suportada | Título, autor, assunto, palavras-chave, criador e produtor têm setters. |
 | Localizar/extrair texto | Suportada | Há texto, linhas, palavras, glifos, limites e `findText`. |
 | Substituir texto existente | Não suportada | Não existe vínculo público entre o texto extraído e os tokens/bytes do stream. |
-| Remover texto existente | Não suportada | Cobrir com um retângulo só oculta visualmente e não remove os dados. |
+| Remover texto existente | Não suportada | Cobrir com um retângulo esconde do olho e não remove os dados; o texto continua extraível. |
 | Trocar/remover imagem existente | Não suportada | Falta inventário editável de `Do`, imagens inline, máscaras e XObjects aninhados. |
 | Editar paths/vetores existentes | Não suportada | O parser reconhece operadores, mas não há modelo público mutável nem serializador lossless. |
 | Redação segura | Não suportada | Exige remover dados e revisões antigas; não pode usar salvamento incremental. |
@@ -56,11 +56,17 @@ sem corromper o PDF, preservando por padrão tudo o que não foi alterado.
 
 O projeto deve oferecer dois níveis deliberadamente distintos:
 
-1. **Edição visual**, adequada para carimbos, sobreposição e substituição
-   aparente. É simples, preserva o conteúdo original e pode ser incremental.
-2. **Edição destrutiva**, que reescreve/remova operadores e recursos. É
-   necessária para remover conteúdo e para redação segura, tem mais restrições
-   e deve produzir uma regravação completa.
+1. **Edição por sobreposição**, adequada para carimbos e substituição
+   aparente. Desenha por cima: o conteúdo original continua nos bytes, intacto.
+   É simples e pode ser incremental.
+2. **Edição destrutiva**, que reescreve ou remove operadores e recursos. É
+   necessária para remover conteúdo de verdade e para redação segura, tem mais
+   restrições e deve produzir uma regravação completa.
+
+Os dois níveis são **API**, não interface gráfica. Nada neste roteiro propõe um
+editor de tela: o que se descreve são classes e métodos de uma biblioteca, e
+"sobreposição" nomeia o que sobra no arquivo — o dado antigo permanece —, não
+um jeito de interagir com ele.
 
 Não prometer, na primeira versão, refluxo automático de página ou edição de
 qualquer PDF arbitrário. Fontes customizadas, ligaduras, escrita vertical,
@@ -71,7 +77,8 @@ tratamento explícito e diagnóstico de não suporte quando não forem seguros.
 
 - Preservar byte a byte streams não alterados sempre que o modo de salvamento
   permitir.
-- Nunca chamar uma cobertura visual de “remoção” ou “redação”.
+- Nunca chamar uma cobertura de “remoção” ou “redação”: cobrir esconde do
+  olho e mantém o dado no arquivo.
 - Nunca salvar uma redação segura de forma incremental, pois revisões antigas
   continuam no arquivo e permitem recuperar o conteúdo.
 - Não editar silenciosamente todas as ocorrências de um XObject compartilhado.
@@ -104,7 +111,7 @@ editor.overlay.drawString(
 // Pesquisa ligada às operações que produziram o texto.
 final List<PdfTextMatch> matches = editor.findText('Nome antigo');
 
-// Substituição visual: conserva o conteúdo antigo nos bytes.
+// Substituição por sobreposição: conserva o conteúdo antigo nos bytes.
 editor.replaceText(
   matches.first,
   'Nome novo',
@@ -136,7 +143,8 @@ Tipos mínimos:
 - `PdfSaveMode.incremental` e `PdfSaveMode.fullRewrite` para documentos
   saudáveis, sem confundir essa decisão geral com `PdfRepairedSaveMode`.
 
-Também deve existir uma operação conveniente e inequivocamente visual:
+Também deve existir uma operação conveniente e inequivocamente não
+destrutiva:
 
 ```dart
 PdfGraphics PdfPage.appendGraphics();
@@ -241,7 +249,7 @@ qpdf/veraPDF e pelos leitores de referência adotados pelo projeto.
 **Aceite:** cada match aponta para os bytes/operandos corretos e seus bounds
 batem com renderização de referência dentro de uma tolerância definida.
 
-### Fase 3 — edição visual suportada
+### Fase 3 — edição por sobreposição
 
 1. Implementar overlay, cobertura e substituição aparente.
 2. Permitir política de ajuste do novo texto: `fit`, `shrink`, `clip` e
@@ -375,7 +383,7 @@ Antes de declarar “edição de conteúdo” pronta:
 
 1. **Marco A — edição existente bem definida:** Fase 0.
 2. **Marco B — núcleo lossless e seleção:** Fases 1 e 2.
-3. **Marco C — editor visual público:** Fase 3.
+3. **Marco C — API pública de sobreposição:** Fase 3.
 4. **Marco D — texto realmente substituível:** Fase 4.
 5. **Marco E — objetos gráficos:** Fase 5.
 6. **Marco F — redação segura:** Fase 6.
