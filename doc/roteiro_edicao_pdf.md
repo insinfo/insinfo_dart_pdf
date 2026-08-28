@@ -403,8 +403,8 @@ Marco F e sua auditoria negativa.
 
 ## 12. O que as outras bibliotecas entregam
 
-Escrito depois do resto do roteiro, olhando os fontes em `referencias/` e em
-`C:\MyDartProjects\pdf_pluseferencias`. Os símbolos citados foram
+Escrito depois do resto do roteiro, olhando os fontes em `referencias/` e nas
+referências do projeto `pdf_plus`. Os símbolos citados foram
 verificados nas árvores locais; o que vem de conhecimento geral está marcado
 como tal. A pergunta que esta seção responde é a de construir ou amarrar.
 
