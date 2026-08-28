@@ -30,6 +30,7 @@ import '../graphics/enums.dart';
 import '../graphics/pdf_pens.dart';
 import '../io/pdf_constants.dart';
 import '../io/pdf_cross_table.dart';
+import '../io/pdf_data_source.dart';
 import '../io/pdf_format_exception.dart';
 import '../merging/pdf_document_merger.dart';
 import '../merging/pdf_merge_options.dart';
@@ -108,6 +109,42 @@ class PdfDocument {
     }
   }
 
+  /// Initialize a new instance of the [PdfDocument] class from a
+  /// [PdfDataSource], reading the document as it is needed instead of from
+  /// bytes the caller already holds.
+  ///
+  /// Handing over a file rather than its contents is what keeps a document of
+  /// any size within a fixed memory ceiling — the same thing
+  /// `Loader.loadPDF(File)` does in PDFBox and what `CreateBestSource` does in
+  /// iText, where reading into memory is the opt-in rather than the default.
+  ///
+  /// ```dart
+  /// import 'package:dart_pdf/pdf_io.dart';
+  ///
+  /// final PdfDocument document = PdfDocument.fromSource(
+  ///   PdfFileDataSource.open(File('volume.pdf')),
+  /// );
+  /// ```
+  ///
+  /// Recovering a damaged cross-reference table still needs the whole file at
+  /// once; see [PdfStrictnessLevel.lenient].
+  PdfDocument.fromSource(
+    PdfDataSource source, {
+    String? password,
+    PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
+    PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
+    PdfRepairScan repairScan = PdfRepairScan.thorough,
+  }) {
+    _helper = PdfDocumentHelper(this);
+    _helper.isLoadedDocument = true;
+    _helper.password = password;
+    _helper.strictness = strictness;
+    _helper.repairedSaveMode = repairedSaveMode;
+    _helper.repairScan = repairScan;
+    _source = source;
+    _initializeGuarded(null);
+  }
+
   /// Initialize a new instance of the [PdfDocument] class
   /// from the PDF data as base64 string
   ///
@@ -158,6 +195,7 @@ class PdfDocument {
   PdfBookmarkBase? _outlines;
   PdfNamedDestinationCollection? _namedDestinations;
   List<int>? _data;
+  PdfDataSource? _source;
   PdfBookmarkBase? _bookmark;
   PdfDocumentInformation? _documentInfo;
   PdfLayerCollection? _layers;
@@ -1325,11 +1363,13 @@ class PdfDocument {
     _helper._isAttachOnlyEncryption = false;
     _helper.isEncrypted = false;
     _data = pdfData;
+    _source ??= pdfData == null ? null : PdfMemoryDataSource(pdfData);
+    _data ??= _source?.bytes;
     _helper.objects = PdfMainObjectCollection();
     if (_helper.isLoadedDocument) {
       _helper.crossTable = PdfCrossTable(
         this,
-        pdfData,
+        _source,
         _helper.strictness,
         _helper.repairScan,
       );
@@ -1391,14 +1431,40 @@ class PdfDocument {
     _helper.printLayer = PdfArray();
   }
 
+  /// Writes the document being updated ahead of the revision being appended.
+  ///
+  /// When the input is a file rather than a byte array there is nothing to
+  /// hand over whole, so it is copied a block at a time. That keeps an
+  /// incremental save of a file backed document from pulling the whole input
+  /// into memory just to write it back out.
   void _copyOldStream(PdfWriter writer) {
-    writer.write(_data);
+    final List<int>? bytes = _source?.bytes ?? _data;
+    if (bytes != null) {
+      writer.write(bytes);
+    } else {
+      _streamSourceInto(writer);
+    }
     _helper.isStreamCopied = true;
   }
 
   Future<void> _copyOldStreamAsync(PdfWriter writer) async {
-    writer.writeAsync(_data);
+    final List<int>? bytes = _source?.bytes ?? _data;
+    if (bytes != null) {
+      writer.writeAsync(bytes);
+    } else {
+      _streamSourceInto(writer);
+    }
     _helper.isStreamCopied = true;
+  }
+
+  void _streamSourceInto(PdfWriter writer) {
+    const int block = 1 << 20;
+    final PdfDataSource source = _source!;
+    for (int offset = 0; offset < source.length; offset += block) {
+      final int count =
+          offset + block > source.length ? source.length - offset : block;
+      writer.write(source.readRange(offset, count));
+    }
   }
 
   void _appendDocument(PdfWriter writer) {
@@ -1419,7 +1485,7 @@ class PdfDocument {
   }
 
   void _readFileVersion() {
-    final PdfReader reader = PdfReader(_data);
+    final PdfReader reader = PdfReader.fromSource(_source!);
     reader.position = 0;
     String token = reader.getNextToken()!;
     if (token.startsWith('%')) {

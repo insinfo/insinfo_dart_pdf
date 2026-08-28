@@ -4,7 +4,9 @@
 > Escrito em 27/08/2026, depois de
 > [roteiro_performance_recuperacao_xref.md](roteiro_performance_recuperacao_xref.md)
 > fechar a recuperação de xref e deixar o teto de memória em aberto (§8.4).
-> **Status: não implementado.** Este documento é o plano.
+> **Status: implementado no mesmo dia.** As seções 0 a 7 são o diagnóstico e o
+> plano, preservados porque documentam *por que* cada decisão foi tomada; a §8
+> registra o que foi entregue e o que os números viraram.
 
 ---
 
@@ -405,3 +407,73 @@ de pico de um fluxo que abre e salva um arquivo de 250 MB, e cabem numa tarde.
 Faça-as primeiro, meça de novo, e só então decida se as fases 3 e 4 se pagam —
 elas são semanas, não uma tarde, e o número que as justifica só fica claro
 depois que as duas primeiras saírem da frente.
+
+---
+
+## 8. O que foi entregue
+
+As quatro fases entraram. `dart analyze` limpo, **1137 testes verdes** (eram
+1121; 16 novos em [test/io/save_memory_test.dart](../test/io/save_memory_test.dart)
+e [test/io/data_source_test.dart](../test/io/data_source_test.dart)).
+
+### 8.1 Os números
+
+Sobre `14_34074_Vol 7.pdf` (250 MB, 262 páginas) e
+`14_34074_Vol 1_Fls. 02 à 1667.pdf` (1,8 GB, 1885 páginas):
+
+| | antes | agora |
+|---|---|---|
+| carga com lixo depois do `%%EOF` | 3270 ms, +2010 MB | **125 ms, +254 MB** |
+| `saveSync`, saída de 250 MB | +2 GB, pico 3840 MB | **+251 MB, pico 989 MB** |
+| `saveToSink`, saída de 250 MB | não existia | **+0 MB, pico 718 MB** |
+| abrir 250 MB | 2530 ms, +254 MB | **69 ms, +4 MB** (`fromSource`) |
+| abrir 1,8 GB | 17 s, +1,8 GB | **289 ms, +13 MB** (`fromSource`) |
+
+A última linha é a que resume: abrir um documento de 1,8 GB passou a custar
+13 MB e três décimos de segundo, porque os bytes que ninguém pediu não são
+lidos.
+
+### 8.2 O mapa entre o plano e o código
+
+| Fase | O que entrou |
+|---|---|
+| 1 — `readBytes` | devolve `Uint8List` e copia por faixa |
+| 2 — buffer de saída | `PdfByteBuffer`, um `List<int>` sobre array de bytes, nos quatro métodos de save |
+| 3 — destino | `PdfOutputSink` e `PdfDocument.saveToSink` |
+| 4 — leitura | `PdfDataSource`, `PdfMemoryDataSource`, `PdfCachedDataSource`, `PdfDocument.fromSource`; `PdfFileDataSource` em `pdf_io.dart` |
+
+O plano previa `PdfByteBuffer` como "trocar quatro linhas para usar
+`PdfBytesBuilder`". Não deu: o `PdfBytesBuilder` guarda pedaços, e assinar
+precisa corrigir `/ByteRange` e `/Contents` **dentro** do que já foi escrito.
+A primeira tentativa quebrou vinte testes de assinatura. Daí o buffer plano
+apoiado em array — mesma economia, mesma semântica.
+
+De quebra, isso consertou `saveAsBytesSync` e `saveAsBytes`, que usavam o
+builder e portanto **já estavam quebrados** para documento assinado, sem teste
+que cobrisse.
+
+### 8.3 O que não estava no plano
+
+**`dart:io` fora do núcleo.** A fonte de arquivo entrou por um ponto de entrada
+separado, `package:dart_pdf/pdf_io.dart`, para que importar a biblioteca
+continue não custando dependência de sistema de arquivos.
+
+**`_copyOldStream` por blocos.** Update incremental de documento apoiado em
+arquivo copia o original em blocos de 1 MB, em vez de puxá-lo inteiro para a
+memória só para escrevê-lo de volta.
+
+### 8.4 O que continua em aberto
+
+**A recuperação de xref ainda precisa do arquivo inteiro.** `scanSource` lê a
+fonte de uma vez quando ela não é um array. A varredura percorre o arquivo todo
+e salta dentro dele, então lê-la por janela custaria mais do que economiza —
+mas o MuPDF faz exatamente isso, com `fz_seek` sobre corpo de stream em cima de
+um stream de arquivo, e é por isso que ele repara 3 GB pela rede em ~1 s. Casar
+com isso significa reescrever `PdfRepairScanner` sobre uma janela deslizante;
+está descrito na §4 da fase 4 do roteiro anterior e não foi feito.
+
+**`saveToSink` não assina.** A assinatura preenche `/ByteRange` e `/Contents`
+depois que o resto do arquivo existe. Recusado com `UnsupportedError` em vez de
+gerar arquivo com placeholder. Contornar exigiria um destino que permita voltar
+atrás — um arquivo aberto para leitura e escrita serviria, e seria o caminho
+para assinar documento grande sem tê-lo inteiro em memória.

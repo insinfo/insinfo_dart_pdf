@@ -407,8 +407,8 @@ class PdfParser {
     CrossTable? crosstable, {
     PdfRepairScan scan = PdfRepairScan.thorough,
   }) {
-    final PdfRepairScanResult result = PdfRepairScanner.scan(
-      _reader.streamReader.data!,
+    final PdfRepairScanResult result = PdfRepairScanner.scanSource(
+      _reader.streamReader.source,
       mode: scan,
     );
     newObjects.clear();

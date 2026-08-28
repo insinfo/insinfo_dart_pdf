@@ -25,6 +25,7 @@ import 'enums.dart';
 import 'object_info.dart';
 import 'pdf_archive_stream.dart';
 import 'pdf_constants.dart';
+import 'pdf_data_source.dart';
 import 'pdf_main_object_collection.dart';
 import 'pdf_repair_options.dart';
 import 'pdf_writer.dart';
@@ -37,7 +38,7 @@ class PdfCrossTable {
   /// internal constructor
   PdfCrossTable([
     PdfDocument? document,
-    List<int>? data,
+    PdfDataSource? data,
     PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
     PdfRepairScan repairScan = PdfRepairScan.thorough,
   ]) {
@@ -67,7 +68,7 @@ class PdfCrossTable {
 
   /// internal constructor
   PdfCrossTable.fromFdf(List<int> docStream) {
-    _data = docStream;
+    _data = PdfMemoryDataSource(docStream);
     crossTable = CrossTable.fromFdf(docStream, this);
   }
 
@@ -79,7 +80,7 @@ class PdfCrossTable {
   PdfMainObjectCollection? items;
   PdfDictionary? _trailer;
   Map<int?, _RegisteredObject>? _objects = <int?, _RegisteredObject>{};
-  List<int>? _data;
+  PdfDataSource? _data;
 
   /// internal field
   CrossTable? crossTable;

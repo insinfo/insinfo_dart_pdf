@@ -12,6 +12,7 @@ import '../primitives/pdf_string.dart';
 import '../security/pdf_encryptor.dart';
 import 'enums.dart';
 import 'pdf_cross_table.dart';
+import 'pdf_data_source.dart';
 import 'pdf_format_exception.dart';
 import 'pdf_parser.dart';
 import 'pdf_repair_options.dart';
@@ -33,28 +34,28 @@ class CrossTable {
   //Constructor
   /// internal constructor
   CrossTable(
-    List<int>? data,
+    PdfDataSource? data,
     PdfCrossTable crossTable, [
     this.strictness = PdfStrictnessLevel.conservative,
     this.repairScan = PdfRepairScan.thorough,
   ]) {
-    if (data == null || data.isEmpty) {
+    if (data == null || data.length == 0) {
       throw PdfFormatException('The PDF data is empty.');
     }
-    _data = data;
+    _source = data;
     _crossTable = crossTable;
     _initialize();
   }
 
   /// internal constructor
   CrossTable.fromFdf(List<int> docStream, PdfCrossTable crossTable) {
-    _data = docStream;
+    _source = PdfMemoryDataSource(docStream);
     _crossTable = crossTable;
     objects = <int, ObjectInformation>{};
   }
 
   //Fields
-  late List<int> _data;
+  late PdfDataSource _source;
   late PdfCrossTable _crossTable;
   PdfReader? _reader;
   PdfParser? _parser;
@@ -111,7 +112,7 @@ class CrossTable {
 
   /// internal property
   PdfReader get reader {
-    _reader ??= PdfReader(_data);
+    _reader ??= PdfReader.fromSource(_source);
     return _reader!;
   }
 
@@ -155,7 +156,7 @@ class CrossTable {
     _readersTable = <PdfStream, PdfParser>{};
     _allTables = <int, List<ObjectInformation>>{};
     final int startingOffset = _checkJunk();
-    _debugXrefLog('startingOffset=$startingOffset dataLen=${_data.length}');
+    _debugXrefLog('startingOffset=$startingOffset dataLen=${_source.length}');
     if (startingOffset < 0) {
       throw PdfFormatException(
         'The data does not start with a PDF header (%PDF-).',
@@ -427,7 +428,7 @@ class CrossTable {
       try {
         final PdfParser trailerParser = PdfParser(
           this,
-          PdfReader(_data),
+          PdfReader.fromSource(_source),
           _crossTable,
         );
         trailerParser.setOffset(position);
@@ -741,15 +742,15 @@ class CrossTable {
     const int b3 = 0x46; // F
     const int b4 = 0x2D; // -
 
-    if (_data.length < 5) {
+    if (_source.length < 5) {
       return -1;
     }
-    for (int i = 0; i <= _data.length - 5; i++) {
-      if (_data[i] == b0 &&
-          _data[i + 1] == b1 &&
-          _data[i + 2] == b2 &&
-          _data[i + 3] == b3 &&
-          _data[i + 4] == b4) {
+    for (int i = 0; i <= _source.length - 5; i++) {
+      if (_source.byteAt(i) == b0 &&
+          _source.byteAt(i + 1) == b1 &&
+          _source.byteAt(i + 2) == b2 &&
+          _source.byteAt(i + 3) == b3 &&
+          _source.byteAt(i + 4) == b4) {
         return i;
       }
     }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'pdf_constants.dart';
+import 'pdf_data_source.dart';
 import 'stream_reader.dart';
 import 'pdf_format_exception.dart';
 
@@ -11,6 +12,16 @@ class PdfReader {
   /// internal constructor
   PdfReader(List<int>? data) {
     streamReader = PdfStreamReader(data);
+    _peekedByte = 0;
+    _bytePeeked = false;
+    _delimiters = '()<>[]{}/%';
+  }
+
+  /// internal constructor
+  ///
+  /// Reads through [source] instead of from a byte array. See [PdfDataSource].
+  PdfReader.fromSource(PdfDataSource source) {
+    streamReader = PdfStreamReader.fromSource(source);
     _peekedByte = 0;
     _bytePeeked = false;
     _delimiters = '()<>[]{}/%';
@@ -117,16 +128,15 @@ class PdfReader {
       bytes[0] = _read();
       index = 1;
     }
-    final List<int> data = streamReader.data!;
     final int start = streamReader.position;
-    int count = length - index;
-    final int available = data.length - start;
-    if (count > available) {
-      count = available;
-    }
-    if (count > 0) {
-      bytes.setRange(index, index + count, data, start);
-      streamReader.position = start + count;
+    final int copied = streamReader.source.copyInto(
+      start,
+      length - index,
+      bytes,
+      index,
+    );
+    if (copied > 0) {
+      streamReader.position = start + copied;
     }
     return bytes;
   }
@@ -289,12 +299,12 @@ class PdfReader {
     if (start < 0) {
       return false;
     }
-    final List<int> data = streamReader.data!;
+    final PdfDataSource data = streamReader.source;
     if (start + needle.length > data.length) {
       return false;
     }
     for (int i = 0; i < needle.length; i++) {
-      if (data[start + i] != needle[i]) {
+      if (data.byteAt(start + i) != needle[i]) {
         return false;
       }
     }
