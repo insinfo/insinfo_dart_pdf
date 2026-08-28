@@ -176,6 +176,7 @@ export 'src/pdf/implementation/io/pdf_format_exception.dart'
     show PdfFormatException;
 export 'src/pdf/implementation/io/pdf_repair_options.dart'
     show PdfStrictnessLevel, PdfRepairedSaveMode, PdfRepairScan;
+export 'src/pdf/implementation/io/pdf_writer.dart' show PdfOutputSink;
 export 'src/pdf/implementation/merging/pdf_document_merger.dart'
     show PdfDocumentMerger;
 export 'src/pdf/implementation/merging/pdf_imported_page.dart'

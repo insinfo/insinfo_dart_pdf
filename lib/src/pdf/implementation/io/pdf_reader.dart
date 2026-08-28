@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'pdf_constants.dart';
 import 'stream_reader.dart';
@@ -94,10 +95,38 @@ class PdfReader {
   }
 
   /// internal method
-  List<int> readBytes(int length) {
-    final List<int> bytes = List<int>.filled(length, 0, growable: true);
-    for (int i = 0; i < length; i++) {
-      bytes[i] = _read();
+  ///
+  /// Copies [length] bytes from the current position into a [Uint8List].
+  ///
+  /// It used to fill a growable `List<int>` one byte at a time. A growable
+  /// list of `int` in the Dart VM costs eight bytes per element, so copying a
+  /// 250 MB document — which `CrossTable` does whenever there is junk after
+  /// the last `%%EOF` — cost 2 GB and three seconds. A typed list costs one
+  /// byte per byte, and a range copy costs a `memmove`.
+  ///
+  /// Bytes past the end of the data stay zero. Both callers clamp the length
+  /// against what is available, so that case does not arise in practice; the
+  /// previous version wrote `-1` there, which a byte array cannot hold anyway.
+  Uint8List readBytes(int length) {
+    if (length <= 0) {
+      return Uint8List(0);
+    }
+    final Uint8List bytes = Uint8List(length);
+    int index = 0;
+    if (_bytePeeked) {
+      bytes[0] = _read();
+      index = 1;
+    }
+    final List<int> data = streamReader.data!;
+    final int start = streamReader.position;
+    int count = length - index;
+    final int available = data.length - start;
+    if (count > available) {
+      count = available;
+    }
+    if (count > 0) {
+      bytes.setRange(index, index + count, data, start);
+      streamReader.position = start + count;
     }
     return bytes;
   }

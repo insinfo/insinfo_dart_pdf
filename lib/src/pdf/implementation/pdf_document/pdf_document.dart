@@ -641,12 +641,10 @@ class PdfDocument {
   /// document.dispose();
   /// ```
   Uint8List saveAsBytesSync() {
-    final PdfBytesBuilder buffer = PdfBytesBuilder();
-    final PdfWriter writer = PdfWriter(null, buffer);
+    final PdfByteBuffer buffer = PdfByteBuffer();
+    final PdfWriter writer = PdfWriter(buffer);
     _saveDocument(writer);
-    final Uint8List bytes = buffer.takeBytes();
-    buffer.clear();
-    return bytes;
+    return buffer.takeBytes();
   }
 
   /// Saves the document and return the saved bytes as list of int.
@@ -662,11 +660,63 @@ class PdfDocument {
   /// List<int> bytes = document.saveSync();
   /// document.dispose();
   /// ```
+  /// The bytes come back as a [Uint8List], which is a `List<int>`. The
+  /// document used to be accumulated in a growable `List<int>` instead, and a
+  /// growable list of `int` in the Dart VM costs eight bytes per element: a
+  /// 250 MB document occupied 2 GB, with a peak near 4 GB while the list grew.
+  /// The only thing that changes for a caller is that the result is fixed
+  /// length — appending to a saved PDF was never meaningful.
   List<int> saveSync() {
-    final List<int> buffer = <int>[];
+    final PdfByteBuffer buffer = PdfByteBuffer();
     final PdfWriter writer = PdfWriter(buffer);
     _saveDocument(writer);
-    return writer.buffer!;
+    return buffer.takeBytes();
+  }
+
+  /// Writes the document straight to [sink] instead of building it in memory.
+  ///
+  /// `saveSync` holds the finished document in a buffer before handing it
+  /// over, so saving a 250 MB file costs 250 MB on top of the 250 MB the input
+  /// already occupies. This writes each piece as it is produced and keeps
+  /// nothing.
+  ///
+  /// ```dart
+  /// final IOSink out = File('merged.pdf').openWrite();
+  /// document.saveToSink(_FileSink(out));
+  /// await out.close();
+  /// ```
+  ///
+  /// **Not available while signing.** Applying a signature writes the document
+  /// first and then patches `/ByteRange` and `/Contents` back into the bytes it
+  /// just wrote, and digests the result — none of which a stream can do. A
+  /// document that carries a signature handler throws [UnsupportedError]
+  /// rather than producing a file with an unfilled placeholder. Reading and
+  /// merging signed documents is unaffected; this is only about *creating* a
+  /// signature in the same save.
+  void saveToSink(PdfOutputSink sink) {
+    _checkSinkIsUsable();
+    final PdfWriter writer = PdfWriter.toSink(sink);
+    _saveDocument(writer);
+  }
+
+  /// The asynchronous counterpart of [saveToSink].
+  Future<void> saveToSinkAsync(PdfOutputSink sink) async {
+    _checkSinkIsUsable();
+    final PdfWriter writer = PdfWriter.toSink(sink);
+    await _saveDocumentAsync(writer);
+  }
+
+  void _checkSinkIsUsable() {
+    final bool patchesItsOwnOutput =
+        (_helper.documentSavedList?.isNotEmpty ?? false) ||
+        (_helper.documentSavedListAsync?.isNotEmpty ?? false);
+    if (patchesItsOwnOutput) {
+      throw UnsupportedError(
+        'This document has to read back what it writes — a signature fills its '
+        '/ByteRange and /Contents after the rest of the file exists — so it '
+        'cannot be streamed to a sink. Use saveSync or saveAsBytesSync.',
+      );
+    }
   }
 
   /// Internal method to save the PDF document.
@@ -821,12 +871,10 @@ class PdfDocument {
   /// document.dispose();
   /// ```
   Future<Uint8List> saveAsBytes() async {
-    final PdfBytesBuilder buffer = PdfBytesBuilder();
-    final PdfWriter writer = PdfWriter(null, buffer);
+    final PdfByteBuffer buffer = PdfByteBuffer();
+    final PdfWriter writer = PdfWriter(buffer);
     await _saveDocumentAsync(writer);
-    final Uint8List bytes = buffer.takeBytes();
-    buffer.clear();
-    return bytes;
+    return buffer.takeBytes();
   }
 
   /// Saves the document and return the saved bytes as future list of int.
@@ -841,11 +889,12 @@ class PdfDocument {
   /// List<int> bytes = await document.save();
   /// document.dispose();
   /// ```
+  /// The bytes come back as a [Uint8List]; see [saveSync] for why.
   Future<List<int>> save() async {
-    final List<int> buffer = <int>[];
+    final PdfByteBuffer buffer = PdfByteBuffer();
     final PdfWriter writer = PdfWriter(buffer);
     await _saveDocumentAsync(writer);
-    return writer.buffer!;
+    return buffer.takeBytes();
   }
 
   /// Internal method to save the PDF document
