@@ -174,6 +174,8 @@ export 'src/pdf/implementation/graphics/pdf_pen.dart' show PdfPen;
 export 'src/pdf/implementation/graphics/pdf_pens.dart' show PdfPens;
 export 'src/pdf/implementation/io/pdf_format_exception.dart'
     show PdfFormatException;
+export 'src/pdf/implementation/io/pdf_data_source.dart'
+    show PdfDataSource, PdfMemoryDataSource, PdfCachedDataSource, PdfBlockReader;
 export 'src/pdf/implementation/io/pdf_repair_options.dart'
     show PdfStrictnessLevel, PdfRepairedSaveMode, PdfRepairScan;
 export 'src/pdf/implementation/io/pdf_writer.dart' show PdfOutputSink;

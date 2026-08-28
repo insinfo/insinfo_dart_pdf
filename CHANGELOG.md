@@ -176,6 +176,29 @@
   the core keeps no dependency on `dart:io`. Creating a signature in the same
   save is refused with `UnsupportedError`: a signature fills its `/ByteRange`
   and `/Contents` after the rest of the file exists, which a stream cannot do.
+- Read a document from a source instead of from bytes the caller holds.
+  `PdfDataSource` is the abstraction every reference implementation has —
+  PDFBox's `RandomAccessRead`, iText's `IRandomAccessSource`, MuPDF's
+  `fz_stream` — and none of them loads a file by default.
+  `PdfDocument.fromSource` takes one; `PdfFileDataSource.open`, from the
+  separate `package:dart_pdf/pdf_io.dart` entry point, reads a file through an
+  LRU of 32 blocks of 256 KB. Measured:
+
+  | | `inputBytes` | `fromSource` |
+  |---|---|---|
+  | 250 MB, 262 pages | 2530 ms, +254 MB | **69 ms, +4 MB** |
+  | 1.8 GB, 1885 pages | 17 s, +1.8 GB | **289 ms, +13 MB** |
+
+  `dart:io` stays out of `pdf.dart`, so importing the library still costs
+  nothing to a program with no file system; the file backed source lives in
+  `pdf_io.dart`.
+
+  An incremental save of a file backed document copies the original a block at
+  a time instead of pulling it into memory to write it back out. Recovering a
+  damaged cross-reference table is the exception: the scan walks the whole file
+  and jumps around inside it, so a windowed source is read out first. MuPDF
+  seeks over stream bodies on a file stream and does not pay that; matching it
+  is still open.
 - `PdfReader.searchBack` compares bytes instead of building a `String` at every
   position it tries. On a file whose tail was truncated it walks to the front
   of the file, which made loading a damaged 16 MB document take seconds before

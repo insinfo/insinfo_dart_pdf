@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'pdf_data_source.dart';
 import 'pdf_repair_options.dart';
 
 /// An object header found by scanning a file whose cross-reference table could
@@ -61,6 +62,22 @@ class PdfRepairScanResult {
 ///   all, and additionally seeks over stream bodies.
 class PdfRepairScanner {
   PdfRepairScanner._(this._bytes, this._mode);
+
+  /// Scans [source] and returns what it found.
+  ///
+  /// A source that is not already a byte array is materialized first. The scan
+  /// walks the whole file and jumps around inside it, so reading it through a
+  /// window would cost more than it saves — and a caller only reaches here for
+  /// a document damaged badly enough that no cross-reference table survived.
+  /// MuPDF is the counter-example, seeking over stream bodies on a file
+  /// stream; matching that is worth doing, and is not done here.
+  static PdfRepairScanResult scanSource(
+    PdfDataSource source, {
+    PdfRepairScan mode = PdfRepairScan.thorough,
+  }) {
+    final List<int>? bytes = source.bytes;
+    return scan(bytes ?? source.readRange(0, source.length), mode: mode);
+  }
 
   /// Scans [data] and returns what it found.
   static PdfRepairScanResult scan(

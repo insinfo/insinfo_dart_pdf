@@ -1,20 +1,38 @@
+import 'pdf_data_source.dart';
 import 'pdf_format_exception.dart';
+
 /// internal class
 class PdfStreamReader {
   //Constructor
   /// internal constructor
-  PdfStreamReader([this.data]) {
+  PdfStreamReader([List<int>? data])
+    : source = PdfMemoryDataSource(data ?? <int>[]) {
+    _position = 0;
+  }
+
+  /// internal constructor
+  ///
+  /// Reads through [source] rather than from a byte array the caller already
+  /// holds. See [PdfDataSource].
+  PdfStreamReader.fromSource(this.source) {
     _position = 0;
   }
 
   //Fields
   /// internal field
-  List<int>? data;
+  PdfDataSource source;
   int? _position;
 
   //Properties
   /// internal property
-  int? get length => data!.length;
+  ///
+  /// The whole document as a list, when the source has it; `null` when the
+  /// document is being read from a file. Code that reaches for this has to
+  /// cope with `null` or go through [source].
+  List<int>? get data => source.bytes;
+
+  /// internal property
+  int? get length => source.length;
 
   /// internal property
   int get position => _position!;
@@ -28,8 +46,8 @@ class PdfStreamReader {
   //Implementation
   /// internal method
   int? readByte() {
-    if (_position != length) {
-      final int result = data![position];
+    if (_position != source.length) {
+      final int result = source.byteAt(_position!);
       _position = _position! + 1;
       return result;
     } else {
