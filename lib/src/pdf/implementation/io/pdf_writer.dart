@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -5,6 +6,26 @@ import '../../interfaces/pdf_interface.dart';
 import '../pdf_document/pdf_document.dart';
 
 /// Helper class to write PDF primitive elements easily.
+/// Where a document goes when it is written straight out instead of being
+/// accumulated in memory.
+///
+/// Deliberately narrower than `dart:io`'s `IOSink`, so the core of the library
+/// does not depend on `dart:io` and a caller can send the document anywhere —
+/// a file, a socket, a hash. Adapting a file is three lines:
+///
+/// ```dart
+/// class _FileSink implements PdfOutputSink {
+///   _FileSink(this.sink);
+///   final IOSink sink;
+///   @override
+///   void add(List<int> data) => sink.add(data);
+/// }
+/// ```
+abstract class PdfOutputSink {
+  /// Appends [data] to the output.
+  void add(List<int> data);
+}
+
 class PdfWriter implements IPdfWriter {
   //Constructor
   /// internal constructor
@@ -20,11 +41,25 @@ class PdfWriter implements IPdfWriter {
     }
   }
 
+  /// internal constructor
+  ///
+  /// Writes straight to [sink] instead of holding the document in memory.
+  /// Nothing can be read back, so [buffer] stays null: the one thing that
+  /// needs to read what it already wrote is signing, which patches
+  /// `/ByteRange` and `/Contents` into the finished bytes.
+  PdfWriter.toSink(this.sink) {
+    length = 0;
+    position = 0;
+  }
+
   //Fields
   /// internal field
   List<int>? buffer;
   PdfBytesBuilder? bytesBuilder;
   bool isBytesBuilder = false;
+
+  /// internal field
+  PdfOutputSink? sink;
   //IPdfWriter members
   @override
   PdfDocument? document;
@@ -63,31 +98,26 @@ class PdfWriter implements IPdfWriter {
       }
       length = length! + tempLength;
       position = position! + tempLength;
-      if (end == null) {
-        if (isBytesBuilder) {
-          bytesBuilder!.add(data);
-        } else {
-          _addDataInChunks(data);
-          //buffer!.addAll(data);
-        }
+      final List<int> payload =
+          end == null ? data : data.sublist(0, end > data.length ? data.length : end);
+      if (sink != null) {
+        sink!.add(payload);
+      } else if (isBytesBuilder) {
+        bytesBuilder!.add(payload);
       } else {
-        if (isBytesBuilder) {
-          bytesBuilder!.add(data.take(end).toList());
-        } else {
-          _addDataInChunks(data.take(end).toList());
-          //buffer!.addAll(data.take(end));
-        }
+        _addDataInChunks(payload);
       }
     }
   }
 
+  /// Appends [data] to the flat buffer.
+  ///
+  /// This used to copy in 8190 byte slices, because `addAll` on a growable
+  /// `List<int>` was the expensive part. [PdfByteBuffer] grows by doubling and
+  /// copies by range, so the slicing — which allocated a sublist per chunk —
+  /// only got in the way.
   void _addDataInChunks(List<int> data) {
-    const int chunkSize = 8190;
-    for (int i = 0; i < data.length; i += chunkSize) {
-      final int end =
-          (i + chunkSize < data.length) ? i + chunkSize : data.length;
-      buffer!.addAll(data.sublist(i, end));
-    }
+    buffer!.addAll(data);
   }
 
   /// Internal method
@@ -120,20 +150,14 @@ class PdfWriter implements IPdfWriter {
       }
       length = length! + tempLength;
       position = position! + tempLength;
-      if (end == null) {
-        if (isBytesBuilder) {
-          bytesBuilder!.add(data);
-        } else {
-          _addDataInChunks(data);
-          //buffer!.addAll(data);
-        }
+      final List<int> payload =
+          end == null ? data : data.sublist(0, end > data.length ? data.length : end);
+      if (sink != null) {
+        sink!.add(payload);
+      } else if (isBytesBuilder) {
+        bytesBuilder!.add(payload);
       } else {
-        if (isBytesBuilder) {
-          bytesBuilder!.add(data.take(end).toList());
-        } else {
-          _addDataInChunks(data.take(end).toList());
-          //buffer!.addAll(data.take(end));
-        }
+        _addDataInChunks(payload);
       }
     }
   }
@@ -173,5 +197,96 @@ class PdfBytesBuilder {
   void clear() {
     _chunks.clear();
     _length = 0;
+  }
+}
+
+/// A `List<int>` backed by a byte array, for accumulating a document while it
+/// is written.
+///
+/// The document used to be accumulated in a plain growable `List<int>`. In the
+/// Dart VM that is a list of object references — **eight bytes per element** —
+/// so a 250 MB document occupied 2 GB, with a peak near 4 GB while the list
+/// doubled. This holds one byte per byte.
+///
+/// It has to remain a flat, mutable list rather than a rope of chunks: signing
+/// writes the document first and then patches `/ByteRange` and `/Contents`
+/// back into it in place, and digests the result over byte ranges. A chunked
+/// builder cannot answer that without flattening, which is the copy this class
+/// exists to avoid.
+class PdfByteBuffer extends ListBase<int> {
+  /// internal constructor
+  PdfByteBuffer([int initialCapacity = 64 * 1024])
+    : _bytes = Uint8List(initialCapacity < 16 ? 16 : initialCapacity);
+
+  Uint8List _bytes;
+  int _length = 0;
+
+  @override
+  int get length => _length;
+
+  @override
+  set length(int value) {
+    if (value > _length) {
+      _reserve(value);
+    }
+    _length = value;
+  }
+
+  @override
+  int operator [](int index) {
+    if (index < 0 || index >= _length) {
+      throw RangeError.index(index, this, 'index', null, _length);
+    }
+    return _bytes[index];
+  }
+
+  @override
+  void operator []=(int index, int value) {
+    if (index < 0 || index >= _length) {
+      throw RangeError.index(index, this, 'index', null, _length);
+    }
+    _bytes[index] = value;
+  }
+
+  @override
+  void add(int element) {
+    _reserve(_length + 1);
+    _bytes[_length++] = element;
+  }
+
+  @override
+  void addAll(Iterable<int> iterable) {
+    if (iterable is List<int>) {
+      final int count = iterable.length;
+      if (count == 0) {
+        return;
+      }
+      _reserve(_length + count);
+      _bytes.setRange(_length, _length + count, iterable);
+      _length += count;
+      return;
+    }
+    for (final int value in iterable) {
+      add(value);
+    }
+  }
+
+  /// The written bytes, as a view over the backing array.
+  ///
+  /// No copy is made, so the result stops being valid if anything is written
+  /// afterwards. Saving is finished by the time a caller sees it.
+  Uint8List takeBytes() => Uint8List.sublistView(_bytes, 0, _length);
+
+  void _reserve(int capacity) {
+    if (capacity <= _bytes.length) {
+      return;
+    }
+    int grown = _bytes.length;
+    while (grown < capacity) {
+      grown *= 2;
+    }
+    final Uint8List bigger = Uint8List(grown);
+    bigger.setRange(0, _length, _bytes);
+    _bytes = bigger;
   }
 }

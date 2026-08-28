@@ -148,6 +148,34 @@
 - The scan now reports the document catalog and the position of every `trailer`
   keyword as it goes, the way iText does, instead of searching the file a
   second time and parsing objects back to front to find them.
+- Stop paying eight bytes per byte of PDF. A growable `List<int>` in the Dart
+  VM is a list of object references, and the library used one both to
+  accumulate a document while saving and to copy a file that has junk after its
+  last `%%EOF`. Measured on a 250 MB scanned document:
+
+  | | before | after |
+  |---|---|---|
+  | loading, junk after `%%EOF` | 3270 ms, +2010 MB | 125 ms, +254 MB |
+  | `saveSync`, 250 MB of output | +2 GB, peak 3840 MB | +251 MB, peak 989 MB |
+
+  `PdfReader.readBytes` returns a `Uint8List` and copies by range instead of
+  filling a growable list one byte at a time, and the document is accumulated
+  in `PdfByteBuffer` — a `List<int>` backed by a byte array. It stays a flat
+  mutable list rather than a rope of chunks because signing writes the document
+  and then patches `/ByteRange` and `/Contents` back into it in place.
+
+  `saveSync` and `save` now return a `Uint8List`. It is still a `List<int>`;
+  the only difference is that it is fixed length, and appending to a saved PDF
+  was never meaningful.
+- Fix `saveAsBytesSync` and `saveAsBytes` for signed documents. They used a
+  chunked builder, which has no bytes to patch, so applying a signature through
+  them failed with a null check error. Both share the flat buffer now.
+- `PdfDocument.saveToSink` writes the document straight out instead of building
+  it in memory — 0 MB of extra RSS where `saveSync` costs the size of the
+  output. `PdfOutputSink` is deliberately narrower than `dart:io`'s `IOSink` so
+  the core keeps no dependency on `dart:io`. Creating a signature in the same
+  save is refused with `UnsupportedError`: a signature fills its `/ByteRange`
+  and `/Contents` after the rest of the file exists, which a stream cannot do.
 - `PdfReader.searchBack` compares bytes instead of building a `String` at every
   position it tries. On a file whose tail was truncated it walks to the front
   of the file, which made loading a damaged 16 MB document take seconds before
