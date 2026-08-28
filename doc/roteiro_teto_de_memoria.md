@@ -464,13 +464,16 @@ memória só para escrevê-lo de volta.
 
 ### 8.4 O que continua em aberto
 
-**A recuperação de xref ainda precisa do arquivo inteiro.** `scanSource` lê a
-fonte de uma vez quando ela não é um array. A varredura percorre o arquivo todo
-e salta dentro dele, então lê-la por janela custaria mais do que economiza —
-mas o MuPDF faz exatamente isso, com `fz_seek` sobre corpo de stream em cima de
-um stream de arquivo, e é por isso que ele repara 3 GB pela rede em ~1 s. Casar
-com isso significa reescrever `PdfRepairScanner` sobre uma janela deslizante;
-está descrito na §4 da fase 4 do roteiro anterior e não foi feito.
+**~~A recuperação de xref ainda precisa do arquivo inteiro.~~ Feito.** O
+`PdfRepairScanner` passou a andar sobre uma janela deslizante, e `PdfRepairWindow`
+escolhe quando. Recuperar o volume danificado de 3,0 GB: **3,72 s e +14 MB de
+RSS**, contra 28,6 s e +3 GB lendo o arquivo antes. O `mutool` faz em ~1 s, então
+é a mesma ordem de grandeza.
+
+O que a janela custou: **28% no caminho em memória** (18,3 s → 23,5 s no
+`thorough` sobre 3 GB), porque a indexação passa por um teste de limite que o
+acesso ao array faria sozinho. É a combinação mais lenta que existe, e é a que
+esta mudança torna desnecessária.
 
 **`saveToSink` não assina.** A assinatura preenche `/ByteRange` e `/Contents`
 depois que o resto do arquivo existe. Recusado com `UnsupportedError` em vez de

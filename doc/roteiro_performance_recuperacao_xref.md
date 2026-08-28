@@ -632,9 +632,11 @@ números de MuPDF e `pdf_plus` são de terceiros — observação do operador e 
 relógio da própria ferramenta — e servem de ordem de grandeza, não de medição
 controlada. Os de `dart_pdf` acima de 64 MB são extrapolação de 0,54 s/MB.
 
-**Arquivos acima de 2 GB.** Independente deste roteiro, o modelo de carregar o
-documento inteiro em memória põe o RSS em cerca de duas vezes o tamanho do
-arquivo — 2,6 GB para o `Vol 6`. A varredura em bytes não piora isso, mas também
+**Arquivos acima de 2 GB.** *(Resolvido depois, por
+[roteiro_teto_de_memoria.md](roteiro_teto_de_memoria.md): a leitura passou a ser
+por fonte, e a varredura por janela — 3 GB danificados recuperam em 3,72 s com
++14 MB.)* Independente deste roteiro, o modelo de carregar o documento inteiro em
+memória põe o RSS em cerca de duas vezes o tamanho do arquivo — 2,6 GB para o `Vol 6`. A varredura em bytes não piora isso, mas também
 não resolve; um leitor de acesso aleatório sobre arquivo, como o
 `PdfRandomAccessReader` do pdf_plus, é outro roteiro.
 

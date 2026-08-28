@@ -406,10 +406,12 @@ class PdfParser {
     Map<int, ObjectInformation?> newObjects,
     CrossTable? crosstable, {
     PdfRepairScan scan = PdfRepairScan.thorough,
+    PdfRepairWindow window = PdfRepairWindow.auto,
   }) {
     final PdfRepairScanResult result = PdfRepairScanner.scanSource(
       _reader.streamReader.source,
       mode: scan,
+      window: window,
     );
     newObjects.clear();
     result.objects.forEach((int number, PdfRepairedObject object) {

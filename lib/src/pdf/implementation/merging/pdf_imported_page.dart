@@ -48,20 +48,8 @@ class PdfImportedPage {
   /// Opens a graphics context that draws on top of the imported content
   /// without rewriting a byte of it.
   ///
-  /// The page keeps its original content stream untouched. What this adds is a
-  /// stream of its own, wrapped so that whatever graphics state the imported
-  /// content left behind — an unbalanced `q`, a transform, a clipping path —
-  /// cannot reach the new content:
-  ///
-  /// ```
-  /// /Contents [ (q) (…the imported content, verbatim…) (Q) (your drawing) ]
-  /// ```
-  ///
-  /// Coordinates are the same as anywhere else in this library: the origin is
-  /// the top left of the page.
-  ///
-  /// It may be called more than once on the same page; each call gets its own
-  /// clean state and draws over the previous one.
+  /// This is [PdfPage.appendGraphics] on [page], named here so the callback
+  /// has the safe drawing surface within reach; see it for the guarantees.
   ///
   /// ```dart
   /// PdfMergeOptions(
@@ -76,14 +64,7 @@ class PdfImportedPage {
   ///   },
   /// )
   /// ```
-  PdfGraphics appendGraphics() {
-    // Touching the layer collection is what puts the guard in place: it wraps
-    // whatever content the page already has between a `q` stream and a `Q`
-    // stream, and every layer added afterwards is appended past that `Q`. The
-    // original stream is never rewritten, and the drawing starts from the
-    // state the page began in.
-    return page.layers.add().graphics;
-  }
+  PdfGraphics appendGraphics() => page.appendGraphics();
 }
 
 /// Called once for every page a merge imports, after the page is complete.

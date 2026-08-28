@@ -41,13 +41,14 @@ class PdfCrossTable {
     PdfDataSource? data,
     PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
     PdfRepairScan repairScan = PdfRepairScan.thorough,
+    PdfRepairWindow repairWindow = PdfRepairWindow.auto,
   ]) {
     if (document != null) {
       this.document = document;
       objNumbers = Queue<PdfReference>();
       if (data != null) {
         _data = data;
-        _initializeCrossTable(strictness, repairScan);
+        _initializeCrossTable(strictness, repairScan, repairWindow);
         this.document = document;
       }
     }
@@ -221,8 +222,9 @@ class PdfCrossTable {
   void _initializeCrossTable(
     PdfStrictnessLevel strictness,
     PdfRepairScan repairScan,
+    PdfRepairWindow repairWindow,
   ) {
-    crossTable = CrossTable(_data, this, strictness, repairScan);
+    crossTable = CrossTable(_data, this, strictness, repairScan, repairWindow);
   }
 
   /// internal property

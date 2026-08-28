@@ -38,6 +38,7 @@ class CrossTable {
     PdfCrossTable crossTable, [
     this.strictness = PdfStrictnessLevel.conservative,
     this.repairScan = PdfRepairScan.thorough,
+    this.repairWindow = PdfRepairWindow.auto,
   ]) {
     if (data == null || data.length == 0) {
       throw PdfFormatException('The PDF data is empty.');
@@ -78,6 +79,12 @@ class CrossTable {
   ///
   /// How much of the file the recovery scan reads. See [PdfRepairScan].
   PdfRepairScan repairScan = PdfRepairScan.thorough;
+
+  /// internal field
+  ///
+  /// Whether the recovery scan walks a window of the source. See
+  /// [PdfRepairWindow].
+  PdfRepairWindow repairWindow = PdfRepairWindow.auto;
 
   /// internal field
   ///
@@ -393,6 +400,7 @@ class CrossTable {
       objects,
       this,
       scan: repairScan,
+      window: repairWindow,
     );
     _debugXrefLog(
       'rebuilt ${objects.length} object(s) by scanning, '

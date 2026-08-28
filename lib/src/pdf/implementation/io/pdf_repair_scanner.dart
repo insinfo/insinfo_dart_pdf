@@ -59,24 +59,46 @@ class PdfRepairScanResult {
 ///   the rest of the line. An object header fits in 24 bytes; the megabyte of
 ///   image data behind it never reaches memory.
 /// * MuPDF (`pdf_repair_xref_base`) tokenizes without materializing strings at
-///   all, and additionally seeks over stream bodies.
+///   all, and additionally seeks over stream bodies — over an `fz_stream`, so
+///   the bodies it seeks over are never transferred. That is what [scanSource]
+///   reproduces when it scans through a window.
 class PdfRepairScanner {
-  PdfRepairScanner._(this._bytes, this._mode);
+  PdfRepairScanner._memory(Uint8List bytes, this._mode)
+      : _source = null,
+        _bytes = bytes,
+        _length = bytes.length,
+        _base = 0,
+        _windowEnd = bytes.length;
+
+  PdfRepairScanner._windowed(PdfDataSource source, this._mode, int windowSize)
+      : _source = source,
+        _bytes = Uint8List(_windowFor(source.length, windowSize)),
+        _length = source.length,
+        _base = 0,
+        // Empty until the first read, so nothing is fetched for a source the
+        // scan turns out never to touch.
+        _windowEnd = 0;
 
   /// Scans [source] and returns what it found.
   ///
-  /// A source that is not already a byte array is materialized first. The scan
-  /// walks the whole file and jumps around inside it, so reading it through a
-  /// window would cost more than it saves — and a caller only reaches here for
-  /// a document damaged badly enough that no cross-reference table survived.
-  /// MuPDF is the counter-example, seeking over stream bodies on a file
-  /// stream; matching that is worth doing, and is not done here.
+  /// A source that already carries its bytes is scanned in place. One that does
+  /// not is either read whole or walked through a window of [windowSize] bytes,
+  /// as [window] decides — see [PdfRepairWindow] for why that choice is not
+  /// always the window.
   static PdfRepairScanResult scanSource(
     PdfDataSource source, {
     PdfRepairScan mode = PdfRepairScan.thorough,
+    PdfRepairWindow window = PdfRepairWindow.auto,
+    int windowSize = defaultWindowSize,
   }) {
     final List<int>? bytes = source.bytes;
-    return scan(bytes ?? source.readRange(0, source.length), mode: mode);
+    if (bytes != null) {
+      return scan(bytes, mode: mode);
+    }
+    if (!_windows(window, mode)) {
+      return scan(source.readRange(0, source.length), mode: mode);
+    }
+    return PdfRepairScanner._windowed(source, mode, windowSize)._run();
   }
 
   /// Scans [data] and returns what it found.
@@ -90,10 +112,60 @@ class PdfRepairScanner {
     // over a `Uint8List`.
     final Uint8List bytes =
         data is Uint8List ? data : Uint8List.fromList(data);
-    return PdfRepairScanner._(bytes, mode)._run();
+    return PdfRepairScanner._memory(bytes, mode)._run();
   }
 
+  static bool _windows(PdfRepairWindow window, PdfRepairScan mode) {
+    switch (window) {
+      case PdfRepairWindow.auto:
+        return mode == PdfRepairScan.skipStreams;
+      case PdfRepairWindow.always:
+        return true;
+      case PdfRepairWindow.never:
+        return false;
+    }
+  }
+
+  /// How much of the source is held at once when scanning through a window.
+  ///
+  /// Sixteen times [_dictionaryWindow], so an object dictionary is normally
+  /// read without sliding, and a quarter of `PdfCachedDataSource`'s block, so
+  /// filling the window never asks that cache for more than two blocks.
+  static const int defaultWindowSize = 64 * 1024;
+
+  /// Below this the window cannot hold the longest token plus room to move,
+  /// and every step would slide it.
+  static const int _minimumWindow = 64;
+
+  /// The buffer to give a source of [length] bytes when [requested] was asked
+  /// for: never more than the document itself, never so little that a token
+  /// cannot be compared inside it.
+  static int _windowFor(int length, int requested) {
+    int size = requested > length ? length : requested;
+    if (size < _minimumWindow) {
+      size = _minimumWindow;
+    }
+    return size;
+  }
+
+  /// The source being scanned, or `null` when [_bytes] is the whole document.
+  final PdfDataSource? _source;
+
+  /// The bytes currently in reach: the whole document, or the window that
+  /// starts at [_base] and ends at [_windowEnd].
+  ///
+  /// The buffer itself never changes — sliding refills it — so the loop keeps
+  /// indexing through the same `Uint8List`-typed field it always did.
   final Uint8List _bytes;
+
+  /// Total size of the document, which is what every bound in the scan is
+  /// measured against. Offsets stay absolute; only the indexing is relative.
+  final int _length;
+
+  /// Where [_bytes] starts in the document, and where the bytes it holds end.
+  int _base;
+  int _windowEnd;
+
   final PdfRepairScan _mode;
 
   /// Out parameter of [_readInteger], to keep it from allocating a record.
@@ -143,12 +215,57 @@ class PdfRepairScanner {
   /// How far into an object dictionary the scan looks for `/Length` and
   /// `/Type`. Both sit near the front; a bounded window keeps a damaged or
   /// enormous dictionary from turning the scan back into a full parse.
+  ///
+  /// This is a limit on offsets, not on what is held: a dictionary longer than
+  /// [defaultWindowSize] is still walked to here, one slid window at a time.
   static const int _dictionaryWindow = 4096;
+
+  /// The byte at absolute [offset], sliding the window when it is not in it.
+  ///
+  /// The fast path is one subtraction and two comparisons over a final field,
+  /// which is what keeps the in memory scan a scan: replacing it with a call
+  /// through [PdfDataSource.byteAt] would put a virtual dispatch on every byte
+  /// of the document. When the source is already an array the window is the
+  /// document, so the slow path is never reached.
+  int _at(int offset) {
+    final int inside = offset - _base;
+    if (inside >= 0 && offset < _windowEnd) {
+      return _bytes[inside];
+    }
+    _slide(offset);
+    return _bytes[offset - _base];
+  }
+
+  /// Makes sure the window holds [count] bytes from [offset], for the readers
+  /// that look at more than one byte at a time.
+  void _ensure(int offset, int count) {
+    if (offset >= _base && offset + count <= _windowEnd) {
+      return;
+    }
+    _slide(offset);
+  }
+
+  /// Refills the window so it starts at [offset].
+  ///
+  /// Starting exactly there, rather than centring on it, is what suits the
+  /// scan: it runs forward, and the readers that step back do so by a few
+  /// bytes at most, well inside the window they just brought in.
+  void _slide(int offset) {
+    final PdfDataSource? source = _source;
+    if (source == null) {
+      // The window is the whole document; the caller read past its end, and
+      // indexing reports that the way it always did.
+      return;
+    }
+    final int start = offset < 0 ? 0 : offset;
+    _base = start;
+    _windowEnd = start + source.copyInto(start, _bytes.length, _bytes, 0);
+  }
 
   PdfRepairScanResult _run() {
     final Map<int, PdfRepairedObject> objects = <int, PdfRepairedObject>{};
     final List<int> trailerOffsets = <int>[];
-    final int end = _bytes.length;
+    final int end = _length;
     // Two candidates, because a damaged file can carry an emptied catalog from
     // an earlier revision. One that leads to pages wins; failing that, any.
     int? catalogWithPages;
@@ -163,7 +280,7 @@ class PdfRepairScanner {
 
     int i = 0;
     while (i < end) {
-      final int byte = _bytes[i];
+      final int byte = _at(i);
 
       if (byte >= _zero && byte <= _nine || byte == _plus || byte == _minus) {
         final int start = i;
@@ -242,8 +359,8 @@ class PdfRepairScanner {
     int position = _skipWhitespace(i, end);
     int? streamLength;
     if (position + 1 < end &&
-        _bytes[position] == _less &&
-        _bytes[position + 1] == _less) {
+        _at(position) == _less &&
+        _at(position + 1) == _less) {
       final int limit =
           position + _dictionaryWindow < end
               ? position + _dictionaryWindow
@@ -263,10 +380,10 @@ class PdfRepairScanner {
       return position;
     }
     position += _stream.length;
-    if (position < end && _bytes[position] == _carriageReturn) {
+    if (position < end && _at(position) == _carriageReturn) {
       position++;
     }
-    if (position < end && _bytes[position] == _lineFeed) {
+    if (position < end && _at(position) == _lineFeed) {
       position++;
     }
     final int body = position;
@@ -277,6 +394,9 @@ class PdfRepairScanner {
         // `/Length` is a hint, not a promise. MuPDF jumps by it and then
         // checks that `endstream` is really there; only a failed check costs a
         // scan. Trusting it blind would trade slowness for silent corruption.
+        // This jump is also where a windowed scan saves its transfer: the
+        // window reloads at the landing, and the body in between is never
+        // read.
         final int afterSpace = _skipWhitespace(landing, end);
         if (_matches(afterSpace, _endStream)) {
           return afterSpace + _endStream.length;
@@ -300,9 +420,9 @@ class PdfRepairScanner {
     _dictionaryIsCatalog = false;
     _dictionaryHasPages = false;
     while (i < limit) {
-      final int byte = _bytes[i];
+      final int byte = _at(i);
       if (byte == _less) {
-        if (i + 1 < limit && _bytes[i + 1] == _less) {
+        if (i + 1 < limit && _at(i + 1) == _less) {
           depth++;
           i += 2;
           continue;
@@ -312,7 +432,7 @@ class PdfRepairScanner {
         continue;
       }
       if (byte == _greater) {
-        if (i + 1 < limit && _bytes[i + 1] == _greater) {
+        if (i + 1 < limit && _at(i + 1) == _greater) {
           depth--;
           i += 2;
           if (depth <= 0) {
@@ -370,16 +490,20 @@ class PdfRepairScanner {
   /// the `12` as the byte count would jump into the middle of the stream.
   int _readLengthValue(int start, int limit) {
     int i = _skipWhitespace(start, limit);
-    if (i >= limit || _bytes[i] < _zero || _bytes[i] > _nine) {
+    if (i >= limit) {
+      return -1;
+    }
+    final int first = _at(i);
+    if (first < _zero || first > _nine) {
       return -1;
     }
     final int afterFirst = _readInteger(i, limit);
     final int value = _integer;
     int probe = _skipWhitespace(afterFirst, limit);
-    if (probe < limit && _bytes[probe] >= _zero && _bytes[probe] <= _nine) {
+    if (probe < limit && _at(probe) >= _zero && _at(probe) <= _nine) {
       probe = _readInteger(probe, limit);
       probe = _skipWhitespace(probe, limit);
-      if (probe < limit && _bytes[probe] == _referenceR) {
+      if (probe < limit && _at(probe) == _referenceR) {
         _integer = value;
         return -1;
       }
@@ -394,20 +518,24 @@ class PdfRepairScanner {
   int _readInteger(int i, int end) {
     int position = i;
     bool negative = false;
-    if (position < end &&
-        (_bytes[position] == _plus || _bytes[position] == _minus)) {
-      negative = _bytes[position] == _minus;
-      position++;
+    if (position < end) {
+      final int sign = _at(position);
+      if (sign == _plus || sign == _minus) {
+        negative = sign == _minus;
+        position++;
+      }
     }
     int value = 0;
     int digits = 0;
-    while (position < end &&
-        _bytes[position] >= _zero &&
-        _bytes[position] <= _nine) {
+    while (position < end) {
+      final int byte = _at(position);
+      if (byte < _zero || byte > _nine) {
+        break;
+      }
       // A run of digits longer than an object number can ever be is binary
       // data, not a number; stop rather than overflow on it.
       if (digits < 18) {
-        value = value * 10 + (_bytes[position] - _zero);
+        value = value * 10 + (byte - _zero);
       }
       digits++;
       position++;
@@ -422,7 +550,7 @@ class PdfRepairScanner {
   int _skipWhitespace(int i, int end) {
     int position = i;
     while (position < end) {
-      final int byte = _bytes[position];
+      final int byte = _at(position);
       if (byte == _space ||
           byte == _lineFeed ||
           byte == _carriageReturn ||
@@ -443,9 +571,11 @@ class PdfRepairScanner {
 
   int _skipComment(int i, int end) {
     int position = i;
-    while (position < end &&
-        _bytes[position] != _lineFeed &&
-        _bytes[position] != _carriageReturn) {
+    while (position < end) {
+      final int byte = _at(position);
+      if (byte == _lineFeed || byte == _carriageReturn) {
+        break;
+      }
       position++;
     }
     return position;
@@ -455,7 +585,7 @@ class PdfRepairScanner {
     int position = i + 1;
     int depth = 1;
     while (position < end) {
-      final int byte = _bytes[position];
+      final int byte = _at(position);
       if (byte == _backslash) {
         position += 2;
         continue;
@@ -475,40 +605,62 @@ class PdfRepairScanner {
 
   int _skipHexString(int i, int end) {
     int position = i + 1;
-    while (position < end && _bytes[position] != _greater) {
+    while (position < end && _at(position) != _greater) {
       position++;
     }
     return position < end ? position + 1 : end;
   }
 
   bool _matches(int i, List<int> token) {
-    if (i < 0 || i + token.length > _bytes.length) {
+    final int count = token.length;
+    if (i < 0 || i + count > _length) {
       return false;
     }
-    for (int k = 0; k < token.length; k++) {
-      if (_bytes[i + k] != token[k]) {
+    _ensure(i, count);
+    final int offset = i - _base;
+    for (int k = 0; k < count; k++) {
+      if (_bytes[offset + k] != token[k]) {
         return false;
       }
     }
     return true;
   }
 
+  /// Finds [token] between [from] and [end], window by window.
+  ///
+  /// This is the search that runs when a stream `/Length` was missing or lied,
+  /// so it can cover a lot of ground; scanning inside the window and sliding
+  /// only when a token would straddle its end keeps the inner loop the same
+  /// tight comparison it is over an array in memory.
   int _indexOf(List<int> token, int from, int end) {
-    final int last = end - token.length;
+    final int count = token.length;
+    final int last = end - count;
     final int first = token[0];
-    for (int i = from; i <= last; i++) {
-      if (_bytes[i] != first) {
-        continue;
+    int i = from < 0 ? 0 : from;
+    while (i <= last) {
+      _ensure(i, count);
+      final int base = _base;
+      // The last position whose whole token still fits in the window. It is
+      // never below `i`, because the window was just made to hold `i` and
+      // `count` bytes after it — so every pass moves forward.
+      int stop = _windowEnd - count;
+      if (stop > last) {
+        stop = last;
       }
-      bool hit = true;
-      for (int k = 1; k < token.length; k++) {
-        if (_bytes[i + k] != token[k]) {
-          hit = false;
-          break;
+      while (i <= stop) {
+        if (_bytes[i - base] == first) {
+          bool hit = true;
+          for (int k = 1; k < count; k++) {
+            if (_bytes[i - base + k] != token[k]) {
+              hit = false;
+              break;
+            }
+          }
+          if (hit) {
+            return i;
+          }
         }
-      }
-      if (hit) {
-        return i;
+        i++;
       }
     }
     return -1;

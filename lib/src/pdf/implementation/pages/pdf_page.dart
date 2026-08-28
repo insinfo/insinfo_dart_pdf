@@ -322,6 +322,51 @@ class PdfPage implements IPdfWrapper {
   }
 
   //Public methods
+  /// Opens a graphics context that draws on top of everything the page
+  /// already holds, without rewriting a byte of it.
+  ///
+  /// This is what a page loaded from a file wants, rather than [graphics].
+  /// Drawing through [graphics] joins the page's default layer, and on a
+  /// loaded page that means inheriting whatever graphics state the existing
+  /// content happened to leave behind - an unbalanced `q`, a transform, a
+  /// clipping path - so a stamp can end up scaled, displaced or clipped out
+  /// of sight. This method fences the old content off instead:
+  ///
+  /// ```
+  /// /Contents [ (q) (...the content that was already there...) (Q) (your drawing) ]
+  /// ```
+  ///
+  /// Nothing that was in the page is rewritten, which is also what lets an
+  /// incremental save stay small and leave the earlier revisions readable.
+  ///
+  /// Coordinates are the same as anywhere else in this library: the origin is
+  /// the top left of the page.
+  ///
+  /// It may be called more than once on the same page; each call gets its own
+  /// clean state and draws over the previous one.
+  ///
+  /// ```dart
+  /// //Load an existing document and stamp its first page.
+  /// PdfDocument document = PdfDocument(inputBytes: inputBytes);
+  /// document.pages[0].appendGraphics().drawString(
+  ///     'CONFIDENCIAL',
+  ///     PdfStandardFont(PdfFontFamily.helvetica, 32),
+  ///     brush: PdfBrushes.red,
+  ///     bounds: const Rect.fromLTWH(100, 200, 300, 50));
+  /// //Save the document.
+  /// List<int> bytes = await document.save();
+  /// //Dispose the document.
+  /// document.dispose();
+  /// ```
+  PdfGraphics appendGraphics() {
+    // Reaching for the layer collection is what puts the guard in place: the
+    // first time it is built it wraps whatever the page already has between a
+    // `q` stream and a `Q` stream, and every layer added afterwards is
+    // appended past that `Q`. So the new layer starts from the state the page
+    // began in, and the original streams are left alone.
+    return layers.add().graphics;
+  }
+
   /// Get the PDF page size reduced by page margins and
   /// page template dimensions.
   /// ```dart

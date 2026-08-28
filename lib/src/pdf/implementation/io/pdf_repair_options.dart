@@ -105,3 +105,44 @@ enum PdfRepairScan {
   /// produce. Hence the default is [thorough].
   skipStreams,
 }
+
+/// Whether the recovery scan reads a file backed source through a window
+/// instead of loading it whole.
+///
+/// [PdfRepairScan.skipStreams] jumps over stream bodies, so on a large document
+/// the scan touches a few megabytes of headers scattered across gigabytes of
+/// data. Loading the file to run that scan pays for the whole transfer to use
+/// almost none of it: measured on a 3 GB file on a network share, the read
+/// costs about 28 seconds and the scan itself about ten milliseconds. Reading
+/// through a window costs about a second — which is what `mutool` takes on the
+/// same file, because `pdf_repair_xref_base` runs over an `fz_stream` and
+/// `fz_seek`s across stream bodies rather than bringing them in.
+///
+/// A window only pays when both halves hold: the bytes are not in memory
+/// already, and the scan is one that skips. [PdfRepairScan.thorough] reads
+/// every byte by definition, so windowing it only adds bookkeeping to a
+/// transfer that happens anyway.
+enum PdfRepairWindow {
+  /// Windows a file backed source scanned with [PdfRepairScan.skipStreams],
+  /// and only that.
+  ///
+  /// The default, because it is the combination where the window is a pure
+  /// win: every other case either has the bytes already or is going to read
+  /// them all.
+  auto,
+
+  /// Windows every source that does not already carry its bytes.
+  ///
+  /// Turns [PdfRepairScan.thorough] into a scan with a memory ceiling: it
+  /// still reads every byte, but never holds more than one window of them at a
+  /// time. For a caller that would rather spend the extra copies than the
+  /// address space. A source that answers [PdfDataSource.bytes] is still
+  /// scanned in place — there is nothing there to save.
+  always,
+
+  /// Reads the whole source into an array and scans that.
+  ///
+  /// What the scan did before it could window, kept as the way out if a source
+  /// turns out to be slower to seek in than to read.
+  never,
+}
