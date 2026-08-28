@@ -1,6 +1,12 @@
-/// The Insinfo Flutter PDF is a library written natively in Dart for
-/// creating, reading, editing, and securing PDF files in Android, iOS,
-/// and web platforms.
+/// A pure Dart library for creating, reading, structurally editing and
+/// securing PDF files.
+///
+/// "Structurally editing" is the honest word: the library adds, inserts,
+/// removes, rotates and merges pages, draws over pages it loaded, fills
+/// forms, adds and removes annotations, edits metadata and signs the result.
+/// It does not yet rewrite the text and images already drawn into a page's
+/// content stream. The README carries the capability matrix, operation by
+/// operation.
 library pdf;
 
 export 'src/vector/ui.dart';
@@ -177,7 +183,11 @@ export 'src/pdf/implementation/io/pdf_format_exception.dart'
 export 'src/pdf/implementation/io/pdf_data_source.dart'
     show PdfDataSource, PdfMemoryDataSource, PdfCachedDataSource, PdfBlockReader;
 export 'src/pdf/implementation/io/pdf_repair_options.dart'
-    show PdfStrictnessLevel, PdfRepairedSaveMode, PdfRepairScan;
+    show
+        PdfStrictnessLevel,
+        PdfRepairedSaveMode,
+        PdfRepairScan,
+        PdfRepairWindow;
 export 'src/pdf/implementation/io/pdf_writer.dart' show PdfOutputSink;
 export 'src/pdf/implementation/merging/pdf_document_merger.dart'
     show PdfDocumentMerger;

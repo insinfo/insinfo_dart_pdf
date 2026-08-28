@@ -96,6 +96,7 @@ class PdfDocument {
     PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
     PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
     PdfRepairScan repairScan = PdfRepairScan.thorough,
+    PdfRepairWindow repairWindow = PdfRepairWindow.auto,
   }) {
     _helper = PdfDocumentHelper(this);
     _helper.isLoadedDocument = inputBytes != null;
@@ -103,6 +104,7 @@ class PdfDocument {
     _helper.strictness = strictness;
     _helper.repairedSaveMode = repairedSaveMode;
     _helper.repairScan = repairScan;
+    _helper.repairWindow = repairWindow;
     _initializeGuarded(inputBytes);
     if (!_helper.isLoadedDocument && conformanceLevel != null) {
       _initializeConformance(conformanceLevel);
@@ -134,6 +136,7 @@ class PdfDocument {
     PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
     PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
     PdfRepairScan repairScan = PdfRepairScan.thorough,
+    PdfRepairWindow repairWindow = PdfRepairWindow.auto,
   }) {
     _helper = PdfDocumentHelper(this);
     _helper.isLoadedDocument = true;
@@ -141,6 +144,7 @@ class PdfDocument {
     _helper.strictness = strictness;
     _helper.repairedSaveMode = repairedSaveMode;
     _helper.repairScan = repairScan;
+    _helper.repairWindow = repairWindow;
     _source = source;
     _initializeGuarded(null);
   }
@@ -171,6 +175,7 @@ class PdfDocument {
     PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
     PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
     PdfRepairScan repairScan = PdfRepairScan.thorough,
+    PdfRepairWindow repairWindow = PdfRepairWindow.auto,
   }) {
     _helper = PdfDocumentHelper(this);
     if (base64String.isEmpty) {
@@ -180,6 +185,7 @@ class PdfDocument {
     _helper.strictness = strictness;
     _helper.repairedSaveMode = repairedSaveMode;
     _helper.repairScan = repairScan;
+    _helper.repairWindow = repairWindow;
     _helper.isLoadedDocument = true;
     _initializeGuarded(base64.decode(base64String));
   }
@@ -1266,6 +1272,7 @@ class PdfDocument {
                   : null,
           strictness: mergeOptions.strictness,
           repairScan: mergeOptions.repairScan,
+          repairWindow: mergeOptions.repairWindow,
         );
         sources.add(source);
         merger.append(source);
@@ -1305,6 +1312,7 @@ class PdfDocument {
                   : null,
           strictness: mergeOptions.strictness,
           repairScan: mergeOptions.repairScan,
+          repairWindow: mergeOptions.repairWindow,
         );
         sources.add(source);
         merger.append(source);
@@ -1372,6 +1380,7 @@ class PdfDocument {
         _source,
         _helper.strictness,
         _helper.repairScan,
+        _helper.repairWindow,
       );
       _helper.isEncrypted = _helper.checkEncryption(false);
       final PdfCatalog catalog = _getCatalogValue();
@@ -1870,6 +1879,9 @@ class PdfDocumentHelper {
 
   /// internal field
   PdfRepairScan repairScan = PdfRepairScan.thorough;
+
+  /// internal field
+  PdfRepairWindow repairWindow = PdfRepairWindow.auto;
 
   /// internal field
   bool forcedFullRewriteForRepair = false;

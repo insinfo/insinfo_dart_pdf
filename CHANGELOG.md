@@ -199,6 +199,40 @@
   and jumps around inside it, so a windowed source is read out first. MuPDF
   seeks over stream bodies on a file stream and does not pay that; matching it
   is still open.
+- Recover a damaged file without reading it. The scan can now walk a window of
+  the source instead of an array, which is what MuPDF does with `fz_seek` over
+  a file stream — and why `mutool` repairs a multi gigabyte file in about a
+  second. Combined with `PdfRepairScan.skipStreams`, the bytes of the stream
+  bodies are never transferred at all. On the 3.0 GB damaged volume in the test
+  corpus, opening it and counting its 528 pages:
+
+  | | time | RSS |
+  |---|---|---|
+  | before this version | 11 min, and then failed | — |
+  | reading the file out first | 28.6 s | +3 GB |
+  | **windowed** | **3.7 s** | **+14 MB** |
+
+  `PdfRepairWindow` decides. `auto`, the default, windows a file backed source
+  scanned with `skipStreams` and nothing else: every other case either has the
+  bytes already or is going to read them all anyway. `always` gives
+  `thorough` a memory ceiling too, at the cost of the extra copies; `never`
+  keeps the old behaviour.
+
+  The window costs the in memory scan about 28% — 18.3 s to 23.5 s over 3 GB of
+  `thorough` — because indexing goes through a bounds check the array access
+  would otherwise do alone. That is the slowest combination there is, and the
+  one this release makes unnecessary: a file that size wants `fromSource` and
+  `skipStreams`, which is 3.7 s.
+- `PdfPage.appendGraphics()` opens a graphics context over everything a page
+  already holds, without rewriting any of it. It is what a loaded page wants
+  instead of `graphics`: drawing through `graphics` joins the page's default
+  layer and inherits whatever graphics state the existing content left open —
+  an unbalanced `q`, a transform, a clipping path — so a stamp can land scaled
+  or clipped out of sight. `PdfImportedPage.appendGraphics` now delegates to it.
+- The package description says what the library does. It claimed "creating,
+  reading, editing, and securing"; "editing" reads as replacing the text on a
+  page, which this library does not do. It now says *structurally* editing, and
+  the README carries a capability matrix, operation by operation.
 - `PdfReader.searchBack` compares bytes instead of building a `String` at every
   position it tries. On a file whose tail was truncated it walks to the front
   of the file, which made loading a damaged 16 MB document take seconds before

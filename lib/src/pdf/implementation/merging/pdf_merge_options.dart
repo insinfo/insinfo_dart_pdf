@@ -51,6 +51,7 @@ class PdfMergeOptions {
     this.groupBookmarksPerDocument = false,
     this.strictness = PdfStrictnessLevel.lenient,
     this.repairScan = PdfRepairScan.thorough,
+    this.repairWindow = PdfRepairWindow.auto,
     this.onPageImported,
   });
 
@@ -118,6 +119,13 @@ class PdfMergeOptions {
   /// [PdfRepairScan.skipStreams] when merging large scanned documents, where
   /// the difference is minutes per file.
   PdfRepairScan repairScan;
+
+  /// Whether the recovery scan walks a window of a damaged source instead of
+  /// reading it out.
+  ///
+  /// Only bites when a source is handed over as a file rather than as bytes;
+  /// see [PdfRepairWindow].
+  PdfRepairWindow repairWindow;
 
   /// Whether merging a source that carries digital signatures is refused.
   ///
