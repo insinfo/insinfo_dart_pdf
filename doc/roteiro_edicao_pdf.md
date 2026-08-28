@@ -29,6 +29,11 @@ securing” — é verdadeira no sentido estrutural e incremental, mas ampla dem
 se “editing” for entendido como a edição de texto e objetos já presentes na
 página.
 
+Antes de decidir construir qualquer coisa daqui, vale a §12: ela mapeia o que
+MuPDF, PDFBox, iText, pdf-lib e Stirling-PDF entregam de fato em cada fase, com
+os símbolos verificados nos fontes. O resumo é que as fases 0–3 são território
+conhecido e as fases 4 e 6 não têm exemplo aberto para copiar.
+
 ## 2. Matriz atual de capacidades
 
 | Operação | Situação atual | Observação |
@@ -393,3 +398,116 @@ As fases 0–3 formam o primeiro incremento de baixo risco e já tornam o suport
 de edição honesto e fácil de usar. A afirmação “edita texto existente” só deve
 ser feita após o Marco D; “remove dados/redige com segurança”, somente após o
 Marco F e sua auditoria negativa.
+
+---
+
+## 12. O que as outras bibliotecas entregam
+
+Escrito depois do resto do roteiro, olhando os fontes em `referencias/` e em
+`C:\MyDartProjects\pdf_pluseferencias`. Os símbolos citados foram
+verificados nas árvores locais; o que vem de conhecimento geral está marcado
+como tal. A pergunta que esta seção responde é a de construir ou amarrar.
+
+### 12.1 MuPDF — faz quase o roteiro inteiro
+
+Redação de verdade, na API pública (`include/mupdf/pdf/page.h`):
+
+```c
+int pdf_redact_page(fz_context*, pdf_document*, pdf_page*, pdf_redact_options*);
+PDF_REDACT_IMAGE_NONE / REMOVE / PIXELS / REMOVE_UNLESS_INVISIBLE
+```
+
+E a arquitetura que a fase 1 descreve, pronta: uma cadeia de filtros sobre os
+operadores do stream — `pdf_processor`, `pdf_filter_options`,
+`pdf_filter_factory_fn`, com `pdf_new_sanitize_filter` e `pdf_new_color_filter`
+como filtros concretos e `pdf-op-buffer.c` re-serializando
+(`include/mupdf/pdf/interpret.h`). Inclusive `pdf_filter_xobject_instance`, que
+resolve exatamente o problema que a fase 5 levanta: clonar um XObject
+compartilhado antes de alterar um uso só.
+
+### 12.2 PDFBox — tem as peças, não a funcionalidade
+
+`PDFStreamParser` e `ContentStreamWriter` deixam tokenizar e reescrever um
+content stream à mão — é matéria-prima da fase 1, e boa. Mas **não existe
+nenhuma classe de redação em toda a árvore**, nem editor de conteúdo pronto. As
+receitas de "substituir texto com PDFBox" que circulam são código de
+comunidade, e quebram em fonte subsetada, `TJ` com kerning e Type0.
+
+### 12.3 iText aberto — só a leitura
+
+O core aberto tem `PdfRedactAnnotation`, que é o *tipo de anotação* — o
+marcador —, não o que apaga. O motor é o **pdfSweep** (`PdfCleanUpTool`), add-on
+comercial separado, e confirmei que não está na árvore aberta. Para ler
+conteúdo existe `PdfCanvasProcessor`, orientado a evento: reconstituir os bytes
+é por conta de quem usa.
+
+### 12.4 pdf-lib — fora da conversa
+
+A superfície é `PDFDocument`, `PDFPage`, `PDFFont`, `PDFImage`. Desenha por cima
+e preenche formulário, que é onde esta biblioteca já está.
+
+### 12.5 Stirling-PDF — o exemplo mais instrutivo
+
+É uma suíte aberta e popular que anuncia edição e redação. Vale estudar **porque
+ela não implementa nem uma nem outra**: é um orquestrador. PDFBox para o
+estrutural, LibreOffice para conversão, Tesseract para OCR, qpdf para
+otimização, PDF.js e pdf-lib no front.
+
+Nas duas operações difíceis:
+
+**Redação** — o PDFBox só *acha* o texto; quem apaga é o PDFium, via binding
+(`TextRedactionService.java`):
+
+```java
+import stirling.software.jpdfium.redact.PdfRedactor;
+RedactResult result = PdfRedactor.redact(tempIn.toPath(), options);
+```
+
+As opções que ele passa são um inventário das dificuldades da fase 4:
+`glyphAware`, `ligatureAware`, `bidiAware`, `graphemeSafe`, `normalizeFonts`,
+`fixToUnicode`, `repairWidths`. E há o fallback honesto no código — quando o
+motor devolve nulo, `"falling back to box-only redaction mode"`, que é
+exatamente o que a §4 deste roteiro proíbe chamar de redação.
+
+**Substituição de texto** — existe, e é por modelo intermediário
+(`EditTextController.java`): `convertPdfToJsonDocument` → editar
+`PdfJsonTextElement` → `convertJsonToPdf`. PDF vira modelo JSON, o texto é
+trocado ali, e **o PDF é regerado**. É bem mais barato que a fase 4 daqui, e
+paga o preço que o critério de aceite da fase 1 quer evitar: tudo que passa por
+lá sai reescrito, não remendado.
+
+### 12.6 O mapa por fase
+
+| Fase | Quem entrega |
+|---|---|
+| 0–3 (estrutural + sobreposição) | quase todas, inclusive esta biblioteca hoje |
+| 1–2 (parse/serialize lossless, proveniência) | MuPDF completo; PDFBox as peças; iText só a leitura |
+| 4 (substituir texto) | **por regeneração**: Stirling-PDF (PDF→JSON→PDF). **Cirúrgico**: só SDK comercial, e com restrições |
+| 5 (imagens/vetores) | MuPDF |
+| 6 (redação segura) | MuPDF (aberto). iText pdfSweep e Apryse/Foxit/Adobe (comerciais). **PDFBox não.** Stirling amarra no PDFium |
+
+Fora das árvores locais, e aqui é conhecimento geral, não verificado: **Apryse**
+(ex-PDFTron), **Foxit PDF SDK** e **Adobe PDF Services** fazem edição de
+conteúdo e redação certificada — são os pares reais das fases 4 e 6, e são
+comerciais. **PyMuPDF** herda a redação do MuPDF via binding. **qpdf** e
+**pikepdf** são estruturais por design.
+
+### 12.7 O que isso sugere para este roteiro
+
+Duas conclusões, e nenhuma delas é "desistir".
+
+**As fases 0–3 são território conhecido.** Praticamente todo mundo entrega, e
+esta biblioteca já está lá. O trabalho é de API e de honestidade, não de
+pesquisa.
+
+**As fases 4 e 6 não têm exemplo aberto para copiar em linguagem gerenciada.**
+Quem entrega redação de verdade em aberto amarra num motor nativo — Stirling no
+PDFium, PyMuPDF no MuPDF. Isso não quer dizer que seja impossível em Dart; quer
+dizer que não haveria de quem copiar, e que o critério de aceite da fase 6 é
+adversarial: uma redação que vaza é passivo, não defeito.
+
+Vale considerar a mesma escolha que o Stirling fez. O `mutool` já é usado neste
+projeto para diagnosticar arquivo danificado; chamá-lo para redação custa zero
+engenharia e traz uma implementação que já sobreviveu a auditoria de quem
+depende dela. Se a fase 6 virar requisito com prazo, esse é o caminho curto — e
+a fase 4 cirúrgica passa a ser a única que realmente exige construir do zero.
