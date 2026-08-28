@@ -35,6 +35,7 @@ import '../merging/pdf_document_merger.dart';
 import '../merging/pdf_merge_options.dart';
 import '../io/pdf_main_object_collection.dart';
 import '../io/pdf_reader.dart';
+import '../io/pdf_repair_options.dart';
 import '../io/pdf_writer.dart';
 import '../pages/pdf_layer_collection.dart';
 import '../pages/pdf_page.dart';
@@ -91,10 +92,16 @@ class PdfDocument {
     List<int>? inputBytes,
     PdfConformanceLevel? conformanceLevel,
     String? password,
+    PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
+    PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
+    PdfRepairScan repairScan = PdfRepairScan.thorough,
   }) {
     _helper = PdfDocumentHelper(this);
     _helper.isLoadedDocument = inputBytes != null;
     _helper.password = password;
+    _helper.strictness = strictness;
+    _helper.repairedSaveMode = repairedSaveMode;
+    _helper.repairScan = repairScan;
     _initializeGuarded(inputBytes);
     if (!_helper.isLoadedDocument && conformanceLevel != null) {
       _initializeConformance(conformanceLevel);
@@ -121,12 +128,21 @@ class PdfDocument {
   /// //Dispose the document.
   /// document.dispose();
   /// ```
-  PdfDocument.fromBase64String(String base64String, {String? password}) {
+  PdfDocument.fromBase64String(
+    String base64String, {
+    String? password,
+    PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative,
+    PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject,
+    PdfRepairScan repairScan = PdfRepairScan.thorough,
+  }) {
     _helper = PdfDocumentHelper(this);
     if (base64String.isEmpty) {
       ArgumentError.value(base64String, 'PDF data', 'PDF data cannot be null');
     }
     _helper.password = password;
+    _helper.strictness = strictness;
+    _helper.repairedSaveMode = repairedSaveMode;
+    _helper.repairScan = repairScan;
     _helper.isLoadedDocument = true;
     _initializeGuarded(base64.decode(base64String));
   }
@@ -178,6 +194,30 @@ class PdfDocument {
   PdfPasswordCallback? onPdfPassword;
 
   //Properties
+  /// Whether the object table of this document was reconstructed by scanning
+  /// the file, because the cross-reference table it carried could not be used.
+  ///
+  /// Only ever true for a document loaded with
+  /// [PdfStrictnessLevel.lenient]; `false` for a document created from
+  /// scratch. The counterpart of iText's `PdfReader.hasRebuiltXref()`.
+  ///
+  /// Worth checking before signing. A reconstructed table is this library's
+  /// reading of what the file meant, and the next reader may read it
+  /// differently — so a signature applied over it certifies less than it
+  /// appears to. It also constrains saving; see [PdfRepairedSaveMode].
+  ///
+  /// ```dart
+  /// final PdfDocument document = PdfDocument(
+  ///   inputBytes: bytes,
+  ///   strictness: PdfStrictnessLevel.lenient,
+  /// );
+  /// if (document.wasRepaired) {
+  ///   return badRequest('the file is damaged; re-upload it before signing');
+  /// }
+  /// ```
+  bool get wasRepaired =>
+      _helper.isLoadedDocument && _helper.crossTable.isRepaired;
+
   /// Gets a value indicating whether the document contains any digital signatures.
   bool get hasSignatures {
     if (_form == null &&
@@ -630,8 +670,38 @@ class PdfDocument {
   }
 
   /// Internal method to save the PDF document.
+  /// Applies [PdfRepairedSaveMode] before a document whose object table was
+  /// rebuilt is written out.
+  ///
+  /// An incremental update points back at the previous cross-reference table.
+  /// A repaired document has none: the offset the file carried is the damaged
+  /// one, and the objects were found by scanning. Appending a revision on top
+  /// of that produces a file whose table dangles.
+  void _applyRepairedSaveMode() {
+    if (!_helper.isLoadedDocument || !_helper.crossTable.isRepaired) {
+      return;
+    }
+    switch (_helper.repairedSaveMode) {
+      case PdfRepairedSaveMode.reject:
+        throw PdfFormatException(
+          'This document was recovered by scanning the file, so it cannot be '
+          'saved as an incremental update: there is no sound cross-reference '
+          'table to append to. Pass repairedSaveMode: '
+          'PdfRepairedSaveMode.fullRewrite to write the whole document again '
+          '(which invalidates any signature it carried), or reject the file '
+          'upstream — see PdfDocument.wasRepaired.',
+        );
+      case PdfRepairedSaveMode.fullRewrite:
+        fileStructure.incrementalUpdate = false;
+        _helper.forcedFullRewriteForRepair = true;
+      case PdfRepairedSaveMode.incremental:
+        break;
+    }
+  }
+
   void _saveDocument(PdfWriter writer) {
     writer.document = this;
+    _applyRepairedSaveMode();
     _checkPages();
     if (_helper.isLoadedDocument &&
         _bookmark != null &&
@@ -670,7 +740,10 @@ class PdfDocument {
           }
         }
       }
-      if (hasSignatures) {
+      if (hasSignatures && !_helper.forcedFullRewriteForRepair) {
+        // A repaired document rewritten in full cannot keep its signatures,
+        // and forcing the incremental update back on here would hand back the
+        // dangling table the rewrite exists to avoid.
         fileStructure.incrementalUpdate = true;
       }
       if (fileStructure.incrementalUpdate &&
@@ -778,6 +851,7 @@ class PdfDocument {
   /// Internal method to save the PDF document
   Future<void> _saveDocumentAsync(PdfWriter writer) async {
     writer.document = this;
+    _applyRepairedSaveMode();
     await _checkPagesAsync();
     if (_helper.isLoadedDocument &&
         _bookmark != null &&
@@ -816,7 +890,10 @@ class PdfDocument {
           }
         }
       }
-      if (hasSignatures) {
+      if (hasSignatures && !_helper.forcedFullRewriteForRepair) {
+        // A repaired document rewritten in full cannot keep its signatures,
+        // and forcing the incremental update back on here would hand back the
+        // dangling table the rewrite exists to avoid.
         fileStructure.incrementalUpdate = true;
       }
       if (fileStructure.incrementalUpdate &&
@@ -1085,10 +1162,11 @@ class PdfDocument {
     PdfMergeOptions? options,
     List<String?>? passwords,
   }) {
+    final PdfMergeOptions mergeOptions = options ?? PdfMergeOptions();
     final PdfDocument output = PdfDocument();
     final PdfDocumentMerger merger = PdfDocumentMerger(
       output,
-      options: options,
+      options: mergeOptions,
     );
     final List<PdfDocument> sources = <PdfDocument>[];
     try {
@@ -1099,6 +1177,8 @@ class PdfDocument {
               (passwords != null && i < passwords.length)
                   ? passwords[i]
                   : null,
+          strictness: mergeOptions.strictness,
+          repairScan: mergeOptions.repairScan,
         );
         sources.add(source);
         merger.append(source);
@@ -1121,10 +1201,11 @@ class PdfDocument {
     PdfMergeOptions? options,
     List<String?>? passwords,
   }) async {
+    final PdfMergeOptions mergeOptions = options ?? PdfMergeOptions();
     final PdfDocument output = PdfDocument();
     final PdfDocumentMerger merger = PdfDocumentMerger(
       output,
-      options: options,
+      options: mergeOptions,
     );
     final List<PdfDocument> sources = <PdfDocument>[];
     try {
@@ -1135,6 +1216,8 @@ class PdfDocument {
               (passwords != null && i < passwords.length)
                   ? passwords[i]
                   : null,
+          strictness: mergeOptions.strictness,
+          repairScan: mergeOptions.repairScan,
         );
         sources.add(source);
         merger.append(source);
@@ -1195,7 +1278,12 @@ class PdfDocument {
     _data = pdfData;
     _helper.objects = PdfMainObjectCollection();
     if (_helper.isLoadedDocument) {
-      _helper.crossTable = PdfCrossTable(this, pdfData);
+      _helper.crossTable = PdfCrossTable(
+        this,
+        pdfData,
+        _helper.strictness,
+        _helper.repairScan,
+      );
       _helper.isEncrypted = _helper.checkEncryption(false);
       final PdfCatalog catalog = _getCatalogValue();
       if (catalog.containsKey(PdfDictionaryProperties.pages) &&
@@ -1658,6 +1746,18 @@ class PdfDocumentHelper {
 
   /// internal field
   bool isLoadedDocument = false;
+
+  /// internal field
+  PdfStrictnessLevel strictness = PdfStrictnessLevel.conservative;
+
+  /// internal field
+  PdfRepairedSaveMode repairedSaveMode = PdfRepairedSaveMode.reject;
+
+  /// internal field
+  PdfRepairScan repairScan = PdfRepairScan.thorough;
+
+  /// internal field
+  bool forcedFullRewriteForRepair = false;
 
   /// internal field
   bool isStreamCopied = false;

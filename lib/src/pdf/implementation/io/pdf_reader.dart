@@ -197,14 +197,6 @@ class PdfReader {
     return <String, dynamic>{'next': index, 'buffer': buffer};
   }
 
-  String _readBack(int length) {
-    if (position < length) {
-      throw PdfFormatException('Invalid PDF Document Format', source: position);
-    }
-    position -= length;
-    return String.fromCharCodes(readBytes(length));
-  }
-
   /// internal method
   int? seekEnd() {
     return streamReader.length;
@@ -212,14 +204,19 @@ class PdfReader {
 
   /// internal method
   int searchBack(String token) {
+    // Compares bytes rather than building a `String` per position. On a file
+    // whose tail was truncated this walks all the way to the front, and the
+    // allocation used to make that a multi second affair on a file of a few
+    // megabytes.
+    final List<int> needle = token.codeUnits;
     int pos = position;
     position = _skipWhiteSpaceBack();
     if (position < token.length) {
       return -1;
     }
-    String str = _readBack(token.length);
+    bool found = _matchesBack(needle);
     pos = position - token.length;
-    while (str != token) {
+    while (!found) {
       if (pos < 0) {
         throw PdfFormatException('Invalid PDF Document Format', source: pos);
       }
@@ -227,15 +224,15 @@ class PdfReader {
       if (position < token.length) {
         return -1;
       }
-      str = _readBack(token.length);
+      found = _matchesBack(needle);
       pos = position - token.length;
     }
     while (token == PdfOperators.crossReference) {
       final int xrefPos = pos;
       final int startPos = searchBack(PdfOperators.startCrossReference);
       if (startPos == xrefPos - 5) {
-        str = PdfOperators.startCrossReference;
-        while (str != token) {
+        found = false;
+        while (!found) {
           if (pos < 0) {
             throw PdfFormatException('Invalid PDF Document Format', source: pos);
           }
@@ -243,7 +240,7 @@ class PdfReader {
           if (position < token.length) {
             return -1;
           }
-          str = _readBack(token.length);
+          found = _matchesBack(needle);
           pos = position - token.length;
         }
       } else {
@@ -253,6 +250,26 @@ class PdfReader {
     }
     position = pos;
     return pos;
+  }
+
+  /// Whether the [needle] bytes end exactly at [position].
+  ///
+  /// Leaves [position] where it found it, like the `_readBack` it replaced.
+  bool _matchesBack(List<int> needle) {
+    final int start = position - needle.length;
+    if (start < 0) {
+      return false;
+    }
+    final List<int> data = streamReader.data!;
+    if (start + needle.length > data.length) {
+      return false;
+    }
+    for (int i = 0; i < needle.length; i++) {
+      if (data[start + i] != needle[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// internal method

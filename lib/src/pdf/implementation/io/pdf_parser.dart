@@ -20,6 +20,8 @@ import 'pdf_constants.dart';
 import 'pdf_cross_table.dart';
 import 'pdf_lexer.dart';
 import 'pdf_reader.dart';
+import 'pdf_repair_options.dart';
+import 'pdf_repair_scanner.dart';
 import 'pdf_format_exception.dart';
 
 const bool _debugXref =
@@ -392,63 +394,28 @@ class PdfParser {
   }
 
   /// internal method
-  void rebuildXrefTable(
+  ///
+  /// Rebuilds the object table by scanning the file for object headers, the
+  /// way a viewer does when the cross-reference table it was handed cannot be
+  /// used. Fills [newObjects] and returns everything else the scan turned up —
+  /// the document catalog and the position of every `trailer` keyword — so the
+  /// caller does not have to go looking for them a second time.
+  ///
+  /// See [PdfRepairScanner] for why this works on bytes.
+  PdfRepairScanResult rebuildXrefTable(
     Map<int, ObjectInformation?> newObjects,
-    CrossTable? crosstable,
-  ) {
-    final PdfReader reader = PdfReader(_reader.streamReader.data);
-    reader.position = 0;
+    CrossTable? crosstable, {
+    PdfRepairScan scan = PdfRepairScan.thorough,
+  }) {
+    final PdfRepairScanResult result = PdfRepairScanner.scan(
+      _reader.streamReader.data!,
+      mode: scan,
+    );
     newObjects.clear();
-    int? objNumber = 0;
-    int? marker = 0;
-    List<String> previoursToken = <String>['\u0000'];
-    while (true) {
-      if (reader.position >= reader.length! - 1) {
-        break;
-      }
-      final int previousPosition = reader.position;
-      String str = '';
-      str = reader.readLine();
-      if (str == '') {
-        continue;
-      }
-      final List<String> tokens = str.split('');
-      final bool previousObject =
-          previoursToken[0].codeUnitAt(0) >= '0'.codeUnitAt(0) &&
-          previoursToken[0].codeUnitAt(0) <= '9'.codeUnitAt(0) &&
-          tokens.length > 1 &&
-          tokens[1].codeUnitAt(0) >= '0'.codeUnitAt(0) &&
-          tokens[1].codeUnitAt(0) <= '9'.codeUnitAt(0);
-      if (tokens[0].codeUnitAt(0) >= '0'.codeUnitAt(0) &&
-              tokens[0].codeUnitAt(0) <= '9'.codeUnitAt(0) ||
-          previousObject) {
-        if (!previousObject) {
-          previoursToken = tokens;
-        }
-        final List<String> words = str.split(' ');
-        if (previousObject && words[0] == '') {
-          words[0] = previoursToken[0];
-        }
-        if (words.length > 2) {
-          objNumber = int.tryParse(words[0]);
-          if (objNumber != null) {
-            marker = int.tryParse(words[1]);
-            if (marker != null) {
-              if (marker == 0 && words[2] == PdfDictionaryProperties.obj) {
-                final ObjectInformation objectInfo = ObjectInformation(
-                  previousPosition,
-                  null,
-                  crosstable,
-                );
-                if (!newObjects.containsKey(objNumber)) {
-                  newObjects[objNumber] = objectInfo;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    result.objects.forEach((int number, PdfRepairedObject object) {
+      newObjects[number] = ObjectInformation(object.offset, null, crosstable);
+    });
+    return result;
   }
 
   IPdfPrimitive _readString() {

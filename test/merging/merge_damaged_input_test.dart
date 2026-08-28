@@ -9,7 +9,8 @@ import 'merge_fixtures.dart';
 // of a PDF most often damaged — a truncated download, a byte range copied
 // wrong, a tool that appended without fixing the offsets — and viewers recover
 // by ignoring it and scanning the file for object headers. So does this
-// library: every case below used to fail to even load.
+// library, when asked: reconstructing the table is opt-in through
+// `PdfStrictnessLevel.lenient`, which is what merging asks for by default.
 
 void main() {
   final List<int> good = MergeFixtures.text(pageCount: 3, prefix: 'Dmg');
@@ -40,7 +41,10 @@ void main() {
 
     for (final MapEntry<String, List<int>> entry in damaged.entries) {
       test('${entry.key}: loads', () {
-        final PdfDocument document = PdfDocument(inputBytes: entry.value);
+        final PdfDocument document = PdfDocument(
+          inputBytes: entry.value,
+          strictness: PdfStrictnessLevel.lenient,
+        );
         addTearDown(document.dispose);
         expect(document.pages.count, 3);
       });
@@ -71,6 +75,61 @@ void main() {
         expect(result.pages.count, 4);
       });
     }
+  });
+
+  group('reconstructing the table is opt-in', () {
+    // Damage the reader has always absorbed keeps loading without asking for
+    // anything; only the three patterns that need the object table rebuilt
+    // from a scan require the caller to say so.
+    const Set<String> needsRecovery = <String>{
+      'startxref pointing past the end',
+      'tail truncated: no startxref, no trailer',
+      'truncated at 95%',
+    };
+
+    for (final MapEntry<String, List<int>> entry in damaged.entries) {
+      test('${entry.key}: conservative is the default', () {
+        if (needsRecovery.contains(entry.key)) {
+          expect(
+            () => PdfDocument(inputBytes: entry.value),
+            throwsA(
+              isA<PdfFormatException>().having(
+                (PdfFormatException e) => e.message,
+                'message',
+                contains('PdfStrictnessLevel.lenient'),
+              ),
+            ),
+            reason:
+                'a document whose object table this library would have to '
+                'invent is refused until the caller accepts that',
+          );
+        } else {
+          final PdfDocument document = PdfDocument(inputBytes: entry.value);
+          addTearDown(document.dispose);
+          expect(
+            document.pages.count,
+            3,
+            reason: 'damage the reader always absorbed needs no opt-in',
+          );
+        }
+      });
+    }
+
+    test('merging opts in on the caller behalf', () {
+      expect(PdfMergeOptions().strictness, PdfStrictnessLevel.lenient);
+    });
+
+    test('a merge can refuse damaged sources', () {
+      expect(
+        () => PdfDocument.mergeSync(
+          <List<int>>[damaged['truncated at 95%']!],
+          options: PdfMergeOptions(
+            strictness: PdfStrictnessLevel.conservative,
+          ),
+        ),
+        throwsA(isA<PdfFormatException>()),
+      );
+    });
   });
 
   group('input that cannot be recovered fails cleanly', () {

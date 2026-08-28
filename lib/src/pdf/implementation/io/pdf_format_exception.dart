@@ -13,11 +13,13 @@
 /// apart from its own mistakes, log it, and answer the caller. Hence an
 /// [Exception] rather than an [Error].
 ///
-/// Most damage never reaches here. A broken cross-reference table, a
-/// `startxref` pointing past the end of the file, missing `endobj` markers, a
-/// wrong stream `/Length`, a truncated tail — all of that is recovered by
-/// scanning the file for object headers, the way a viewer does. A file a
-/// browser can render should load.
+/// Much damage never reaches here: junk before the header, missing `endobj`
+/// markers, a wrong stream `/Length`, a missing `%%EOF`, a header without a
+/// version are all absorbed by the reader. Damage to the cross-reference table
+/// itself is refused instead, unless the caller asks for recovery with
+/// [PdfStrictnessLevel.lenient] — rebuilding the object table by scanning the
+/// file is a guess about what the document meant, and the caller decides
+/// whether a guess will do.
 ///
 /// ```dart
 /// try {
