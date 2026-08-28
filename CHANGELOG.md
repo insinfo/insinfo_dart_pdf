@@ -233,6 +233,29 @@
   reading, editing, and securing"; "editing" reads as replacing the text on a
   page, which this library does not do. It now says *structurally* editing, and
   the README carries a capability matrix, operation by operation.
+- **Careful with `==` on the dates a document reports.** A PDF date carries a
+  UTC offset, and a date read out of one now comes back in UTC rather than as
+  the same wall clock reading in local time — reading it as local was silently
+  moving the instant by three hours here. So a date written as
+  `DateTime(2026, 8, 27, 14, 30)` reads back as `2026-08-27 17:30:00.000Z`:
+  the same instant, said differently.
+
+  That matters because **Dart's `DateTime.==` compares `isUtc` as well as the
+  instant**, so it answers `false` for two values that name the same moment:
+
+  ```dart
+  final DateTime local = DateTime(2026, 8, 27, 14, 30);
+  final DateTime utc = local.toUtc();
+  local == utc;                    // false
+  local.isAtSameMomentAs(utc);     // true
+  local.compareTo(utc) == 0;       // true
+  ```
+
+  Code that compares `creationDate`, `modificationDate` or a signature's
+  signing time against a local `DateTime` with `==` will fail even when the
+  instant is right. Use `isAtSameMomentAs`, or `compareTo`, or `.toUtc()` on
+  both sides. Formatting for a reader is unaffected: `toLocal()` gives back the
+  wall clock reading that was written.
 - `PdfReader.searchBack` compares bytes instead of building a `String` at every
   position it tries. On a file whose tail was truncated it walks to the front
   of the file, which made loading a damaged 16 MB document take seconds before
