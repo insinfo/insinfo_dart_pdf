@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.1
+
+- Fix: drawing on an imported page — through `PdfPage.graphics`,
+  `PdfPage.appendGraphics` or `PdfImportedPage.appendGraphics` — no longer
+  replaces the page's `/Resources`. A page created in memory built an empty
+  resource dictionary on first use and wrote it over the one the merge had
+  copied, so the imported content pointed at fonts that were gone: a
+  LibreOffice export with subset TrueType fonts rendered as `! " # $ %` once a
+  footer was stamped on it. An existing `/Resources` is now wrapped, and the
+  stamp's font is added next to the imported ones.
+- Fix: a stamp drawn on a page appended to a *loaded* destination document was
+  lost. `PdfPageCollection.insert` opens a drawing layer before the merger
+  fills the page, and the stamp landed in that orphaned layer without ever
+  reaching the saved file. The importer now discards the layers and resources
+  built before the import, so the next access rebuilds them from the page as
+  it now stands.
+
 ## 1.0.0
 
 - Add PDF merging. `PdfDocument.mergeSync` / `PdfDocument.merge` combine a list
