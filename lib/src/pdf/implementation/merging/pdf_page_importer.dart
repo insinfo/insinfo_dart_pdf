@@ -134,9 +134,15 @@ class PdfPageImporter {
   ///
   /// `/Type` and `/Parent` of the destination page are left untouched: they
   /// tie the page to the destination page tree.
+  ///
+  /// Whatever drawing state the page built before this point is discarded
+  /// afterwards, so that a stamp drawn on the page later — through
+  /// [PdfPage.graphics] or [PdfPage.appendGraphics] — lands in the imported
+  /// contents array and adds its font to the imported resources, instead of
+  /// replacing them.
   void applyTo(PdfPage destination, PdfDictionary cloned) {
-    final PdfDictionary target = PdfPageHelper.getHelper(destination)
-        .dictionary!;
+    final PdfPageHelper helper = PdfPageHelper.getHelper(destination);
+    final PdfDictionary target = helper.dictionary!;
     cloned.items!.forEach((PdfName? key, IPdfPrimitive? value) {
       if (key == null || value == null) {
         return;
@@ -148,5 +154,6 @@ class PdfPageImporter {
       target[key] = value;
     });
     target.modify();
+    helper.discardLayersAndResources();
   }
 }

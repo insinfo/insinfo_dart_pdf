@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:dart_pdf/pdf.dart';
 import 'package:dart_pdf/src/pdf/implementation/io/pdf_cross_table.dart';
 import 'package:dart_pdf/src/pdf/implementation/pages/pdf_page.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_array.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_dictionary.dart';
+import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_name.dart';
 import 'package:dart_pdf/src/pdf/implementation/primitives/pdf_stream.dart';
 import 'package:dart_pdf/src/pdf/interfaces/pdf_interface.dart';
 import 'package:test/test.dart';
@@ -415,6 +418,226 @@ void main() {
       expect(text, contains('pass two 1'));
     });
   });
+  group('stamping keeps what the imported page brought', () {
+    // The imported content refers to its fonts by the names in the resources
+    // that came with the page. A stamp drawn afterwards must add its own font
+    // to that dictionary — never replace it, or every glyph of the original
+    // page is looked up in a font that is no longer there and renders as
+    // garbage: `! " # $` in place of a subset TrueType text.
+
+    test('a stamp through page.graphics leaves the imported fonts in place',
+        () {
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[_pageWithEmbeddedFont('Embedded body')],
+        options: PdfMergeOptions(
+          onPageImported: (PdfImportedPage info) {
+            info.page.graphics.drawString(
+              'Stamp',
+              font,
+              brush: PdfBrushes.black,
+              bounds: const Rect.fromLTWH(30, 760, 200, 12),
+            );
+          },
+        ),
+      );
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      final Map<String, bool> fonts = _fontsOf(result, 0);
+      expect(
+        fonts.values.where((bool embedded) => embedded).length,
+        1,
+        reason: 'the embedded font of the imported page is still there',
+      );
+      expect(
+        fonts.length,
+        2,
+        reason: 'the stamp font was added next to it',
+      );
+      final String text = pageTextOf(result, 0);
+      expect(text, contains('Embedded body'));
+      expect(text, contains('Stamp'));
+    });
+
+    test('a stamp through appendGraphics leaves the imported fonts in place',
+        () {
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[_pageWithEmbeddedFont('Embedded body')],
+        options: PdfMergeOptions(
+          onPageImported: (PdfImportedPage info) {
+            info.appendGraphics().drawString(
+              'Stamp',
+              font,
+              brush: PdfBrushes.black,
+              bounds: const Rect.fromLTWH(30, 760, 200, 12),
+            );
+          },
+        ),
+      );
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      final Map<String, bool> fonts = _fontsOf(result, 0);
+      expect(fonts.values.where((bool embedded) => embedded).length, 1);
+      expect(fonts.length, 2);
+      final String text = pageTextOf(result, 0);
+      expect(text, contains('Embedded body'));
+      expect(text, contains('Stamp'));
+    });
+
+    test('drawing on the pages after the merge behaves the same', () {
+      final PdfDocument output = PdfDocument();
+      final PdfDocumentMerger merger = PdfDocumentMerger(output);
+      final PdfDocument source = reopen(_pageWithEmbeddedFont('Embedded body'));
+      merger.append(source);
+      for (int i = 0; i < output.pages.count; i++) {
+        output.pages[i].graphics.drawString(
+          'Stamp ${i + 1}',
+          font,
+          brush: PdfBrushes.black,
+          bounds: const Rect.fromLTWH(30, 760, 200, 12),
+        );
+      }
+      final List<int> merged = output.saveSync();
+      source.dispose();
+      output.dispose();
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      final Map<String, bool> fonts = _fontsOf(result, 0);
+      expect(fonts.values.where((bool embedded) => embedded).length, 1);
+      expect(fonts.length, 2);
+      final String text = pageTextOf(result, 0);
+      expect(text, contains('Embedded body'));
+      expect(text, contains('Stamp 1'));
+    });
+
+    test('and so does a destination that is itself a loaded document', () {
+      // Appending to a loaded document goes through PdfPageCollection.insert,
+      // which opens a layer on the new page before the merger fills it. A
+      // stamp drawn afterwards used to land in that orphaned layer and vanish
+      // from the saved file.
+      final PdfDocument output = reopen(
+        MergeFixtures.text(pageCount: 1, prefix: 'Base'),
+      );
+      final PdfDocumentMerger merger = PdfDocumentMerger(output);
+      final PdfDocument source = reopen(_pageWithEmbeddedFont('Embedded body'));
+      merger.append(source);
+      expect(output.pages.count, 2);
+      output.pages[1].graphics.drawString(
+        'Stamp 2',
+        font,
+        brush: PdfBrushes.black,
+        bounds: const Rect.fromLTWH(30, 760, 200, 12),
+      );
+      final List<int> merged = output.saveSync();
+      source.dispose();
+      output.dispose();
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      final Map<String, bool> fonts = _fontsOf(result, 1);
+      expect(fonts.values.where((bool embedded) => embedded).length, 1);
+      expect(fonts.length, 2);
+      final String text = pageTextOf(result, 1);
+      expect(text, contains('Embedded body'));
+      expect(text, contains('Stamp 2'));
+      final List<String> shape =
+          _contentStreamsOf(result, 1).map(String.fromCharCodes).toList();
+      expect(shape.first.trim(), 'q');
+      expect(shape.last, contains('Stamp 2'));
+    });
+  });
+
+  group('the SALI case - a signed hello world followed by a LibreOffice minuta',
+      () {
+    // The bug as it was reported: the SALI system merged a gov.br signed
+    // "Hello, world!" with a decree draft exported by LibreOffice, then wrote
+    // "SALI 34806/2026 / pg. N" on every page. The draft came out as
+    // `! " # $ % &`: its three subset LiberationSans fonts had been dropped
+    // from the page resources by the footer. Both documents are kept in
+    // `test/assets` so the exact shape stays covered.
+    const String hello = 'test/assets/helloworld_assinado_govbr.pdf';
+    const String minuta =
+        'test/assets/minuta_decreto_ia_e_desenvolvimento_descentralizado_'
+        'rio_das_ostras.pdf';
+
+    void expectMinutaIntact(PdfDocument result, int pageIndex, String footer) {
+      final Map<String, bool> fonts = _fontsOf(result, pageIndex);
+      expect(
+        fonts.values.where((bool embedded) => embedded).length,
+        3,
+        reason: 'the three subset LiberationSans fonts are still there',
+      );
+      expect(fonts.length, 4, reason: 'plus the footer font');
+      final String text = pageTextOf(result, pageIndex);
+      expect(text, contains('MINUTA DE DECRETO'));
+      expect(text, contains('PREFEITURA MUNICIPAL DE RIO DAS OSTRAS'));
+      expect(text, contains(footer));
+    }
+
+    test('a footer via onPageImported keeps the minuta readable', () {
+      // One font for every footer: the minuta shares a single `/Font`
+      // dictionary between its pages, so a font created per callback would
+      // pile sixteen Helveticas into it — harmless, but not what a footer
+      // means to do.
+      final PdfFont footerFont = PdfStandardFont(PdfFontFamily.helvetica, 8);
+      final List<int> merged = PdfDocument.mergeSync(
+        <List<int>>[
+          File(hello).readAsBytesSync(),
+          File(minuta).readAsBytesSync(),
+        ],
+        options: PdfMergeOptions(
+          onPageImported: (PdfImportedPage info) {
+            info.page.graphics.drawString(
+              'SALI 34806/2026 / pg. ${info.importedPageNumber}',
+              footerFont,
+              brush: PdfBrushes.black,
+              bounds: Rect.fromLTWH(20, info.page.size.height - 20, 300, 12),
+            );
+          },
+        ),
+      );
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      expect(result.pages.count, 17);
+      final String first = pageTextOf(result, 0);
+      expect(first, contains('Hello, world!'));
+      expect(first, contains('SALI 34806/2026 / pg. 1'));
+      expectMinutaIntact(result, 1, 'SALI 34806/2026 / pg. 2');
+      expectMinutaIntact(result, 16, 'SALI 34806/2026 / pg. 17');
+    }, skip: !File(hello).existsSync() || !File(minuta).existsSync());
+
+    test('a footer drawn after the merge keeps the minuta readable', () {
+      final PdfDocument output = PdfDocument();
+      final PdfDocumentMerger merger = PdfDocumentMerger(output);
+      final PdfDocument first = reopen(File(hello).readAsBytesSync());
+      final PdfDocument second = reopen(File(minuta).readAsBytesSync());
+      merger.append(first);
+      merger.append(second);
+      final PdfFont footerFont = PdfStandardFont(PdfFontFamily.helvetica, 8);
+      for (int i = 0; i < output.pages.count; i++) {
+        final PdfPage page = output.pages[i];
+        page.graphics.drawString(
+          'SALI 34806/2026 / pg. ${i + 1}',
+          footerFont,
+          brush: PdfBrushes.black,
+          bounds: Rect.fromLTWH(20, page.size.height - 20, 300, 12),
+        );
+      }
+      final List<int> merged = output.saveSync();
+      first.dispose();
+      second.dispose();
+      output.dispose();
+
+      final PdfDocument result = reopen(merged);
+      addTearDown(result.dispose);
+      expect(result.pages.count, 17);
+      expectMinutaIntact(result, 1, 'SALI 34806/2026 / pg. 2');
+    }, skip: !File(hello).existsSync() || !File(minuta).existsSync());
+  });
+
 }
 
 /// The decompressed content streams of a page, in order.
@@ -455,4 +678,92 @@ List<int> _pageWithUnbalancedState() {
   final List<int> bytes = document.saveSync();
   document.dispose();
   return bytes;
+}
+
+/// A one page document whose text is set in an embedded TrueType font, the
+/// kind whose glyphs are unreadable without the font program that travels
+/// with the page.
+List<int> _pageWithEmbeddedFont(String text) {
+  final PdfDocument document = PdfDocument();
+  final PdfFont embedded = PdfTrueTypeFont(
+    File(_findFont()).readAsBytesSync(),
+    16,
+  );
+  document.pages.add().graphics.drawString(
+    text,
+    embedded,
+    brush: PdfBrushes.black,
+    bounds: const Rect.fromLTWH(40, 40, 400, 30),
+  );
+  final List<int> bytes = document.saveSync();
+  document.dispose();
+  return bytes;
+}
+
+/// A TrueType file available on the machine running the tests.
+String _findFont() {
+  const List<String> candidates = <String>[
+    r'C:\Windows\Fonts\arial.ttf',
+    r'C:\Windows\Fonts\calibri.ttf',
+    r'C:\Windows\Fonts\segoeui.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+  ];
+  for (final String candidate in candidates) {
+    if (File(candidate).existsSync()) {
+      return candidate;
+    }
+  }
+  throw StateError('No TrueType font found for the test.');
+}
+
+/// The fonts under `/Resources /Font` of a page, by resource name, each
+/// flagged with whether it carries an embedded font program.
+Map<String, bool> _fontsOf(PdfDocument document, int pageIndex) {
+  final Map<String, bool> fonts = <String, bool>{};
+  final PdfDictionary page =
+      PdfPageHelper.getHelper(document.pages[pageIndex]).dictionary!;
+  final IPdfPrimitive? resources = PdfCrossTable.dereference(
+    page['Resources'],
+  );
+  if (resources is! PdfDictionary) {
+    return fonts;
+  }
+  final IPdfPrimitive? entries = PdfCrossTable.dereference(resources['Font']);
+  if (entries is! PdfDictionary) {
+    return fonts;
+  }
+  entries.items!.forEach((PdfName? name, IPdfPrimitive? value) {
+    final IPdfPrimitive? fontDictionary = PdfCrossTable.dereference(value);
+    fonts[name!.name!] =
+        fontDictionary is PdfDictionary && _isEmbedded(fontDictionary);
+  });
+  return fonts;
+}
+
+bool _isEmbedded(PdfDictionary font) {
+  final List<PdfDictionary> candidates = <PdfDictionary>[font];
+  final IPdfPrimitive? descendants = PdfCrossTable.dereference(
+    font['DescendantFonts'],
+  );
+  if (descendants is PdfArray) {
+    for (int i = 0; i < descendants.count; i++) {
+      final IPdfPrimitive? entry = PdfCrossTable.dereference(descendants[i]);
+      if (entry is PdfDictionary) {
+        candidates.add(entry);
+      }
+    }
+  }
+  for (final PdfDictionary candidate in candidates) {
+    final IPdfPrimitive? descriptor = PdfCrossTable.dereference(
+      candidate['FontDescriptor'],
+    );
+    if (descriptor is PdfDictionary &&
+        (descriptor.containsKey('FontFile') ||
+            descriptor.containsKey('FontFile2') ||
+            descriptor.containsKey('FontFile3'))) {
+      return true;
+    }
+  }
+  return false;
 }
