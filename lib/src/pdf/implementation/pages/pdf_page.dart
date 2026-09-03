@@ -745,7 +745,22 @@ class PdfPageHelper {
   PdfResources? getResources() {
     if (_resources == null) {
       if (!isLoadedPage) {
-        _resources = PdfResources();
+        // A page built in memory starts without resources, but one that
+        // received its dictionary from another document — the merger copies
+        // `/Resources` onto the fresh page — already has them. Those must be
+        // wrapped, not replaced: the imported content refers to fonts and
+        // images by the names in that dictionary, and a fresh empty one would
+        // silently drop them the first time something is drawn on the page.
+        final IPdfPrimitive? existing = PdfCrossTable.dereference(
+          dictionary![PdfDictionaryProperties.resources],
+        );
+        if (existing is PdfResources) {
+          _resources = existing;
+        } else if (existing is PdfDictionary) {
+          _resources = PdfResources(existing);
+        } else {
+          _resources = PdfResources();
+        }
         dictionary![PdfDictionaryProperties.resources] = _resources;
       } else {
         if (!dictionary!.containsKey(PdfDictionaryProperties.resources) ||
@@ -865,6 +880,23 @@ class PdfPageHelper {
   void setResources(PdfResources? resources) {
     _resources = resources;
     dictionary![PdfDictionaryProperties.resources] = _resources;
+  }
+
+  /// Forgets the layers and resources built for the page so far, so that the
+  /// next access rebuilds them from the dictionary as it now stands.
+  ///
+  /// The merger writes the content and resources of another page onto a page
+  /// it has just created — and creating it may already have opened a layer:
+  /// [PdfPageCollection.insert] does, to set the colour space. That layer
+  /// sits in a contents array the dictionary no longer points at, so anything
+  /// drawn through it afterwards would vanish, and the resources it registered
+  /// are not the page's any more either.
+  void discardLayersAndResources() {
+    base._layers = null;
+    base._defaultLayerIndex = -1;
+    base._graphicStateUpdated = false;
+    _resources = null;
+    _checkResources = false;
   }
 
   /// internal method
