@@ -52,10 +52,9 @@ class PdfSection implements IPdfWrapper {
     );
     _helper._section![PdfDictionaryProperties.kids] = _helper.pageReferences;
     _helper.pdfDocument = document;
-    _helper.settings =
-        settings != null
-            ? PdfPageSettingsHelper.getHelper(settings).clone()
-            : PdfPageSettingsHelper.getHelper(document!.pageSettings).clone();
+    _helper.settings = settings != null
+        ? PdfPageSettingsHelper.getHelper(settings).clone()
+        : PdfPageSettingsHelper.getHelper(document!.pageSettings).clone();
   }
 
   /// Event rises when the new page has been added
@@ -230,6 +229,45 @@ class PdfSectionHelper {
     _pdfPageAdded(page);
   }
 
+  /// Inserts [page] at [index] of this section, the way [add] appends it:
+  /// the page takes the section as parent and the `pageAdded` callbacks fire.
+  void insertPage(int index, PdfPage page) {
+    if (index < 0 || index > _pages.length) {
+      throw ArgumentError.value(index, 'index', 'out of range');
+    }
+    if (!isNewPageSection!) {
+      isNewPageSection = PdfPageHelper.getHelper(page).isNewPage;
+    }
+    final PdfReferenceHolder holder = PdfReferenceHolder(page);
+    isNewPageSection = false;
+    _pages.insert(index, page);
+    pageReferences!.insert(index, holder);
+    PdfPageHelper.getHelper(page).assignSection(base);
+    _pdfPageAdded(page);
+  }
+
+  /// Moves the pages from [fromIndex] to the end of this section into
+  /// [destination], keeping their order, so a section can be split around a
+  /// page inserted with settings of its own. The pages are not "added": no
+  /// `pageAdded` callback fires, they only change parent.
+  void moveTailTo(PdfSection destination, int fromIndex) {
+    final PdfSectionHelper target = getHelper(destination);
+    while (_pages.length > fromIndex) {
+      final PdfPage page = _pages.removeAt(fromIndex);
+      final IPdfPrimitive? holder = pageReferences!.elements.removeAt(
+        fromIndex,
+      );
+      target._pages.add(page);
+      target.pageReferences!.add(holder!);
+      PdfPageHelper.getHelper(page).assignSection(destination);
+    }
+    _pageCount!.value = count;
+    target._pageCount!.value = target.count;
+    // The moved pages keep drawing the header and footer they had.
+    destination._template ??= base._template;
+    destination.pageAdded ??= base.pageAdded;
+  }
+
   void _pdfPageAdded(PdfPage page) {
     final PageAddedArgs args = PageAddedArgs(page);
     _onPageAdded(args);
@@ -282,26 +320,24 @@ class PdfSectionHelper {
             PdfSectionCollectionHelper.getHelper(parent!).document;
         return getActualBounds(page, includeMargins, pdfDocument);
       } else {
-        final PdfSize size =
-            includeMargins
-                ? PdfSize.fromSize(
-                  PdfPageSettingsHelper.getHelper(
-                    base.pageSettings,
-                  ).getActualSize(),
-                )
-                : base.pageSettings.size as PdfSize;
+        final PdfSize size = includeMargins
+            ? PdfSize.fromSize(
+                PdfPageSettingsHelper.getHelper(
+                  base.pageSettings,
+                ).getActualSize(),
+              )
+            : base.pageSettings.size as PdfSize;
         final double left = includeMargins ? base.pageSettings.margins.left : 0;
         final double top = includeMargins ? base.pageSettings.margins.top : 0;
         return PdfRectangle(left, top, size.width, size.height);
       }
     } else {
       final PdfRectangle bounds = PdfRectangle.empty;
-      final Size size =
-          includeMargins
-              ? base.pageSettings.size
-              : PdfPageSettingsHelper.getHelper(
-                base.pageSettings,
-              ).getActualSize();
+      final Size size = includeMargins
+          ? base.pageSettings.size
+          : PdfPageSettingsHelper.getHelper(
+              base.pageSettings,
+            ).getActualSize();
       bounds.width = size.width;
       bounds.height = size.height;
       final double left = getLeftIndentWidth(document, page, includeMargins);
@@ -330,22 +366,19 @@ class PdfSectionHelper {
     final double templateWidth =
         PdfDocumentTemplateHelper.getHelper(base.template).getLeft(page) != null
             ? PdfDocumentTemplateHelper.getHelper(
-              base.template,
-            ).getLeft(page)!.width
+                base.template,
+              ).getLeft(page)!.width
             : 0;
     final double docTemplateWidth =
         PdfDocumentTemplateHelper.getHelper(document.template).getLeft(page) !=
                 null
             ? PdfDocumentTemplateHelper.getHelper(
-              document.template,
-            ).getLeft(page)!.width
+                document.template,
+              ).getLeft(page)!.width
             : 0;
-    value +=
-        base.template.leftTemplate
-            ? (templateWidth >= docTemplateWidth
-                ? templateWidth
-                : docTemplateWidth)
-            : templateWidth;
+    value += base.template.leftTemplate
+        ? (templateWidth >= docTemplateWidth ? templateWidth : docTemplateWidth)
+        : templateWidth;
     return value;
   }
 
@@ -359,22 +392,21 @@ class PdfSectionHelper {
     final double templateHeight =
         PdfDocumentTemplateHelper.getHelper(base.template).getTop(page) != null
             ? PdfDocumentTemplateHelper.getHelper(
-              base.template,
-            ).getTop(page)!.height
+                base.template,
+              ).getTop(page)!.height
             : 0;
     final double docTemplateHeight =
         PdfDocumentTemplateHelper.getHelper(document.template).getTop(page) !=
                 null
             ? PdfDocumentTemplateHelper.getHelper(
-              document.template,
-            ).getTop(page)!.height
+                document.template,
+              ).getTop(page)!.height
             : 0;
-    value +=
-        base.template.topTemplate
-            ? (templateHeight >= docTemplateHeight
-                ? templateHeight
-                : docTemplateHeight)
-            : templateHeight;
+    value += base.template.topTemplate
+        ? (templateHeight >= docTemplateHeight
+            ? templateHeight
+            : docTemplateHeight)
+        : templateHeight;
     return value;
   }
 
@@ -389,22 +421,19 @@ class PdfSectionHelper {
         PdfDocumentTemplateHelper.getHelper(base.template).getRight(page) !=
                 null
             ? PdfDocumentTemplateHelper.getHelper(
-              base.template,
-            ).getRight(page)!.width
+                base.template,
+              ).getRight(page)!.width
             : 0;
     final double docTemplateWidth =
         PdfDocumentTemplateHelper.getHelper(document.template).getRight(page) !=
                 null
             ? PdfDocumentTemplateHelper.getHelper(
-              document.template,
-            ).getRight(page)!.width
+                document.template,
+              ).getRight(page)!.width
             : 0;
-    value +=
-        base.template.rightTemplate
-            ? (templateWidth >= docTemplateWidth
-                ? templateWidth
-                : docTemplateWidth)
-            : templateWidth;
+    value += base.template.rightTemplate
+        ? (templateWidth >= docTemplateWidth ? templateWidth : docTemplateWidth)
+        : templateWidth;
     return value;
   }
 
@@ -419,24 +448,22 @@ class PdfSectionHelper {
         PdfDocumentTemplateHelper.getHelper(base.template).getBottom(page) !=
                 null
             ? PdfDocumentTemplateHelper.getHelper(
-              base.template,
-            ).getBottom(page)!.height
+                base.template,
+              ).getBottom(page)!.height
             : 0;
-    final double docTemplateHeight =
-        PdfDocumentTemplateHelper.getHelper(
-                  document.template,
-                ).getBottom(page) !=
-                null
-            ? PdfDocumentTemplateHelper.getHelper(
+    final double docTemplateHeight = PdfDocumentTemplateHelper.getHelper(
               document.template,
-            ).getBottom(page)!.height
-            : 0;
-    value +=
-        base.template.bottomTemplate
-            ? (templateHeight >= docTemplateHeight
-                ? templateHeight
-                : docTemplateHeight)
-            : templateHeight;
+            ).getBottom(page) !=
+            null
+        ? PdfDocumentTemplateHelper.getHelper(
+            document.template,
+          ).getBottom(page)!.height
+        : 0;
+    value += base.template.bottomTemplate
+        ? (templateHeight >= docTemplateHeight
+            ? templateHeight
+            : docTemplateHeight)
+        : templateHeight;
     return value;
   }
 
@@ -475,32 +502,27 @@ class PdfSectionHelper {
             !PdfPageSettingsHelper.getHelper(
               document!.pageSettings,
             ).isRotation) {
-          rotate =
-              PdfSectionCollectionHelper.rotateFactor *
+          rotate = PdfSectionCollectionHelper.rotateFactor *
               base.pageSettings.rotate.index;
         } else {
           if (!PdfPageSettingsHelper.getHelper(
                 document!.pageSettings,
               ).isRotation &&
               base.pageSettings.rotate != PdfPageRotateAngle.rotateAngle0) {
-            rotate =
-                PdfSectionCollectionHelper.rotateFactor *
+            rotate = PdfSectionCollectionHelper.rotateFactor *
                 base.pageSettings.rotate.index;
           } else {
             if (PdfPageSettingsHelper.getHelper(base.pageSettings).isRotation) {
-              rotate =
-                  PdfSectionCollectionHelper.rotateFactor *
+              rotate = PdfSectionCollectionHelper.rotateFactor *
                   base.pageSettings.rotate.index;
             } else if (parentSettings != null) {
-              rotate =
-                  PdfSectionCollectionHelper.rotateFactor *
+              rotate = PdfSectionCollectionHelper.rotateFactor *
                   parentSettings.rotate.index;
             }
           }
         }
       } else {
-        rotate =
-            PdfSectionCollectionHelper.rotateFactor *
+        rotate = PdfSectionCollectionHelper.rotateFactor *
             base.pageSettings.rotate.index;
       }
       final PdfNumber angle = PdfNumber(rotate);
@@ -539,8 +561,7 @@ class PdfSectionHelper {
       false,
       foreground,
     );
-    final bool contains =
-        documentHeaders.isNotEmpty ||
+    final bool contains = documentHeaders.isNotEmpty ||
         documentTemplates.isNotEmpty ||
         sectionHeaders.isNotEmpty ||
         sectionTemplates.isNotEmpty;

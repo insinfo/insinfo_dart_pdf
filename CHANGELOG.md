@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.2
+
+- Fix: `PdfPageCollection.insert` works on a document built in memory. It
+  only knew the page tree of a loaded document and, on a new one, died in the
+  tree walk with "Null check operator used on a null value" — a new document
+  has no cross table; its pages live in sections. A caller assembling a
+  consolidated file (merge the pieces, then put an index page in front) had
+  to count every page beforehand or save and reload just to insert one page;
+  the merger itself worked around it by opening a section per imported page.
+  On a new document the page now joins the section its index falls in when
+  the settings match, otherwise it gets a section of its own, splitting the
+  section around it when needed (`PdfSectionHelper.moveTailTo`,
+  `PdfSectionCollectionHelper.insertSection`). Through `section.pages.insert`
+  the page takes the section's settings, and asking for others is an
+  `ArgumentError`. The odd/even page templates follow the new positions.
+
 ## 1.0.1
 
 - Fix: drawing on an imported page — through `PdfPage.graphics`,

@@ -67,10 +67,9 @@ class PdfPageCollection {
   int get count {
     if (PdfDocumentHelper.getHelper(_helper.document!).isLoadedDocument) {
       int tempCount = 0;
-      final IPdfPrimitive? obj =
-          PdfDocumentHelper.getHelper(
-            _helper.document!,
-          ).catalog[PdfDictionaryProperties.pages];
+      final IPdfPrimitive? obj = PdfDocumentHelper.getHelper(
+        _helper.document!,
+      ).catalog[PdfDictionaryProperties.pages];
       // A damaged file can leave `/Pages` pointing at an object that is not
       // there, which dereferences to PdfNull rather than to a node. A cast
       // would turn that into a TypeError — a defect report for what is only a
@@ -137,14 +136,29 @@ class PdfPageCollection {
     }
   }
 
-  /// Inserts a page at the specified index to the last section in the
-  /// document.
+  /// Inserts a page at [index], so that it becomes `pages[index]`, and
+  /// returns it. `index` may be [count], which appends.
   ///
-  /// [index] - The index of the page in the section.
-  /// [size] - The page size.
+  /// [size] - The page size (A4 when omitted on a loaded document; the
+  /// document's page settings on a new one).
   /// [margins] - The page margin.
   /// [rotation] - The PDF page rotation angle.
   /// [orientation] - The PDF page orientation.
+  ///
+  /// Works on a loaded document and on one being built in memory. Until
+  /// 1.0.2 only the loaded case was implemented: on a new document the call
+  /// died in the page-tree walk with "Null check operator used on a null
+  /// value", because a new document has no cross table — its pages live in
+  /// sections. Whoever built a consolidated file and wanted an index page in
+  /// front of it had to count every page in advance, or save and reload the
+  /// document just to insert one page.
+  ///
+  /// On a new document the page joins the section the index falls in when
+  /// its settings match that section's; otherwise it gets a section of its
+  /// own, and a section that has pages on both sides of the index is split
+  /// around it. Through `section.pages.insert` the page always takes the
+  /// section's settings, and passing any of the four is an error: a section
+  /// is, by definition, a run of pages with the same settings.
   PdfPage insert(
     int index, [
     Size? size,
@@ -152,14 +166,16 @@ class PdfPageCollection {
     PdfPageRotateAngle? rotation,
     PdfPageOrientation? orientation,
   ]) {
+    if (!PdfDocumentHelper.getHelper(_helper.document!).isLoadedDocument) {
+      return _insertInNewDocument(index, size, margins, rotation, orientation);
+    }
     if (size == null || size.isEmpty) {
       size = PdfPageSize.a4;
     }
     rotation ??= PdfPageRotateAngle.rotateAngle0;
-    orientation ??=
-        (size.width > size.height)
-            ? PdfPageOrientation.landscape
-            : PdfPageOrientation.portrait;
+    orientation ??= (size.width > size.height)
+        ? PdfPageOrientation.landscape
+        : PdfPageOrientation.portrait;
     final PdfPage page = PdfPage();
     final PdfPageSettings settings = PdfPageSettings(size, orientation);
     if (margins == null) {
@@ -186,8 +202,9 @@ class PdfPageCollection {
           parent[PdfDictionaryProperties.rotate]! as PdfNumber;
       if (parentRotation.value!.toInt() != rotationValue &&
           (!dic.containsKey(PdfDictionaryProperties.rotate))) {
-        PdfPageHelper.getHelper(page).dictionary![PdfDictionaryProperties
-            .rotate] = PdfNumber(rotationValue);
+        PdfPageHelper.getHelper(page)
+                .dictionary![PdfDictionaryProperties.rotate] =
+            PdfNumber(rotationValue);
       }
     }
     dic[PdfDictionaryProperties.parent] = PdfReferenceHolder(parent);
@@ -198,9 +215,176 @@ class PdfPageCollection {
     _helper._pageCache![dic] = page;
     page.graphics.colorSpace = _helper.document!.colorSpace;
     PdfPageLayerHelper.getHelper(
-          PdfGraphicsHelper.getHelper(page.graphics).layer!,
-        ).colorSpace =
-        _helper.document!.colorSpace;
+      PdfGraphicsHelper.getHelper(page.graphics).layer!,
+    ).colorSpace = _helper.document!.colorSpace;
+    return page;
+  }
+
+  /// [insert] for a document built in memory: no cross table, pages in
+  /// sections. See the dartdoc of [insert] for the rules.
+  PdfPage _insertInNewDocument(
+    int index,
+    Size? size,
+    PdfMargins? margins,
+    PdfPageRotateAngle? rotation,
+    PdfPageOrientation? orientation,
+  ) {
+    final int total = count;
+    if (index < 0 || index > total) {
+      throw ArgumentError.value(
+        index,
+        'index',
+        'page index is not within range (0..$total)',
+      );
+    }
+    final PdfDocument document = _helper.document!;
+
+    if (_helper._section != null) {
+      if (size != null ||
+          margins != null ||
+          rotation != null ||
+          orientation != null) {
+        throw ArgumentError(
+          'A section has a single page setting for all its pages; insert '
+          'through document.pages to give the page its own size, margins, '
+          'rotation or orientation.',
+        );
+      }
+      final PdfPage page = _insertIntoSection(_helper._section!, index);
+      PdfPageCollectionHelper.getHelper(document.pages).rebuildPageIndex();
+      return page;
+    }
+
+    final PdfPageSettings settings = _settingsForInsert(
+      document,
+      size,
+      margins,
+      rotation,
+      orientation,
+    );
+    final PdfSectionCollection sections = document.sections!;
+    final PdfSectionCollectionHelper sectionsHelper =
+        PdfSectionCollectionHelper.getHelper(sections);
+
+    PdfPage page;
+    if (sectionsHelper.sections.isEmpty) {
+      final PdfSection section = PdfSectionHelper.load(document, settings);
+      sectionsHelper.insertSection(0, section);
+      page = _insertIntoSection(section, 0);
+    } else {
+      // The section the index falls in, and the position inside it. An index
+      // equal to the total lands after the last page of the last section.
+      int sectionIndex = sectionsHelper.sections.length - 1;
+      int localIndex = PdfSectionHelper.getHelper(
+        sectionsHelper.sections[sectionIndex],
+      ).count;
+      int start = 0;
+      for (int i = 0; i < sectionsHelper.sections.length; i++) {
+        final int sectionCount = PdfSectionHelper.getHelper(
+          sectionsHelper.sections[i],
+        ).count;
+        if (index < start + sectionCount) {
+          sectionIndex = i;
+          localIndex = index - start;
+          break;
+        }
+        start += sectionCount;
+      }
+      final PdfSection section = sectionsHelper.sections[sectionIndex];
+      final int sectionCount = PdfSectionHelper.getHelper(section).count;
+
+      if (_sameSettings(settings, section.pageSettings)) {
+        page = _insertIntoSection(section, localIndex);
+      } else if (localIndex == 0 &&
+          sectionIndex > 0 &&
+          _sameSettings(
+            settings,
+            sectionsHelper.sections[sectionIndex - 1].pageSettings,
+          )) {
+        // On the boundary between two sections the page may belong to the
+        // one before, at its end.
+        final PdfSection previous = sectionsHelper.sections[sectionIndex - 1];
+        page = _insertIntoSection(
+          previous,
+          PdfSectionHelper.getHelper(previous).count,
+        );
+      } else {
+        // Settings of its own: a new section at the right place. Inside a
+        // section, the pages after the index move to a section of their own
+        // (same settings) so each keeps a single parent.
+        final PdfSection own = PdfSectionHelper.load(document, settings);
+        if (localIndex == 0) {
+          sectionsHelper.insertSection(sectionIndex, own);
+        } else if (localIndex == sectionCount) {
+          sectionsHelper.insertSection(sectionIndex + 1, own);
+        } else {
+          final PdfSection tail = PdfSectionHelper.load(
+            document,
+            section.pageSettings,
+          );
+          PdfSectionHelper.getHelper(section).moveTailTo(tail, localIndex);
+          sectionsHelper.insertSection(sectionIndex + 1, own);
+          sectionsHelper.insertSection(sectionIndex + 2, tail);
+        }
+        page = _insertIntoSection(own, 0);
+      }
+    }
+    _helper.rebuildPageIndex();
+    return page;
+  }
+
+  /// The settings of a page inserted in a new document: the document's own
+  /// when nothing was asked (what [add] does), otherwise the same defaults
+  /// the loaded path applies to whatever was omitted.
+  PdfPageSettings _settingsForInsert(
+    PdfDocument document,
+    Size? size,
+    PdfMargins? margins,
+    PdfPageRotateAngle? rotation,
+    PdfPageOrientation? orientation,
+  ) {
+    if (size == null &&
+        margins == null &&
+        rotation == null &&
+        orientation == null) {
+      return PdfPageSettingsHelper.getHelper(document.pageSettings).clone();
+    }
+    if (size == null || size.isEmpty) {
+      size = PdfPageSize.a4;
+    }
+    orientation ??= (size.width > size.height)
+        ? PdfPageOrientation.landscape
+        : PdfPageOrientation.portrait;
+    final PdfPageSettings settings = PdfPageSettings(size, orientation);
+    if (margins == null) {
+      margins = PdfMargins();
+      margins.all = PdfDocumentHelper.defaultMargin;
+    }
+    settings.margins = margins;
+    settings.rotate = rotation ?? PdfPageRotateAngle.rotateAngle0;
+    return settings;
+  }
+
+  /// Whether a page with [candidate] settings can live in a section that has
+  /// [current] — the same test [PdfPageCollectionHelper.addPage] applies
+  /// against the document settings, plus the rotation.
+  bool _sameSettings(PdfPageSettings candidate, PdfPageSettings current) {
+    return candidate.size == current.size &&
+        candidate.orientation == current.orientation &&
+        candidate.rotate == current.rotate &&
+        candidate.margins.left == current.margins.left &&
+        candidate.margins.top == current.margins.top &&
+        candidate.margins.right == current.margins.right &&
+        candidate.margins.bottom == current.margins.bottom;
+  }
+
+  /// A fresh page at [localIndex] of [section], flagged as new around the
+  /// insertion the way [add] does.
+  PdfPage _insertIntoSection(PdfSection section, int localIndex) {
+    final PdfPage page = PdfPage();
+    PdfPageHelper.getHelper(page).isNewPage = true;
+    PdfSectionHelper.getHelper(section).insertPage(localIndex, page);
+    PdfPageHelper.getHelper(page).isNewPage = false;
     return page;
   }
 
@@ -241,9 +425,8 @@ class PdfPageCollection {
 
   //Implementation
   int _getNodeCount(PdfDictionary node) {
-    final PdfNumber? number =
-        _helper._crossTable!.getObject(node[PdfDictionaryProperties.count])
-            as PdfNumber?;
+    final PdfNumber? number = _helper._crossTable!
+        .getObject(node[PdfDictionaryProperties.count]) as PdfNumber?;
     return (number == null) ? 0 : number.value!.toInt();
   }
 
@@ -311,9 +494,8 @@ class PdfPageCollection {
     while (parent != null) {
       final int count = _getNodeCount(parent) + 1;
       parent[PdfDictionaryProperties.count] = PdfNumber(count);
-      parent =
-          PdfCrossTable.dereference(parent[PdfDictionaryProperties.parent])
-              as PdfDictionary?;
+      parent = PdfCrossTable.dereference(parent[PdfDictionaryProperties.parent])
+          as PdfDictionary?;
     }
   }
 
@@ -325,10 +507,9 @@ class PdfPageCollection {
     if (index < 0 && index > count) {
       throw ArgumentError.value(index, 'page index is not within range');
     }
-    final IPdfPrimitive? obj =
-        PdfDocumentHelper.getHelper(
-          _helper.document!,
-        ).catalog[PdfDictionaryProperties.pages];
+    final IPdfPrimitive? obj = PdfDocumentHelper.getHelper(
+      _helper.document!,
+    ).catalog[PdfDictionaryProperties.pages];
     PdfDictionary node = _helper._crossTable!.getObject(obj)! as PdfDictionary;
     int lowIndex = 0;
     localIndex = _getNodeCount(node);
@@ -407,10 +588,9 @@ class PdfPageCollection {
     if (index < 0 && index > count) {
       throw ArgumentError.value(index, 'page index is not within range');
     }
-    _pageCatalog ??=
-        PdfDocumentHelper.getHelper(
-          _helper.document!,
-        ).catalog[PdfDictionaryProperties.pages];
+    _pageCatalog ??= PdfDocumentHelper.getHelper(
+      _helper.document!,
+    ).catalog[PdfDictionaryProperties.pages];
     bool isNodeChanged = false;
     PdfDictionary? node;
     if (_nodeDictionary == null) {
@@ -594,14 +774,12 @@ class PdfPageCollection {
   int _countPages() {
     final PdfSectionCollection sectionCollection = _helper.document!.sections!;
     int count = 0;
-    for (
-      int i = 0;
-      i <
-          PdfSectionCollectionHelper.getHelper(
-            sectionCollection,
-          ).sections.length;
-      i++
-    ) {
+    for (int i = 0;
+        i <
+            PdfSectionCollectionHelper.getHelper(
+              sectionCollection,
+            ).sections.length;
+        i++) {
       final PdfSection section = sectionCollection[i];
       count += PdfSectionHelper.getHelper(section).count;
     }
@@ -613,8 +791,8 @@ class PdfPageCollection {
         index > -1) {
       final Map<PdfPage, dynamic>? pageToBookmarkDic =
           PdfDocumentHelper.getHelper(
-            _helper.document!,
-          ).createBookmarkDestinationDictionary();
+        _helper.document!,
+      ).createBookmarkDestinationDictionary();
       if (pageToBookmarkDic != null) {
         List<dynamic>? bookmarks;
         if (pageToBookmarkDic.containsKey(page)) {
@@ -825,6 +1003,29 @@ class PdfPageCollectionHelper {
       }
     }
     PdfSectionHelper.getHelper(section).add(page);
+  }
+
+  /// Recomputes [pageCollectionIndex] from the sections, in order. [addPage]
+  /// numbers pages as they arrive, which is their position only while pages
+  /// are appended; an insert shifts everything after it, and the odd/even
+  /// page templates read this map to pick a side.
+  void rebuildPageIndex() {
+    if (_section != null) {
+      return;
+    }
+    pageCollectionIndex.clear();
+    _count = 0;
+    final PdfSectionCollection sectionCollection = document!.sections!;
+    for (final PdfSection section in PdfSectionCollectionHelper.getHelper(
+      sectionCollection,
+    ).sections) {
+      final PdfSectionHelper sectionHelper = PdfSectionHelper.getHelper(
+        section,
+      );
+      for (int i = 0; i < sectionHelper.count; i++) {
+        pageCollectionIndex[sectionHelper.getPageByIndex(i)!] = _count++;
+      }
+    }
   }
 
   PdfSection _getLastSection() {

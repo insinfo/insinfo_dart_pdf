@@ -106,6 +106,20 @@ class PdfSectionCollectionHelper {
   /// internal field
   final List<PdfSection> sections = <PdfSection>[];
 
+  /// Puts [section] at [index] of the collection — in the list the library
+  /// walks and in the `/Kids` array the file is written from, which must stay
+  /// in step. [PdfSectionCollection.add] only appends; a page inserted in the
+  /// middle of a new document with settings of its own needs a section
+  /// between two existing ones.
+  void insertSection(int index, PdfSection section) {
+    if (index < 0 || index > sections.length) {
+      throw ArgumentError.value(index, 'index', 'out of range');
+    }
+    sections.insert(index, section);
+    PdfSectionHelper.getHelper(section).parent = base;
+    base._sectionCollection!.insert(index, PdfReferenceHolder(section));
+  }
+
   /// internal method
   void beginSave(Object sender, SavePdfPrimitiveArgs? args) {
     _count!.value = _countPages();
