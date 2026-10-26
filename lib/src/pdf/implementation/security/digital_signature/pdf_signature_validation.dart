@@ -498,9 +498,20 @@ class PdfSignatureValidation {
     final Uint8List actualDigest =
         Uint8List.fromList(hash.convert(signedPortion).bytes);
 
-    final bool digestMatches;
+    bool digestMatches;
     final Uint8List? eContent = cms.encapsulatedContent;
-    if (eContent != null && eContent.isNotEmpty) {
+    // Detached sem atributos assinados (RFC 5652 §5.4): sem `signedAttrs` e
+    // sem conteúdo encapsulado, a assinatura cobre DIRETAMENTE o resumo do
+    // conteúdo — os bytes do ByteRange. Não há `messageDigest` para comparar;
+    // a integridade é a própria verificação da assinatura sobre a faixa
+    // assinada, decidida mais abaixo. Produtores ICP-Brasil com e-CPF A3
+    // geram este formato (SHA-1 + rsaEncryption), e o Validar ITI o aprova.
+    final bool detachedSemAtributos = cms.signedAttrsDer == null &&
+        cms.signedAttrsTaggedDer == null &&
+        (eContent == null || eContent.isEmpty);
+    if (detachedSemAtributos) {
+      digestMatches = false;
+    } else if (eContent != null && eContent.isNotEmpty) {
       // Legacy encapsulated PKCS#7 (e.g. /adbe.pkcs7.sha1, ISO 32000-1
       // §12.8.3.3): the eContent IS the digest of the signed ByteRange, so
       // document integrity requires two links:
@@ -563,6 +574,10 @@ class PdfSignatureValidation {
           // No signed attributes (legacy /adbe.pkcs7.sha1): the signature is
           // computed directly over the encapsulated content (eContent).
           dataCandidates.add(cms.encapsulatedContent!);
+        } else if (detachedSemAtributos) {
+          // Detached sem atributos: o dado assinado é a própria faixa do
+          // ByteRange (o signer calcula o resumo com o digestAlgorithm).
+          dataCandidates.add(signedPortion);
         }
 
         if (cms.signedAttrsTaggedDer != null) {
@@ -653,6 +668,13 @@ class PdfSignatureValidation {
         sigValid = false;
         print('CMS signature verification threw: $e');
       }
+    }
+
+    // Sem `messageDigest`, o resumo da faixa assinada só confere se a
+    // assinatura sobre ela confere: um byte alterado no ByteRange muda o
+    // resumo e a verificação falha.
+    if (detachedSemAtributos) {
+      digestMatches = sigValid;
     }
 
     if (publicKey == null) {

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.3
+
+- Fix: `/adbe.pkcs7.detached` signatures without signed attributes (RFC 5652
+  §5.4) are validated. In this form the signature covers the digest of the
+  ByteRange bytes directly — there is no `messageDigest` attribute and no
+  encapsulated content. `validateDetachedSignature` handled only signed
+  attributes and the legacy `/adbe.pkcs7.sha1` encapsulated digest, so here it
+  compared the digest against a missing `messageDigest` and had no data to
+  verify the signature with (`dataCandidates=0`). The document was reported
+  as modified after signing, while validar.iti.gov.br approves it. ICP-Brasil
+  e-CPF A3 producers emit this shape (SHA-1 + `rsaEncryption`).
+- The signature is now verified over the ByteRange bytes, and that same
+  verification is the integrity proof: a byte changed inside the signed range
+  changes the digest and fails it, so a tampered copy is still not intact.
+  Covered by `test/pdf_signature_detached_sem_atributos_test.dart`, with a real
+  document of this shape and a tampered copy.
+
 ## 1.0.2
 
 - Fix: `PdfPageCollection.insert` works on a document built in memory. It
