@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.6
+
+Online revocation checking never produced evidence for ICP-Brasil e-CPF
+signatures: with `fetchCrls` and `strictRevocation` on, memo 507/2026 (AC OAB
+G4) came back "unknown" while the chain was trusted. Four faults, each enough
+to block it:
+
+- Fix: the revocation check looked for each certificate's issuer only among
+  the self-signed roots and the certificates inside the PDF. Most e-CPF PDFs
+  carry only the signer, so the issuing CA was never found and neither OCSP
+  nor the CRL could be used. It now also searches the intermediate CAs the
+  validator already knows (providers, embedded roots, AIA downloads) and, when
+  fetching is allowed, the issuer named in the certificate's AIA. The issuer
+  must still verify the certificate's signature.
+- Fix: `OcspResponse.parseValidated` handed the whole OCSPResponse to the
+  BasicOCSPResponse parser, so every responder answer was discarded in strict
+  mode. It now unwraps the envelope (and still accepts a bare basic response).
+- Fix: `RevocationDataClient.getCrlDistributionPoints` returned no URL for
+  ICP-Brasil certificates and swallowed the error; it now uses the parser
+  behind `X509Utils.extractCrlUrlsFromPem`.
+- Fix: CRLs and OCSP responses were accepted only if their validity window
+  covered the signing time. A freshly fetched CRL (ICP-Brasil CAs reissue them
+  hourly) or OCSP response never does for an older signature. Evidence is now
+  accepted when its window covers the signing time or the present: a
+  certificate not revoked now was not revoked at signing time, since a revoked
+  certificate stays on the CRL until it expires. `parseValidated` gains
+  `alsoValidAt`.
+- Covered by `test/revocation_issuer_from_intermediates_test.dart` (a CRL
+  listing the signer was ignored on 1.0.5; the signer certificate alone in the
+  PDF) and `test/ocsp_and_crl_dp_icp_brasil_test.dart` (the real Certisign OCSP
+  response and CRL distribution points for the AC OAB G4 e-CPF).
+
 ## 1.0.5
 
 - Security fix: `X509Utils.verifyChainPem` (used for `chainTrusted` by

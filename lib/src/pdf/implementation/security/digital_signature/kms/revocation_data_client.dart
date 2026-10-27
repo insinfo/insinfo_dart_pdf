@@ -7,6 +7,7 @@ import '../asn1/asn1.dart';
 import '../asn1/asn1_stream.dart';
 import '../asn1/der.dart';
 import '../x509/ocsp.dart';
+import '../x509/ocsp_utils.dart' show CertificateUtililty;
 import '../x509/x509_certificates.dart';
 
 /// Helper to fetch revocation data
@@ -60,74 +61,19 @@ class RevocationDataClient {
     return crls;
   }
 
-  /// Parse CRL Distribution Points extension (OID 2.5.29.31)
+  /// CRL Distribution Points (OID 2.5.29.31) as URLs.
+  ///
+  /// Delegates to the parser [X509Utils] uses. The one that lived here
+  /// returned nothing for ICP-Brasil certificates (the AC OAB G4 e-CPFs, for
+  /// one) and swallowed the error, so no CRL was ever downloaded for them.
   static List<String> getCrlDistributionPoints(X509Certificate cert) {
-    final List<String> urls = <String>[];
     try {
-      final Asn1Octet? extensionValue =
-          cert.getExtension(DerObjectID('2.5.29.31'));
-      if (extensionValue == null) {
-        return urls;
-      }
-
-      final Asn1 asn1 =
-          Asn1Stream(PdfStreamReader(extensionValue.getOctets())).readAsn1()!;
-      final Asn1Sequence seq = Asn1Sequence.getSequence(asn1)!;
-
-      // DistributionPoint ::= SEQUENCE
-      //   distributionPoint [0] DistributionPointName OPTIONAL
-      //   reasons [1] ReasonFlags OPTIONAL
-      //   cRLIssuer [2] GeneralNames OPTIONAL
-      
-      for(int i=0; i<seq.count; i++) {
-          final IAsn1? dpObj = seq[i];
-          if (dpObj == null) continue;
-          final Asn1Sequence dp = Asn1Sequence.getSequence(dpObj.getAsn1())!;
-          
-          for(int j=0; j<dp.count; j++) {
-             final IAsn1? elementI = dp[j];
-             if (elementI == null) continue;
-             final Asn1 element = elementI.getAsn1()!;
-             
-             if (element is Asn1Tag && element.tagNumber == 0) {
-                 // distributionPoint [0]
-                 // content is DistributionPointName
-                 final Asn1? content = element.getObject();
-                 
-                 // DistributionPointName ::= CHOICE { fullName [0] GeneralNames, ... }
-                 if (content is Asn1Tag && content.tagNumber == 0) {
-                     // fullName [0] GeneralNames
-                     // GeneralNames ::= SEQUENCE OF GeneralName
-                     final Asn1? gnObj = content.getObject();
-                     if (gnObj is Asn1Sequence) {
-                         final Asn1Sequence generalNames = gnObj;
-                         for(int k=0; k<generalNames.count; k++) {
-                             final IAsn1? gnI = generalNames[k];
-                             if (gnI == null) continue;
-                             final Asn1 gn = gnI.getAsn1()!;
-                             
-                             // GeneralName ::= CHOICE { ... uniformResourceIdentifier [6] ... }
-                             if (gn is Asn1Tag && gn.tagNumber == 6) {
-                                 // Context specific 6. Implicit OCTET STRING (IA5String)
-                                 final Asn1Octet? uriOctet = Asn1Octet.getOctetString(gn, false);
-                                 if (uriOctet != null && uriOctet.getOctets() != null) {
-                                      final String url = String.fromCharCodes(uriOctet.getOctets()!);
-                                      urls.add(url);
-                                 }
-                             }
-                         }
-                     }
-                 }
-             }
-          }
-      }
-
-    } catch (e) {
-      // Parsing error
+      return CertificateUtililty().getCrlUrls(cert) ?? <String>[];
+    } catch (_) {
+      return <String>[];
     }
-    return urls;
   }
-  
+
   /// Get OCSP URL from Authority Info Access extension (OID 1.3.6.1.5.5.7.1.1)
   static String? getOcspUrl(X509Certificate cert) {
       try {

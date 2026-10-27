@@ -621,12 +621,14 @@ class PdfSignatureValidator {
       }
 
       // Prepare Roots Objects
-      final List<X509Certificate> roots = <X509Certificate>[];
-      for (final String r in effectiveRoots) {
-        try {
-          roots.add(X509Utils.parsePemCertificate(r));
-        } catch (_) {}
-      }
+      final List<X509Certificate> roots = _parsePemList(effectiveRoots);
+
+      // Intermediate CAs known to this validation (providers, embedded roots,
+      // AIA downloads). The revocation check needs each certificate's issuer
+      // to query OCSP and verify the CRL, and a PDF often carries only the
+      // signer certificate.
+      final List<X509Certificate> intermediates =
+          _parsePemList(extraCandidatesPem);
 
       for (final _ParsedSignature sig in sigs) {
         PdfSignatureValidationResult res =
@@ -667,6 +669,7 @@ class PdfSignatureValidator {
                       leaf);
               if (fetchedPem.isNotEmpty) {
                 extraCandidatesPem.addAll(fetchedPem);
+                intermediates.addAll(_parsePemList(fetchedPem));
                 final X509ChainValidationResult retry =
                     X509Utils.verifyChainPem(
                   chainPem: res.certsPem,
@@ -690,6 +693,7 @@ class PdfSignatureValidator {
           res.certsPem,
           roots,
           loadedCrls,
+          intermediates: intermediates,
           fetchCrls: fetchCrls,
           strict: strictRevocation,
           validationTime: revocationTime,
@@ -1342,6 +1346,7 @@ class PdfSignatureValidator {
     List<String> chainPem,
     List<X509Certificate> trustedRoots,
     List<X509Crl> localCrls, {
+    List<X509Certificate> intermediates = const <X509Certificate>[],
     required bool fetchCrls,
     required DateTime validationTime,
     bool strict = false,
@@ -1381,15 +1386,26 @@ class PdfSignatureValidator {
     bool dnEqual(String? a, String? b) =>
         a != null && b != null && a.trim() == b.trim();
 
-    bool crlTimeWindowOk(X509Crl crl) {
-      final DateTime now = validationTime.toUtc();
-      final DateTime? thisUp = crl.thisUpdate?.toUtc();
-      final DateTime? nextUp = crl.nextUpdate?.toUtc();
-      if (thisUp != null && now.isBefore(thisUp.subtract(maxClockSkew)))
+    // Evidence is accepted when its validity window covers the signing time
+    // or the present. A CRL or OCSP response fetched now that says "not
+    // revoked" also holds for the signing time: a revoked certificate stays on
+    // the CRL until it expires. Requiring the signing time alone rejected every
+    // freshly downloaded CRL (ICP-Brasil CAs reissue them hourly), so online
+    // checking could never succeed for a signature older than one CRL cycle.
+    final DateTime checkedAt = DateTime.now().toUtc();
+    bool windowCovers(DateTime? thisUpdate, DateTime? nextUpdate, DateTime t) {
+      final DateTime? thisUp = thisUpdate?.toUtc();
+      final DateTime? nextUp = nextUpdate?.toUtc();
+      if (thisUp != null && t.isBefore(thisUp.subtract(maxClockSkew))) {
         return false;
-      if (nextUp != null && now.isAfter(nextUp.add(maxClockSkew))) return false;
+      }
+      if (nextUp != null && t.isAfter(nextUp.add(maxClockSkew))) return false;
       return true;
     }
+
+    bool crlTimeWindowOk(X509Crl crl) =>
+        windowCovers(crl.thisUpdate, crl.nextUpdate, validationTime) ||
+        windowCovers(crl.thisUpdate, crl.nextUpdate, checkedAt);
 
     // Track missing evidence when strict.
     final List<String> missingEvidenceFor = <String>[];
@@ -1404,10 +1420,16 @@ class PdfSignatureValidator {
         continue;
       }
 
-      // Find Issuer (needed for OCSP and typically CRL check too)
-      X509Certificate? issuer = X509Utils.findIssuer(cert, trustedRoots);
-      if (issuer == null) {
-        issuer = X509Utils.findIssuer(cert, chain);
+      // Find Issuer (needed for OCSP and for verifying the CRL). findIssuer
+      // only returns a candidate whose key verifies the certificate, so a
+      // look-alike CA cannot vouch for a CRL. Before 1.0.6 the intermediates
+      // were not searched: a PDF carrying only the signer certificate always
+      // ended as "unknown", even with the chain trusted and fetching enabled.
+      X509Certificate? issuer = X509Utils.findIssuer(cert, trustedRoots) ??
+          X509Utils.findIssuer(cert, chain) ??
+          X509Utils.findIssuer(cert, intermediates);
+      if (issuer == null && fetchCrls) {
+        issuer = await _fetchIssuerFromAia(cert);
       }
 
       bool hasValidatedGoodForCert = false;
@@ -1432,6 +1454,7 @@ class PdfSignatureValidator {
                   cert: cert,
                   issuer: issuer,
                   validationTime: validationTime,
+                  alsoValidAt: checkedAt,
                   maxClockSkew: maxClockSkew,
                 )
               : OcspResponse.parse(ocspBytes);
@@ -1546,6 +1569,29 @@ class PdfSignatureValidator {
         sawCrlEvidence: sawCrlEvidence,
       ),
     );
+  }
+
+  /// The issuer of [cert] downloaded from its AIA (CA Issuers) URLs, if one
+  /// of the downloaded certificates verifies it.
+  Future<X509Certificate?> _fetchIssuerFromAia(X509Certificate cert) async {
+    try {
+      final List<String> pem =
+          await RevocationDataClient.fetchCaIssuersCertificatesPem(cert);
+      return X509Utils.findIssuer(cert, _parsePemList(pem));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Parses each PEM certificate, skipping the ones that do not parse.
+  static List<X509Certificate> _parsePemList(List<String> pems) {
+    final List<X509Certificate> out = <X509Certificate>[];
+    for (final String pem in pems) {
+      try {
+        out.add(X509Utils.parsePemCertificate(pem));
+      } catch (_) {}
+    }
+    return out;
   }
 
   String _revocationSourceFromEvidence({

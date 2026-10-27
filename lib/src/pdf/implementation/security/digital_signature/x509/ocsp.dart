@@ -138,16 +138,21 @@ class OcspResponse {
   /// Validation includes:
   /// - response status == successful
   /// - SingleResponse serial matches [cert]
-  /// - time window checks against [validationTime]
+  /// - time window checks against [validationTime] or, when given,
+  ///   [alsoValidAt] (a fresh response proves the status at the time it was
+  ///   produced; see `PdfSignatureValidator._checkRevocation`)
   /// - signature verification using included responder cert (preferred) or [issuer]
   static OcspResponse? parseValidated(
     List<int> bytes, {
     required X509Certificate cert,
     required X509Certificate issuer,
     required DateTime validationTime,
+    DateTime? alsoValidAt,
     Duration maxClockSkew = const Duration(minutes: 5),
   }) {
-    final _BasicOcspParsed? basic = _parseBasic(bytes);
+    final List<int>? basicBytes = _basicResponseBytes(bytes);
+    if (basicBytes == null) return null;
+    final _BasicOcspParsed? basic = _parseBasic(basicBytes);
     if (basic == null) return null;
 
     // Pick the first SingleResponse that matches the cert serial.
@@ -173,16 +178,21 @@ class OcspResponse {
     }
 
     // Time window checks.
-    bool timeOk = true;
-    final DateTime now = validationTime.toUtc();
     final DateTime? thisUp = single.thisUpdate?.toUtc();
     final DateTime? nextUp = single.nextUpdate?.toUtc();
-    if (thisUp != null && now.isBefore(thisUp.subtract(maxClockSkew))) {
-      timeOk = false;
+    bool windowCovers(DateTime instant) {
+      final DateTime t = instant.toUtc();
+      if (thisUp != null && t.isBefore(thisUp.subtract(maxClockSkew))) {
+        return false;
+      }
+      if (nextUp != null && t.isAfter(nextUp.add(maxClockSkew))) {
+        return false;
+      }
+      return true;
     }
-    if (nextUp != null && now.isAfter(nextUp.add(maxClockSkew))) {
-      timeOk = false;
-    }
+
+    final bool timeOk = windowCovers(validationTime) ||
+        (alsoValidAt != null && windowCovers(alsoValidAt));
 
     // Responder cert selection: prefer embedded certs.
     X509Certificate? responder;
@@ -280,6 +290,49 @@ class OcspResponse {
       // parse error
     }
     return null;
+  }
+
+  /// The BasicOCSPResponse inside an OCSPResponse (RFC 6960 §4.2.1). Bytes
+  /// that already are a BasicOCSPResponse come back unchanged. Null when the
+  /// response status is not successful or the structure is not recognized.
+  ///
+  /// parseValidated used to hand the whole OCSPResponse to [_parseBasic],
+  /// which expects the inner structure, so every response a responder sends
+  /// was discarded in strict mode.
+  static List<int>? _basicResponseBytes(List<int> bytes) {
+    try {
+      final Asn1? asn1 =
+          Asn1Stream(PdfStreamReader(Uint8List.fromList(bytes))).readAsn1();
+      if (asn1 is! Asn1Sequence || asn1.count < 1) return null;
+      final dynamic first = asn1[0];
+      final bool isEnvelope = first is DerCatalogue || first is DerInteger;
+      if (!isEnvelope) return bytes;
+
+      int status = -1;
+      if (first is DerCatalogue) {
+        final List<int>? statusBytes = first.bytes;
+        if (statusBytes != null && statusBytes.isNotEmpty) {
+          status = statusBytes[0];
+        }
+      } else if (first is DerInteger) {
+        status = first.value.toInt();
+      }
+      if (status != 0 || asn1.count < 2) return null;
+
+      final IAsn1? wrapped = asn1[1];
+      if (wrapped is! Asn1Tag || wrapped.tagNumber != 0) return null;
+      final Asn1? responseBytes = wrapped.getObject();
+      if (responseBytes is! Asn1Sequence || responseBytes.count != 2) {
+        return null;
+      }
+      final DerObjectID? type =
+          DerObjectID.getID(responseBytes[0]!.getAsn1());
+      if (type?.id != '1.3.6.1.5.5.7.48.1.1') return null;
+      return Asn1Octet.getOctetStringFromObject(responseBytes[1]!.getAsn1())
+          ?.getOctets();
+    } catch (_) {
+      return null;
+    }
   }
 
   static OcspResponse? _parseBasicOcspResponse(List<int> bytes) {
