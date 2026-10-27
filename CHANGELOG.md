@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.0.4
+
+- Fix: BKS stores written by `BksCodec.encode` / `BksStore.toBytes` carried a
+  MAC that Java, Bouncy Castle and pdf_plus reject. Bouncy Castle passes the
+  MAC key size in bits (`getMacSize() * 8` = 160 bits = 20 bytes) while
+  PointyCastle's `generateDerivedMacParameters` takes bytes, so the key came
+  out 160 bytes long. Reading only worked because `decode` also tried the
+  20-byte key "for compatibility". The key is now 20 bytes in V2 and 2 bytes in
+  V1; stores written with the old 160-byte key are still readable.
+- Fix: BKS V1 stores are read (they were rejected as unsupported).
+- Fix: KEY entries (type 2) are read and written as `BcKeyStoreSpi.encodeKey`
+  lays them out — `keyType · format · algorithm · bytes`. The `keyType` byte
+  and the format were missing, so any store with such an entry was misparsed.
+  `BksEntry` gains `keyType` and `keyFormat`.
+- Fix: an empty password is an empty byte array in the PKCS#12 KDF, as in
+  `PBEParametersGenerator.PKCS12PasswordToBytes`, not a 2-byte terminator;
+  empty-password stores from Bouncy Castle failed the integrity check.
+- Iteration counts above `1 << 20` are rejected instead of keeping the key
+  derivation busy for hours, and a truncated alias raises `StateError`.
+- Covered by `test/bks_bouncy_castle_samples_test.dart`, with the `v1BKS` and
+  `v2BKS` samples from Bouncy Castle's `KeyStoreTest` and MACs computed
+  outside Dart.
+- New: JKS and JCEKS codec (`lib/src/security/keystore/jks_codec.dart`).
+  `JksCodec.decode`/`encode` read and write both formats (version 1 is read,
+  version 2 is written) with the integrity digest checked on load;
+  `JksKeyProtector.recover`/`protect` open and seal private keys the way
+  `sun.security.provider.KeyProtector` (JKS) and PBEWithMD5AndTripleDES
+  (JCEKS) do. Checked both ways against Java 8 and 25 `keytool`: Java stores
+  decode and re-encode byte for byte, and stores written here open in
+  `keytool` with the same private key. Covered by
+  `test/jks_keytool_fixtures_test.dart`.
+- The Java modified UTF-8 codec moved from `bks_reader.dart` to
+  `java_modified_utf8.dart`, shared by both codecs.
+- Fix: BKS did not work in the browser — `ByteData.getInt64`/`setInt64`
+  throw "Int64 accessor not supported by dart2js". Entry dates now go through
+  `keystore_int64.dart`, which exports the native implementation when
+  `dart:io` is available and a two-halves one otherwise. JKS uses the same.
+  `test/keystore_browser_test.dart` runs both codecs with embedded fixtures:
+  `dart test -p vm,chrome test/keystore_browser_test.dart`.
+- Truststores refreshed from the ITI package (Raiz v12 hierarchy):
+  `assets/truststore/` (`cadeia_icp_brasil/`, `cadeiasicpbrasil.bks`,
+  `keystore_ICP_Brasil.jks`), `assets/cadeiasicpbrasil.bks` and
+  `assets/icpbrasil.jks`. Certificates are only added, never removed. The
+  v4 and v13 roots and the MRE CAs stay out of the JKS files: their EC keys use
+  explicit curve parameters, which Java refuses to load.
+- Fix: the embedded ICP-Brasil roots (`useEmbeddedIcpBrasil`) were regenerated
+  from `assets/truststore/cadeia_icp_brasil` with
+  `scripts/embed_certificates.dart` (320 → 339 certificates). Without it,
+  signatures under the Raiz v12 hierarchy were reported as untrusted even
+  with the asset truststores up to date.
+- `test/memo_507_26_raiz_v12_test.dart` validates a real document signed with
+  an AC OAB G4 e-CPF (AC OAB G4 → AC Certisign G8 → Raiz v12) against the
+  embedded roots, `cadeiasicpbrasil.bks` and `keystore_ICP_Brasil.jks`.
+
 ## 1.0.3
 
 - Fix: `/adbe.pkcs7.detached` signatures without signed attributes (RFC 5652

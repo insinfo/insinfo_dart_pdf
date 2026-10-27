@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart';
 
+import 'java_modified_utf8.dart';
+import 'keystore_int64.dart';
+
 /// BouncyCastle KeyStore (BKS) v2 codec.
 ///
 /// This supports reading, editing and creating BKS v2 stores.
@@ -13,7 +16,7 @@ import 'package:pointycastle/export.dart';
 /// - This implementation focuses on correctness and round-tripping for common
 ///   trust stores (certificate entries). It also supports KEY/SECRET/SEALED
 ///   entries as opaque/encrypted payloads.
-/// - BKS v1 is not supported.
+/// - BKS v1 is read (its MAC key is 2 bytes); stores are always written as v2.
 class BksStore {
   BksStore({
     required this.version,
@@ -112,6 +115,8 @@ class BksEntry {
     required this.date,
     required this.chain,
     this.certificate,
+    this.keyType,
+    this.keyFormat,
     this.keyAlgorithm,
     this.keyData,
     this.secretData,
@@ -140,7 +145,10 @@ class BksEntry {
 
   final BksEncodedCertificate? certificate;
 
-  // KEY
+  // KEY: BcKeyStoreSpi.encodeKey writes keyType (0 private, 1 public,
+  // 2 secret), format ("PKCS#8", "X.509", "RAW"), algorithm, then the bytes.
+  final int? keyType;
+  final String? keyFormat;
   final String? keyAlgorithm;
   final Uint8List? keyData;
 
@@ -154,7 +162,11 @@ class BksEntry {
 class BksCodec {
   static const int storeVersion = 2;
   static const int _hmacSize = 20; // SHA-1
-  static const int _derivedMacKeySizeParamV2 = _hmacSize * 8;
+  // MAC key sizes in bytes (see decode for why they are not BC's bit counts).
+  static const int _macKeyBytesV2 = _hmacSize;
+  static const int _macKeyBytesV1 = _hmacSize ~/ 8;
+  static const int _legacyMacKeyBytes = _hmacSize * 8;
+  static const int _maxIterations = 1 << 20;
 
   // Entry types (1 byte)
   static const int _typeCertificate = 1;
@@ -179,8 +191,9 @@ class BksCodec {
     final _BksBytesReader r = _BksBytesReader(data);
 
     final int version = r.readInt32();
-    if (version != storeVersion) {
-      throw StateError('Unsupported BKS version: $version (expected $storeVersion).');
+    // Entries have the same layout in V1 and V2; only the MAC key differs.
+    if (version != 1 && version != storeVersion) {
+      throw StateError('Unsupported BKS version: $version (expected 1 or 2).');
     }
 
     final int saltLen = r.readInt32();
@@ -189,7 +202,9 @@ class BksCodec {
     }
     final Uint8List salt = r.readBytes(saltLen);
     final int iterationCount = r.readInt32();
-    if (iterationCount <= 0) {
+    // Bouncy Castle writes 1024..2047. The ceiling only stops a corrupt count
+    // from keeping the PKCS#12 key derivation busy for hours.
+    if (iterationCount <= 0 || iterationCount > _maxIterations) {
       throw StateError('Invalid iteration count: $iterationCount');
     }
 
@@ -200,28 +215,33 @@ class BksCodec {
     }
     final Uint8List bodyBytes = Uint8List.sublistView(data, bodyStart, bodyStart + bodyLength);
     final Uint8List storedMac = Uint8List.sublistView(data, data.length - _hmacSize);
-    // BouncyCastle's BKS v2 uses PKCS12ParametersGenerator with
-    // generateDerivedMacParameters(hMacSize * 8) (size in bits).
-    // Some implementations/libraries historically interpret this parameter
-    // differently, so for compatibility we accept either interpretation.
-    final Uint8List calculatedMacBits = _calculateMac(
+    // BcKeyStoreSpi calls generateDerivedMacParameters(getMacSize() * 8) in
+    // V2 and generateDerivedMacParameters(getMacSize()) in V1, in bits: a
+    // 20-byte key in V2 and a 2-byte key in V1. PointyCastle's generator takes
+    // bytes, hence the constants below.
+    final Uint8List calculatedMac = _calculateMac(
       password: password,
       salt: salt,
       iterationCount: iterationCount,
       bodyBytes: bodyBytes,
-      derivedMacKeySizeParam: _derivedMacKeySizeParamV2,
-    );
-    final Uint8List calculatedMacBytes = _calculateMac(
-      password: password,
-      salt: salt,
-      iterationCount: iterationCount,
-      bodyBytes: bodyBytes,
-      derivedMacKeySizeParam: _hmacSize,
+      macKeyBytes: version == storeVersion ? _macKeyBytesV2 : _macKeyBytesV1,
     );
 
-    final bool macOk =
-        _constantTimeEquals(calculatedMacBits, storedMac) ||
-        _constantTimeEquals(calculatedMacBytes, storedMac);
+    bool macOk = _constantTimeEquals(calculatedMac, storedMac);
+    if (!macOk && version == storeVersion) {
+      // Stores written by this codec before the fix used a 160-byte key
+      // (the bit count passed as bytes). Still readable; never written.
+      macOk = _constantTimeEquals(
+        _calculateMac(
+          password: password,
+          salt: salt,
+          iterationCount: iterationCount,
+          bodyBytes: bodyBytes,
+          macKeyBytes: _legacyMacKeyBytes,
+        ),
+        storedMac,
+      );
+    }
     if (!macOk && strictMac) {
       throw StateError('BKS integrity check failed (HMAC mismatch).');
     }
@@ -265,6 +285,8 @@ class BksCodec {
       }
 
       if (type == _typeKey) {
+        final int keyType = r.readUint8();
+        final String keyFormat = r.readModifiedUtf8();
         final String keyAlg = r.readModifiedUtf8();
         final int len = r.readInt32();
         final Uint8List keyData = r.readBytes(len);
@@ -274,6 +296,8 @@ class BksCodec {
             alias: alias,
             date: date,
             chain: chain,
+            keyType: keyType,
+            keyFormat: keyFormat,
             keyAlgorithm: keyAlg,
             keyData: keyData,
           ),
@@ -363,9 +387,15 @@ class BksCodec {
           _writeCertificate(bw, cert);
           break;
         case BksEntryType.key:
-          if (e.keyAlgorithm == null || e.keyData == null) {
-            throw StateError('Key entry ${e.alias} is missing keyAlgorithm/keyData.');
+          if (e.keyType == null ||
+              e.keyFormat == null ||
+              e.keyAlgorithm == null ||
+              e.keyData == null) {
+            throw StateError(
+                'Key entry ${e.alias} is missing keyType/keyFormat/keyAlgorithm/keyData.');
           }
+          bw.writeUint8(e.keyType!);
+          bw.writeModifiedUtf8(e.keyFormat!);
           bw.writeModifiedUtf8(e.keyAlgorithm!);
           bw.writeInt32(e.keyData!.length);
           bw.writeBytes(e.keyData!);
@@ -398,7 +428,7 @@ class BksCodec {
       salt: store.salt,
       iterationCount: store.iterationCount,
       bodyBytes: bodyBytes,
-      derivedMacKeySizeParam: _derivedMacKeySizeParamV2,
+      macKeyBytes: _macKeyBytesV2,
     );
     w.writeBytes(mac);
     return out.toBytes();
@@ -435,7 +465,7 @@ class BksCodec {
     required Uint8List salt,
     required int iterationCount,
     required Uint8List bodyBytes,
-    required int derivedMacKeySizeParam,
+    required int macKeyBytes,
   }) {
     final PKCS12ParametersGenerator generator =
         PKCS12ParametersGenerator(Digest('SHA-1'));
@@ -443,7 +473,7 @@ class BksCodec {
     generator.init(passBytes, salt, iterationCount);
 
     final CipherParameters macParams =
-        generator.generateDerivedMacParameters(derivedMacKeySizeParam);
+        generator.generateDerivedMacParameters(macKeyBytes);
     if (macParams is! KeyParameter) {
       throw StateError('Unexpected MAC parameters type: ${macParams.runtimeType}');
     }
@@ -466,9 +496,11 @@ class BksCodec {
   }
 
   static Uint8List _pkcs12PasswordToBytes(String password) {
-    // PKCS#12 password bytes are UTF-16BE code units + a two-byte null terminator.
-    // Even an empty password yields a 2-byte terminator (not an empty array).
-    if (password.isEmpty) return Uint8List(2);
+    // PKCS#12 password bytes are UTF-16BE code units + a two-byte null
+    // terminator. An empty password is an empty array, with no terminator:
+    // that is PBEParametersGenerator.PKCS12PasswordToBytes in Bouncy Castle,
+    // which writes the MAC of empty-password stores with it.
+    if (password.isEmpty) return Uint8List(0);
     final List<int> units = password.codeUnits;
     final Uint8List out = Uint8List((units.length + 1) * 2);
     for (int i = 0; i < units.length; i++) {
@@ -531,7 +563,7 @@ class _BksBytesReader {
 
   int readInt64() {
     _ensure(8);
-    final int v = _bd.getInt64(offset, Endian.big);
+    final int v = keystoreReadInt64(_bd, offset);
     offset += 8;
     return v;
   }
@@ -548,9 +580,10 @@ class _BksBytesReader {
     _ensure(2);
     final int len = _bd.getUint16(offset, Endian.big);
     offset += 2;
+    _ensure(len);
     final Uint8List bytes = Uint8List.sublistView(_data, offset, offset + len);
     offset += len;
-    return _ModifiedUtf8.decode(bytes);
+    return JavaModifiedUtf8.decode(bytes);
   }
 
   void _ensure(int n) {
@@ -577,7 +610,7 @@ class _BksBytesWriter {
 
   void writeInt64(int v) {
     final ByteData bd = ByteData(8);
-    bd.setInt64(0, v, Endian.big);
+    keystoreWriteInt64(bd, 0, v);
     _out.add(bd.buffer.asUint8List());
   }
 
@@ -586,7 +619,7 @@ class _BksBytesWriter {
   }
 
   void writeModifiedUtf8(String s) {
-    final Uint8List encoded = _ModifiedUtf8.encode(s);
+    final Uint8List encoded = JavaModifiedUtf8.encode(s);
     if (encoded.length > 0xFFFF) {
       throw StateError('String too long for modified UTF-8: ${encoded.length} bytes');
     }
@@ -594,69 +627,5 @@ class _BksBytesWriter {
     bd.setUint16(0, encoded.length, Endian.big);
     _out.add(bd.buffer.asUint8List());
     _out.add(encoded);
-  }
-}
-
-/// Java DataInput/DataOutput "modified UTF-8" codec.
-///
-/// - U+0000 is encoded as 0xC0 0x80 (not 0x00)
-/// - Surrogates are encoded as 3-byte sequences each (no pair-combining)
-class _ModifiedUtf8 {
-  static Uint8List encode(String s) {
-    final List<int> out = <int>[];
-    final List<int> units = s.codeUnits; // UTF-16 code units
-    for (final int c in units) {
-      if (c == 0x0000) {
-        out.add(0xC0);
-        out.add(0x80);
-      } else if (c <= 0x007F) {
-        out.add(c);
-      } else if (c <= 0x07FF) {
-        out.add(0xC0 | ((c >> 6) & 0x1F));
-        out.add(0x80 | (c & 0x3F));
-      } else {
-        out.add(0xE0 | ((c >> 12) & 0x0F));
-        out.add(0x80 | ((c >> 6) & 0x3F));
-        out.add(0x80 | (c & 0x3F));
-      }
-    }
-    return Uint8List.fromList(out);
-  }
-
-  static String decode(Uint8List bytes) {
-    final StringBuffer sb = StringBuffer();
-    int i = 0;
-    while (i < bytes.length) {
-      final int b = bytes[i] & 0xFF;
-      if (b < 0x80) {
-        sb.writeCharCode(b);
-        i += 1;
-        continue;
-      }
-      if ((b & 0xE0) == 0xC0) {
-        if (i + 1 >= bytes.length) {
-          throw StateError('Invalid modified UTF-8 (truncated 2-byte sequence)');
-        }
-        final int b2 = bytes[i + 1] & 0xFF;
-        final int ch = ((b & 0x1F) << 6) | (b2 & 0x3F);
-        sb.writeCharCode(ch);
-        i += 2;
-        continue;
-      }
-      if ((b & 0xF0) == 0xE0) {
-        if (i + 2 >= bytes.length) {
-          throw StateError('Invalid modified UTF-8 (truncated 3-byte sequence)');
-        }
-        final int b2 = bytes[i + 1] & 0xFF;
-        final int b3 = bytes[i + 2] & 0xFF;
-        final int ch =
-            ((b & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
-        sb.writeCharCode(ch);
-        i += 3;
-        continue;
-      }
-      throw StateError('Invalid modified UTF-8 leading byte: 0x${b.toRadixString(16)}');
-    }
-    return sb.toString();
   }
 }
