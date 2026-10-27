@@ -9,9 +9,54 @@ import '../asn1/der.dart';
 import '../x509/ocsp.dart';
 import '../x509/ocsp_utils.dart' show CertificateUtililty;
 import '../x509/x509_certificates.dart';
+import '../x509/x509_crl.dart';
 
-/// Helper to fetch revocation data
+/// Helper to fetch revocation data.
+///
+/// Every request has a timeout, and CRLs, OCSP responses and AIA downloads are
+/// kept in memory until the evidence itself says it is stale (`nextUpdate`),
+/// capped by [crlMaxAge], [ocspMaxAge] and [aiaMaxAge]. A validation runs the
+/// same checks for each trust profile and a CRL can take seconds to download
+/// (ICP-Brasil mirrors answered in 7 s); without the cache every profile
+/// downloaded everything again, and one silent mirror held the validation
+/// until the TCP timeout.
 class RevocationDataClient {
+  /// Timeout of a CRL download.
+  static Duration crlTimeout = const Duration(seconds: 15);
+
+  /// Timeout of an OCSP request.
+  static Duration ocspTimeout = const Duration(seconds: 10);
+
+  /// Timeout of an AIA (CA Issuers) download.
+  static Duration aiaTimeout = const Duration(seconds: 10);
+
+  /// Longest time a CRL is reused, even if its `nextUpdate` is later.
+  static Duration crlMaxAge = const Duration(hours: 1);
+
+  /// Longest time an OCSP response is reused.
+  static Duration ocspMaxAge = const Duration(minutes: 10);
+
+  /// Longest time an AIA download is reused.
+  static Duration aiaMaxAge = const Duration(hours: 1);
+
+  static final _BytesCache _crlCache = _BytesCache(64);
+  static final _BytesCache _ocspCache = _BytesCache(256);
+  static final _BytesCache _aiaCache = _BytesCache(128);
+
+  /// Drops every cached CRL, OCSP response and AIA download.
+  static void clearCache() {
+    _crlCache.clear();
+    _ocspCache.clear();
+    _aiaCache.clear();
+  }
+
+  static DateTime _expiry(DateTime? nextUpdate, Duration maxAge) {
+    final DateTime cap = DateTime.now().toUtc().add(maxAge);
+    if (nextUpdate == null) return cap;
+    final DateTime next = nextUpdate.toUtc();
+    return next.isBefore(cap) ? next : cap;
+  }
+
   /// Check OCSP status
   static Future<OcspResponse?> checkOcsp(X509Certificate cert, X509Certificate issuer) async {
     final List<int>? bytes = await fetchOcspResponseBytes(cert, issuer);
@@ -26,39 +71,59 @@ class RevocationDataClient {
     final String? url = getOcspUrl(cert);
     if (url == null) return null;
 
+    final String key = '$url|${cert.c?.serialNumber?.value}|'
+        '${issuer.c?.subject}';
+    final List<int>? cached = _ocspCache.get(key);
+    if (cached != null) return cached;
+
     try {
       final List<int> req = OcspRequest.generate(cert: cert, issuer: issuer);
 
-      final http.Response response = await http.post(
-        Uri.parse(url),
-        headers: <String, String>{'Content-Type': 'application/ocsp-request'},
-        body: req,
-      );
+      final http.Response response = await http
+          .post(
+            Uri.parse(url),
+            headers: <String, String>{
+              'Content-Type': 'application/ocsp-request',
+            },
+            body: req,
+          )
+          .timeout(ocspTimeout);
 
       if (response.statusCode == 200) {
-        return response.bodyBytes;
+        final List<int> bytes = response.bodyBytes;
+        _ocspCache.put(
+            key, bytes, _expiry(OcspResponse.parse(bytes)?.nextUpdate, ocspMaxAge));
+        return bytes;
       }
     } catch (e) {
-      // ignore
+      // ignore: network error, timeout or unreadable response
     }
     return null;
   }
 
-  /// Fetch CRL for the given certificate
+  /// Fetch the CRL for the given certificate.
+  ///
+  /// The distribution points of a certificate are mirrors of the same list,
+  /// so the first one that answers with a readable CRL is enough; the others
+  /// are only tried when it fails.
   static Future<List<List<int>>> fetchCrls(X509Certificate cert) async {
-    final List<String> urls = getCrlDistributionPoints(cert);
-    final List<List<int>> crls = <List<int>>[];
-    for (final String url in urls) {
+    for (final String url in getCrlDistributionPoints(cert)) {
+      final List<int>? cached = _crlCache.get(url);
+      if (cached != null) return <List<int>>[cached];
       try {
-        final http.Response response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          crls.add(response.bodyBytes);
-        }
+        final http.Response response =
+            await http.get(Uri.parse(url)).timeout(crlTimeout);
+        if (response.statusCode != 200) continue;
+        final List<int> bytes = response.bodyBytes;
+        final X509Crl? crl = X509Crl.fromBytes(bytes);
+        if (crl == null) continue;
+        _crlCache.put(url, bytes, _expiry(crl.nextUpdate, crlMaxAge));
+        return <List<int>>[bytes];
       } catch (e) {
-        // ignore fetch errors
+        // ignore: network error or timeout; try the next mirror
       }
     }
-    return crls;
+    return const <List<int>>[];
   }
 
   /// CRL Distribution Points (OID 2.5.29.31) as URLs.
@@ -169,10 +234,15 @@ class RevocationDataClient {
     final Set<String> out = <String>{};
     for (final String url in urls) {
       try {
-        final http.Response response = await http.get(Uri.parse(url));
-        if (response.statusCode != 200) continue;
-        final List<int> body = response.bodyBytes;
-        if (body.isEmpty) continue;
+        List<int>? body = _aiaCache.get(url);
+        if (body == null) {
+          final http.Response response =
+              await http.get(Uri.parse(url)).timeout(aiaTimeout);
+          if (response.statusCode != 200) continue;
+          body = response.bodyBytes;
+          if (body.isEmpty) continue;
+          _aiaCache.put(url, body, _expiry(null, aiaMaxAge));
+        }
 
         final List<List<int>> ders = _extractDerCertificatesFromAiaBody(body);
         for (final List<int> der in ders) {
@@ -234,6 +304,43 @@ class RevocationDataClient {
       return const <List<int>>[];
     }
   }
+}
+
+/// In-memory cache of downloaded bytes with an expiry per entry and a size
+/// cap (oldest entries leave first).
+class _BytesCache {
+  _BytesCache(this._maxEntries);
+
+  final int _maxEntries;
+  final Map<String, _CachedBytes> _entries = <String, _CachedBytes>{};
+
+  List<int>? get(String key) {
+    final _CachedBytes? entry = _entries[key];
+    if (entry == null) return null;
+    if (DateTime.now().toUtc().isAfter(entry.expiresAt)) {
+      _entries.remove(key);
+      return null;
+    }
+    return entry.bytes;
+  }
+
+  void put(String key, List<int> bytes, DateTime expiresAt) {
+    if (!DateTime.now().toUtc().isBefore(expiresAt)) return;
+    _entries.remove(key);
+    _entries[key] = _CachedBytes(bytes, expiresAt);
+    while (_entries.length > _maxEntries) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  void clear() => _entries.clear();
+}
+
+class _CachedBytes {
+  _CachedBytes(this.bytes, this.expiresAt);
+
+  final List<int> bytes;
+  final DateTime expiresAt;
 }
 
 /// Local helper to avoid importing more public utilities here.

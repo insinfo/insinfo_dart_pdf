@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.7
+
+Online revocation checking, which started to work in 1.0.6, made validation
+slow: a two-signature ICP-Brasil PDF spent 21 s on it, because one CRL mirror
+took 7 s and the same checks run once per trust profile.
+
+- `RevocationDataClient.fetchCrls` stops at the first distribution point that
+  answers with a readable CRL; the others are mirrors of the same list.
+- CRLs, OCSP responses and AIA downloads are cached in memory until their
+  `nextUpdate`, capped by `crlMaxAge` (1 h), `ocspMaxAge` (10 min) and
+  `aiaMaxAge` (1 h). `RevocationDataClient.clearCache()` empties the cache.
+- Every request has a timeout (`crlTimeout` 15 s, `ocspTimeout` and
+  `aiaTimeout` 10 s); a silent mirror no longer holds the validation until the
+  TCP timeout.
+- The same PDF now takes 2.8 s the first time and 1.1 s afterwards. Covered by
+  `test/revocation_data_client_cache_test.dart` (local HTTP server: first
+  mirror is enough, second check is cached, silent mirror is abandoned).
+
 ## 1.0.6
 
 Online revocation checking never produced evidence for ICP-Brasil e-CPF
