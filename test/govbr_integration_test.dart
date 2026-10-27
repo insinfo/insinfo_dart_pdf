@@ -395,12 +395,21 @@ Uint8List _extractDataByRange(Uint8List pdfBytes, List<int> byteRange) {
   return builder.takeBytes();
 }
 
+/// Runs an openssl command. stdout is kept as bytes: `openssl cms -verify`
+/// writes the verified (binary) content there, and decoding it as text failed
+/// on Linux, where the system encoding is UTF-8. stderr is read as latin1,
+/// which accepts any byte.
 Future<void> _runCmd(String cmd, List<String> args) async {
-  final ProcessResult result = await Process.run(cmd, args);
+  final ProcessResult result = await Process.run(
+    cmd,
+    args,
+    stdoutEncoding: null,
+    stderrEncoding: latin1,
+  );
   if (result.exitCode != 0) {
     throw Exception(
       'Command failed: $cmd ${args.join(' ')}\n'
-      'stdout: ${result.stdout}\n'
+      'stdout: ${(result.stdout as List<int>).length} bytes\n'
       'stderr: ${result.stderr}',
     );
   }
