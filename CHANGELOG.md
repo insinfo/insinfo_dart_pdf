@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.5
+
+- Security fix: `X509Utils.verifyChainPem` (used for `chainTrusted` by
+  `PdfSignatureValidator`) checked every signature in the chain but not
+  whether each issuer is a CA. Anyone holding an ordinary ICP-Brasil e-CPF
+  could sign a certificate in someone else's name with their own key, and the
+  chain "victim → e-CPF → CA → root" was reported as trusted. Every issuer now
+  needs basicConstraints `cA = TRUE` and, when keyUsage is present,
+  `keyCertSign` (RFC 5280 §4.2.1.9, §4.2.1.3); otherwise the chain fails with
+  `issuer_not_a_ca`. A certificate that is itself one of the trusted roots
+  (a pinned self-signed certificate, say) is trusted directly and needs no CA
+  flag, since it vouches for no one. `X509Utils.canIssueCertificates` and
+  `X509Certificate.keyUsage` are new. Covered by
+  `test/x509_chain_ca_constraint_test.dart`; both attacks in it pass on 1.0.4.
+
 ## 1.0.4
 
 - Fix: BKS stores written by `BksCodec.encode` / `BksStore.toBytes` carried a

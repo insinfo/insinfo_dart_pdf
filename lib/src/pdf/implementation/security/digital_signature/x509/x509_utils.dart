@@ -39,6 +39,43 @@ class X509Utils {
     return sb.toString();
   }
 
+  /// Whether [cert] is byte for byte one of [certs].
+  static bool _isOneOf(X509Certificate cert, List<X509Certificate> certs) {
+    final List<int>? der = cert.c?.getDerEncoded();
+    if (der == null) return false;
+    final Uint8List bytes = Uint8List.fromList(der);
+    for (final X509Certificate other in certs) {
+      final List<int>? otherDer = other.c?.getDerEncoded();
+      if (otherDer != null && _bytesEqual(bytes, Uint8List.fromList(otherDer))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether [cert] may sign other certificates (RFC 5280 §4.2.1.9 and
+  /// §4.2.1.3): basicConstraints with cA = TRUE and, when keyUsage is
+  /// present, keyCertSign.
+  static bool canIssueCertificates(X509Certificate cert) {
+    try {
+      final Asn1Octet? ext = cert.getExtension(DerObjectID('2.5.29.19'));
+      final List<int>? extBytes = ext?.getOctets();
+      if (extBytes == null || extBytes.isEmpty) return false;
+      final Asn1? parsed = Asn1Stream(PdfStreamReader(extBytes)).readAsn1();
+      final Asn1Sequence? seq = Asn1Sequence.getSequence(parsed);
+      final List<dynamic>? objects = seq?.objects;
+      if (objects == null || objects.isEmpty) return false;
+      // cA is an optional BOOLEAN DEFAULT FALSE; isTrue accepts any non-zero
+      // octet, as some issuers write BER TRUE (0x01).
+      final dynamic ca = objects.first;
+      if (ca is! DerBoolean || !ca.isTrue) return false;
+      final List<bool>? usage = cert.keyUsage;
+      return usage == null || (usage.length > 5 && usage[5]);
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Uint8List? _tryGetSubjectKeyIdentifier(X509Certificate cert) {
     try {
       final Asn1Octet? ext = cert.getExtension(DerObjectID('2.5.29.14'));
@@ -199,6 +236,13 @@ class X509Utils {
         return X509ChainValidationResult(trusted: false, errors: errors);
       }
 
+      // The certificate itself is one of the trusted roots (a pinned
+      // certificate, or a root also carried in the chain). It vouches for no
+      // one here, so it does not need to be a CA.
+      if (_isOneOf(current, roots)) {
+        return X509ChainValidationResult(trusted: true, errors: errors);
+      }
+
       // Prefer trusted roots as potential trust anchors.
       final X509Certificate? issuerFromRoots = findIssuer(current, roots);
       final X509Certificate? issuerFromChain = findIssuer(current, chain);
@@ -319,6 +363,17 @@ class X509Utils {
         }
         if (curIssuer != null) {
           errors.add('certificate_signature_invalid_issuer=$curIssuer');
+        }
+        return X509ChainValidationResult(trusted: false, errors: errors);
+      }
+
+      // An end-entity certificate (an e-CPF, say) carries a valid signature
+      // from its CA, but must not vouch for anyone else.
+      if (!canIssueCertificates(issuer)) {
+        errors.add('issuer_not_a_ca');
+        final String? issuerSubject = issuer.c?.subject?.toString();
+        if (issuerSubject != null) {
+          errors.add('issuer_not_a_ca_subject=$issuerSubject');
         }
         return X509ChainValidationResult(trusted: false, errors: errors);
       }

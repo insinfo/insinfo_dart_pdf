@@ -235,6 +235,10 @@ class X509Certificate extends X509ExtensionBase {
   X509CertificateStructure? c;
   List<bool>? _keyUsage;
 
+  /// The keyUsage bits (RFC 5280 §4.2.1.3; index 5 is keyCertSign), or null
+  /// when the certificate has no keyUsage extension.
+  List<bool>? get keyUsage => _keyUsage;
+
   //Properties
   /// Gets the subject of the certificate.
   X509Name? get subject => c?.subject;
