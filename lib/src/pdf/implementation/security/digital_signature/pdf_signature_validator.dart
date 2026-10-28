@@ -1750,8 +1750,14 @@ class PdfSignatureValidator {
       return first;
     }
 
-    final bool hasChainFailure =
-        first.signatures.any((s) => s.chainTrusted == false);
+    // A timestamp is signed by a TSA whose root is rarely the signer's: the
+    // candidates are picked from the signer certificate, so a TSA chain could
+    // only close with every root. Before 1.0.10 the second pass ran only for
+    // signer chain failures, and a valid timestamp came back untrusted.
+    final bool hasChainFailure = first.signatures.any((s) =>
+        s.chainTrusted == false ||
+        (s.timestampStatus?.present == true &&
+            s.timestampStatus?.chainTrusted == false));
     if (!hasChainFailure) {
       return first;
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.10
+
+- Fix: `validateAllSignaturesWithCandidates` ran the second pass with every
+  trusted root only when a signer chain failed. The candidates are picked
+  from the signer certificate, and a TSA usually hangs from another root (an
+  ICP-Brasil ACT, an in-house TSA under the root while the signer is under an
+  intermediate), so a valid timestamp came back with an untrusted chain. A
+  timestamp whose chain fails now triggers the second pass too. Covered by
+  `test/signature_timestamp_parsing_test.dart`.
+
 ## 1.0.9
 
 Signature timestamps were never read: `timestampStatus.present` came back
