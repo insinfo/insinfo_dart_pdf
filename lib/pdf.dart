@@ -284,6 +284,8 @@ export 'src/pdf/implementation/security/digital_signature/pdf_signature_validato
         PdfLtvInfo,
         PdfLtvSelfCheckResult,
         PdfRevocationResult,
+        PdfRevocationGap,
+        PdfRevocationGapReason,
         PdfPolicyStatus;
 export 'src/pdf/implementation/security/digital_signature/icp_brasil/lpa.dart'
     show Lpa;

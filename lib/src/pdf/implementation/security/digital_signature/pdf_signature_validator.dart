@@ -113,6 +113,7 @@ class PdfRevocationResult {
     required this.status,
     this.details,
     this.source,
+    this.gaps = const <PdfRevocationGap>[],
   });
 
   final bool isRevoked;
@@ -124,12 +125,79 @@ class PdfRevocationResult {
   /// Best-effort evidence source: 'ocsp', 'crl', 'mixed', 'none'.
   final String? source;
 
+  /// In strict mode, the certificates of the chain left without validated
+  /// evidence and why. Empty unless [status] is 'unknown'.
+  final List<PdfRevocationGap> gaps;
+
   Map<String, dynamic> toMap() => <String, dynamic>{
         'is_revoked': isRevoked,
         'status': status,
         'details': details,
         'source': source,
+        'gaps': gaps.map((g) => g.toMap()).toList(),
       };
+}
+
+/// Why a certificate was left without validated revocation evidence.
+enum PdfRevocationGapReason {
+  /// The issuing CA was not found, so no CRL or OCSP response can be verified.
+  issuerNotFound,
+
+  /// No CRL or OCSP response was obtained (network failure, no distribution
+  /// point, or none supplied).
+  noEvidence,
+
+  /// The issuer's CRL was already past its `nextUpdate`. Usually a mirror
+  /// still serving the previous list right after the CA reissued it.
+  crlExpired,
+
+  /// The issuer's CRL has a `thisUpdate` in the future (clock skew).
+  crlNotYetValid,
+
+  /// The CRL signature does not verify with the issuer's key.
+  crlSignatureInvalid,
+}
+
+/// A certificate of the chain without validated revocation evidence.
+class PdfRevocationGap {
+  const PdfRevocationGap({
+    required this.subject,
+    required this.reason,
+    this.crlIssuer,
+    this.crlThisUpdate,
+    this.crlNextUpdate,
+  });
+
+  /// Subject DN of the certificate.
+  final String subject;
+
+  final PdfRevocationGapReason reason;
+
+  /// Issuer DN of the rejected CRL, for the CRL reasons.
+  final String? crlIssuer;
+
+  /// `thisUpdate` of the rejected CRL (UTC).
+  final DateTime? crlThisUpdate;
+
+  /// `nextUpdate` of the rejected CRL (UTC).
+  final DateTime? crlNextUpdate;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'subject': subject,
+        'reason': reason.name,
+        'crl_issuer': crlIssuer,
+        'crl_this_update': crlThisUpdate?.toIso8601String(),
+        'crl_next_update': crlNextUpdate?.toIso8601String(),
+      };
+
+  @override
+  String toString() {
+    final StringBuffer sb = StringBuffer('$subject: ${reason.name}');
+    if (crlNextUpdate != null) {
+      sb.write(' (CRL nextUpdate ${crlNextUpdate!.toIso8601String()})');
+    }
+    return sb.toString();
+  }
 }
 
 class PdfPolicyStatus {
@@ -1417,8 +1485,8 @@ class PdfSignatureValidator {
         windowCovers(crl.thisUpdate, crl.nextUpdate, validationTime) ||
         windowCovers(crl.thisUpdate, crl.nextUpdate, checkedAt);
 
-    // Track missing evidence when strict.
-    final List<String> missingEvidenceFor = <String>[];
+    // Track missing evidence when strict, with the reason for each gap.
+    final List<PdfRevocationGap> missingEvidenceFor = <PdfRevocationGap>[];
 
     // 1. Iterate chain (leaf first)
     // Usually leaf matches issuer in next cert.
@@ -1443,12 +1511,24 @@ class PdfSignatureValidator {
       }
 
       bool hasValidatedGoodForCert = false;
+      final String subject = cert.c?.subject?.toString() ?? 'unknown-subject';
+      // The most telling reason a CRL of this certificate's issuer was
+      // rejected; null when none was.
+      PdfRevocationGap? crlRejection;
+      PdfRevocationGap gapFor() =>
+          crlRejection ??
+          PdfRevocationGap(
+            subject: subject,
+            reason: issuer == null
+                ? PdfRevocationGapReason.issuerNotFound
+                : PdfRevocationGapReason.noEvidence,
+          );
 
       final BigInt? serial = cert.c?.serialNumber?.value;
       if (serial == null) {
         if (strict) {
-          missingEvidenceFor
-              .add(cert.c?.subject?.toString() ?? 'unknown-subject');
+          missingEvidenceFor.add(PdfRevocationGap(
+              subject: subject, reason: PdfRevocationGapReason.noEvidence));
         }
         continue;
       }
@@ -1506,10 +1586,26 @@ class PdfSignatureValidator {
 
       if (candidateCrls.isEmpty) {
         if (strict && !hasValidatedGoodForCert) {
-          missingEvidenceFor
-              .add(cert.c?.subject?.toString() ?? 'unknown-subject');
+          missingEvidenceFor.add(gapFor());
         }
         continue;
+      }
+
+      // Keeps the rejection of the freshest CRL: it is the one that best
+      // tells what to expect (a mirror lagging behind, a skewed clock).
+      void rejectCrl(X509Crl crl, PdfRevocationGapReason reason) {
+        final DateTime? next = crl.nextUpdate?.toUtc();
+        final DateTime? previous = crlRejection?.crlNextUpdate;
+        if (previous != null && (next == null || !next.isAfter(previous))) {
+          return;
+        }
+        crlRejection = PdfRevocationGap(
+          subject: subject,
+          reason: reason,
+          crlIssuer: crl.issuer?.toString(),
+          crlThisUpdate: crl.thisUpdate?.toUtc(),
+          crlNextUpdate: next,
+        );
       }
 
       for (final crl in candidateCrls) {
@@ -1527,9 +1623,17 @@ class PdfSignatureValidator {
             continue;
           }
           if (!crlTimeWindowOk(crl)) {
+            final DateTime? nextUp = crl.nextUpdate?.toUtc();
+            rejectCrl(
+              crl,
+              nextUp != null && checkedAt.isAfter(nextUp.add(maxClockSkew))
+                  ? PdfRevocationGapReason.crlExpired
+                  : PdfRevocationGapReason.crlNotYetValid,
+            );
             continue;
           }
           if (!crl.verifySignature(issuer)) {
+            rejectCrl(crl, PdfRevocationGapReason.crlSignatureInvalid);
             continue;
           }
         }
@@ -1552,14 +1656,14 @@ class PdfSignatureValidator {
       }
 
       if (strict && !hasValidatedGoodForCert) {
-        missingEvidenceFor
-            .add(cert.c?.subject?.toString() ?? 'unknown-subject');
+        missingEvidenceFor.add(gapFor());
       }
     }
 
     if (strict && missingEvidenceFor.isNotEmpty) {
       final String msg =
-          'Missing validated revocation evidence for ${missingEvidenceFor.length} cert(s)';
+          'Missing validated revocation evidence for ${missingEvidenceFor.length} cert(s): '
+          '${missingEvidenceFor.join('; ')}';
       return PdfRevocationResult(
         isRevoked: false,
         status: 'unknown',
@@ -1568,6 +1672,7 @@ class PdfSignatureValidator {
           sawOcspEvidence: sawOcspEvidence,
           sawCrlEvidence: sawCrlEvidence,
         ),
+        gaps: missingEvidenceFor,
       );
     }
 

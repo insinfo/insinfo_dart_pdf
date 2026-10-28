@@ -20,6 +20,8 @@ import 'package:test/test.dart';
 void main() {
   late HttpServer server;
   late Uint8List crl;
+  late Uint8List expired;
+  late Uint8List expiredLater;
   final Map<String, int> hits = <String, int>{};
   late Completer<void> releaseSilent;
 
@@ -34,6 +36,23 @@ void main() {
       nextUpdate: now.add(const Duration(days: 1)),
       crlNumber: 1,
     );
+    // The previous lists, as a mirror lagging behind the CA still serves them.
+    expired = PkiBuilder.createCRL(
+      issuerKeyPair: caKey,
+      issuerDn: 'CN=Cache CA',
+      revokedCertificates: const <RevokedCertificate>[],
+      thisUpdate: now.subtract(const Duration(hours: 12)),
+      nextUpdate: now.subtract(const Duration(hours: 6)),
+      crlNumber: 2,
+    );
+    expiredLater = PkiBuilder.createCRL(
+      issuerKeyPair: caKey,
+      issuerDn: 'CN=Cache CA',
+      revokedCertificates: const <RevokedCertificate>[],
+      thisUpdate: now.subtract(const Duration(hours: 6)),
+      nextUpdate: now.subtract(const Duration(minutes: 5)),
+      crlNumber: 3,
+    );
     releaseSilent = Completer<void>();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
@@ -43,7 +62,11 @@ void main() {
         // Never answers within the timeout.
         await releaseSilent.future;
       }
-      request.response.add(crl);
+      request.response.add(switch (path) {
+        '/expired.crl' => expired,
+        '/expired-later.crl' => expiredLater,
+        _ => crl,
+      });
       await request.response.close();
     });
   });
@@ -102,5 +125,26 @@ void main() {
     } finally {
       RevocationDataClient.crlTimeout = previous;
     }
+  });
+
+  test('a mirror still serving an expired list sends the search to the next',
+      () async {
+    final cert = certWithCrls(<String>['/expired.crl', '/a.crl']);
+    final crls = await RevocationDataClient.fetchCrls(cert);
+    expect(crls.single, crl,
+        reason: 'right after the CA reissues, the first mirror lags behind');
+    expect(hits, <String, int>{'/expired.crl': 1, '/a.crl': 1});
+  });
+
+  test('every mirror behind: the freshest expired list, not cached', () async {
+    final cert =
+        certWithCrls(<String>['/expired.crl', '/expired-later.crl']);
+    final crls = await RevocationDataClient.fetchCrls(cert);
+    expect(crls.single, expiredLater,
+        reason: 'the validator gets it to say why it was rejected');
+
+    await RevocationDataClient.fetchCrls(cert);
+    expect(hits['/expired-later.crl'], 2,
+        reason: 'an expired list is not reused: the next check asks again');
   });
 }

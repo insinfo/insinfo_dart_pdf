@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.11
+
+- Fix: right after a CA reissues its CRL, a mirror can still serve the
+  previous list for some minutes — the SERPRO CAs reissue every 6 hours.
+  `RevocationDataClient.fetchCrls` stopped at the first readable list, and
+  strict checking then rejected the expired one as "unknown". A CRL already
+  past its `nextUpdate` now sends the search to the next mirror; when every
+  mirror is behind, the freshest expired list comes back (not cached).
+- Feature: `PdfRevocationResult.gaps` lists, in strict mode, each certificate
+  left without validated evidence and why (`PdfRevocationGapReason`: issuer
+  not found, no evidence, CRL expired, CRL not yet valid, CRL signature
+  invalid), with the issuer and the dates of the rejected CRL. `details`
+  carries the same summary. Covered by
+  `test/revocation_data_client_cache_test.dart` and
+  `test/revocation_issuer_from_intermediates_test.dart`.
+
 ## 1.0.10
 
 - Fix: `validateAllSignaturesWithCandidates` ran the second pass with every

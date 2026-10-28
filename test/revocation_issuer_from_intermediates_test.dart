@@ -89,8 +89,11 @@ void main() {
     document.dispose();
   });
 
-  Uint8List crl(List<int> revokedSerials) {
+  Uint8List crl(List<int> revokedSerials, {Duration? expiredFor}) {
     final now = DateTime.now().toUtc();
+    final nextUpdate = expiredFor == null
+        ? now.add(const Duration(days: 7))
+        : now.subtract(expiredFor);
     return PkiBuilder.createCRL(
       issuerKeyPair: caKey,
       issuerDn: 'CN=Revocation CA',
@@ -102,7 +105,7 @@ void main() {
           ),
       ],
       thisUpdate: now.subtract(const Duration(days: 1)),
-      nextUpdate: now.add(const Duration(days: 7)),
+      nextUpdate: nextUpdate,
       crlNumber: 1,
     );
   }
@@ -148,5 +151,36 @@ void main() {
     );
     expect(sig.revocationStatus.status, 'unknown',
         reason: 'a CRL is never trusted without its issuer key');
+    final gap = sig.revocationStatus.gaps
+        .firstWhere((g) => g.subject.contains('Revocation User'));
+    expect(gap.reason, PdfRevocationGapReason.issuerNotFound);
+  });
+
+  test('an expired CRL leaves the signer unknown and says why', () async {
+    final sig = await validate(
+      trusted: <Uint8List>[root, ca],
+      crlBytes: crl(<int>[], expiredFor: const Duration(minutes: 10)),
+    );
+    expect(sig.revocationStatus.status, 'unknown');
+    final gap = sig.revocationStatus.gaps
+        .firstWhere((g) => g.subject.contains('Revocation User'));
+    expect(gap.reason, PdfRevocationGapReason.crlExpired,
+        reason: 'a mirror serving the previous list right after the reissue');
+    expect(gap.crlIssuer, contains('Revocation CA'));
+    expect(
+        DateTime.now().toUtc().difference(gap.crlNextUpdate!).inMinutes, 10);
+    expect(sig.revocationStatus.details, contains('crlExpired'));
+  });
+
+  test('a CRL inside the clock skew still counts', () async {
+    final sig = await validate(
+      trusted: <Uint8List>[root, ca],
+      crlBytes: crl(<int>[], expiredFor: const Duration(minutes: 2)),
+    );
+    expect(
+        sig.revocationStatus.gaps
+            .where((g) => g.subject.contains('Revocation User')),
+        isEmpty,
+        reason: 'five minutes of tolerance for the clocks');
   });
 }

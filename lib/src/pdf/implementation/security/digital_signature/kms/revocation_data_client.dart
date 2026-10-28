@@ -104,9 +104,18 @@ class RevocationDataClient {
   /// Fetch the CRL for the given certificate.
   ///
   /// The distribution points of a certificate are mirrors of the same list,
-  /// so the first one that answers with a readable CRL is enough; the others
+  /// so the first one that answers with a current CRL is enough; the others
   /// are only tried when it fails.
+  ///
+  /// A mirror can still serve the previous list for some minutes after the CA
+  /// reissues it — the SERPRO CAs reissue every 6 hours, and strict checking
+  /// then rejected the expired list as "unknown". A CRL already past its
+  /// `nextUpdate` sends the search to the next mirror; when every mirror is
+  /// behind, the freshest expired list is returned (not cached), so the
+  /// validator can say why it was rejected.
   static Future<List<List<int>>> fetchCrls(X509Certificate cert) async {
+    List<int>? freshestExpired;
+    DateTime? freshestExpiredNext;
     for (final String url in getCrlDistributionPoints(cert)) {
       final List<int>? cached = _crlCache.get(url);
       if (cached != null) return <List<int>>[cached];
@@ -117,13 +126,23 @@ class RevocationDataClient {
         final List<int> bytes = response.bodyBytes;
         final X509Crl? crl = X509Crl.fromBytes(bytes);
         if (crl == null) continue;
-        _crlCache.put(url, bytes, _expiry(crl.nextUpdate, crlMaxAge));
+        final DateTime? next = crl.nextUpdate?.toUtc();
+        if (next != null && DateTime.now().toUtc().isAfter(next)) {
+          if (freshestExpiredNext == null || next.isAfter(freshestExpiredNext)) {
+            freshestExpired = bytes;
+            freshestExpiredNext = next;
+          }
+          continue;
+        }
+        _crlCache.put(url, bytes, _expiry(next, crlMaxAge));
         return <List<int>>[bytes];
       } catch (e) {
         // ignore: network error or timeout; try the next mirror
       }
     }
-    return const <List<int>>[];
+    return freshestExpired == null
+        ? const <List<int>>[]
+        : <List<int>>[freshestExpired];
   }
 
   /// CRL Distribution Points (OID 2.5.29.31) as URLs.
