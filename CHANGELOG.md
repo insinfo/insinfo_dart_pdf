@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.12
+
+- Fix: without a single CRL or OCSP response, the non-strict revocation
+  check answered `status: 'good'` with `source: 'none'`, and callers showed
+  "not revoked" for a check that never ran (offline validation, no CRL
+  supplied). It now answers `'unknown'`. Covered by
+  `test/revocation_issuer_from_intermediates_test.dart`.
+
 ## 1.0.11
 
 - Fix: right after a CA reissues its CRL, a mirror can still serve the

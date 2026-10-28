@@ -1676,6 +1676,19 @@ class PdfSignatureValidator {
       );
     }
 
+    // Without a single CRL or OCSP response there is nothing to back "good".
+    // Before 1.0.12 the non-strict mode answered 'good' with source 'none',
+    // and callers showed "not revoked" for a check that never ran (no
+    // network, no CRL supplied).
+    if (!sawOcspEvidence && !sawCrlEvidence) {
+      return const PdfRevocationResult(
+        isRevoked: false,
+        status: 'unknown',
+        details: 'No revocation evidence was checked (no CRL or OCSP)',
+        source: 'none',
+      );
+    }
+
     return PdfRevocationResult(
       isRevoked: false,
       status: 'good',

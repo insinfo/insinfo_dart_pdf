@@ -171,7 +171,8 @@ void main() {
       }
 
       expect(sig.revocationStatus.isRevoked, isFalse);
-      expect(sig.revocationStatus.status, equals('good'));
+      // Offline, sem LCR nem OCSP: nada prova "não revogado" (1.0.12).
+      expect(sig.revocationStatus.status, equals('unknown'));
       expect(sig.revocationStatus.source, equals('none'));
 
       final String subject = sig.signerInfo?.subject ?? '';

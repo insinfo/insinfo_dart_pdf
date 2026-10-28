@@ -112,13 +112,14 @@ void main() {
 
   Future<PdfSignatureValidationItem> validate({
     required List<Uint8List> trusted,
-    required Uint8List crlBytes,
+    Uint8List? crlBytes,
+    bool strict = true,
   }) async {
     final report = await PdfSignatureValidator().validateAllSignatures(
       signed,
       trustedRootsProviders: <TrustedRootsProvider>[_DerRoots(trusted)],
-      crlBytes: <Uint8List>[crlBytes],
-      strictRevocation: true,
+      crlBytes: <Uint8List>[if (crlBytes != null) crlBytes],
+      strictRevocation: strict,
     );
     return report.signatures.single;
   }
@@ -182,5 +183,25 @@ void main() {
             .where((g) => g.subject.contains('Revocation User')),
         isEmpty,
         reason: 'five minutes of tolerance for the clocks');
+  });
+
+  test('without any CRL or OCSP the result is unknown, never good', () async {
+    // Non-strict mode used to answer 'good' with source 'none': a public
+    // validation page without network showed "not revoked" for a check that
+    // never ran.
+    final sig = await validate(trusted: <Uint8List>[root, ca], strict: false);
+    expect(sig.revocationStatus.status, 'unknown');
+    expect(sig.revocationStatus.source, 'none');
+    expect(sig.revocationStatus.isRevoked, isFalse);
+  });
+
+  test('non-strict with a CRL still proves not revoked', () async {
+    final sig = await validate(
+      trusted: <Uint8List>[root, ca],
+      crlBytes: crl(<int>[]),
+      strict: false,
+    );
+    expect(sig.revocationStatus.status, 'good');
+    expect(sig.revocationStatus.source, 'crl');
   });
 }
