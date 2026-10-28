@@ -130,6 +130,71 @@ class PdfLtvManager {
       catalog.modify();
   }
   
+  /// Adds validation data the caller already has to the DSS, without fetching
+  /// anything over the network.
+  ///
+  /// [enableLtv] downloads CRLs and OCSP responses from the URLs in each
+  /// certificate. A signer that is also the issuer of the chain (an in-house
+  /// CA) already holds that data — downloading it means the server calling
+  /// itself through its public address in the middle of signing. This writes
+  /// the given [certificates], [crls] and [ocspResponses] (DER) into the
+  /// document-level DSS, which is what PAdES-LT validators read.
+  ///
+  /// Items already present in the DSS are not written again, so signing the
+  /// same document several times does not grow it with copies of the same CRL.
+  /// When the document is already signed the change goes in an incremental
+  /// update; save the document afterwards.
+  void addValidationData({
+    List<List<int>> certificates = const <List<int>>[],
+    List<List<int>> crls = const <List<int>>[],
+    List<List<int>> ocspResponses = const <List<int>>[],
+  }) {
+    if (PdfDocumentHelper.getHelper(document).isLoadedDocument &&
+        document.hasSignatures) {
+      document.fileStructure.incrementalUpdate = true;
+    }
+    final PdfDictionary catalog = PdfDocumentHelper.getHelper(document).catalog;
+
+    PdfDictionary? dss;
+    if (catalog.containsKey(PdfDictionaryProperties.dss)) {
+      final IPdfPrimitive? existing =
+          PdfCrossTable.dereference(catalog[PdfDictionaryProperties.dss]);
+      if (existing is PdfDictionary) dss = existing;
+    }
+
+    _updateDss(
+      catalog,
+      _onlyNew(crls, dss, PdfDictionaryProperties.crls),
+      _onlyNew(ocspResponses, dss, PdfDictionaryProperties.ocsps),
+      _onlyNew(certificates, dss, PdfDictionaryProperties.certs),
+    );
+    catalog.modify();
+  }
+
+  /// [items] minus repeats and minus what the DSS array [key] already holds.
+  static List<List<int>> _onlyNew(
+      List<List<int>> items, PdfDictionary? dss, String key) {
+    final Set<String> seen = <String>{};
+    if (dss != null && dss.containsKey(key)) {
+      final IPdfPrimitive? array = PdfCrossTable.dereference(dss[key]);
+      if (array is PdfArray) {
+        for (int i = 0; i < array.count; i++) {
+          final IPdfPrimitive? item = PdfCrossTable.dereference(array[i]);
+          if (item is PdfStream) {
+            final List<int>? data = item.getDecompressedData(false);
+            if (data != null) seen.add(sha256.convert(data).toString());
+          }
+        }
+      }
+    }
+    final List<List<int>> out = <List<int>>[];
+    for (final List<int> item in items) {
+      if (item.isEmpty) continue;
+      if (seen.add(sha256.convert(item).toString())) out.add(item);
+    }
+    return out;
+  }
+
   void _addVri(
       PdfDictionary catalog,
       PdfSignatureValidationItem sig,

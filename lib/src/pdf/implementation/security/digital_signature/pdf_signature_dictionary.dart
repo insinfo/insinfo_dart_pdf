@@ -2027,6 +2027,7 @@ class PdfCmsSigner {
   /// - [privateKeyPem]: `BEGIN RSA PRIVATE KEY` (PKCS#1) ou `BEGIN PRIVATE KEY` (PKCS#8).
   /// - [certificatePem]: `BEGIN CERTIFICATE` do signatário.
   /// - [chainPem]: cadeia/intermediários adicionais (cada item pode conter 1+ certs).
+  /// - [timeStampTokenFor]: carimbo do tempo da assinatura; ver [signDetachedRsa].
   static Uint8List signDetachedSha256RsaFromPem({
     required Uint8List contentDigest,
     required String privateKeyPem,
@@ -2035,6 +2036,7 @@ class PdfCmsSigner {
     List<String> chainPem = const <String>[],
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    Uint8List? Function(Uint8List signatureValue)? timeStampTokenFor,
     String? signaturePolicyOid,
   }) {
     final RsaPrivateKeyParam privateKey =
@@ -2051,6 +2053,7 @@ class PdfCmsSigner {
       extraCertsDer: chainDer,
       cryptographicStandard: cryptographicStandard,
       timeStampToken: timeStampToken,
+      timeStampTokenFor: timeStampTokenFor,
       signaturePolicyOid: signaturePolicyOid,
     );
   }
@@ -2136,6 +2139,8 @@ class PdfCmsSigner {
   /// - [privateKey] é a chave privada RSA no formato interno do `dart_pdf`.
   /// - [extraCertsDer] são certificados adicionais (intermediários) em DER.
   /// - [timeStampToken] (opcional) embute o RFC3161 token como unsigned attribute.
+  /// - [timeStampTokenFor] (opcional) obtém esse token a partir do valor da
+  ///   assinatura; ver [signDetachedRsa].
   static Uint8List signDetachedSha256Rsa({
     required Uint8List contentDigest,
     required Uint8List certificateDer,
@@ -2143,6 +2148,7 @@ class PdfCmsSigner {
     List<Uint8List> extraCertsDer = const <Uint8List>[],
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    Uint8List? Function(Uint8List signatureValue)? timeStampTokenFor,
     String? signaturePolicyOid,
   }) {
     return signDetachedRsa(
@@ -2153,6 +2159,7 @@ class PdfCmsSigner {
       hashAlgorithm: MessageDigestAlgorithms.secureHash256,
       cryptographicStandard: cryptographicStandard,
       timeStampToken: timeStampToken,
+      timeStampTokenFor: timeStampTokenFor,
       signaturePolicyOid: signaturePolicyOid,
     );
   }
@@ -2160,6 +2167,14 @@ class PdfCmsSigner {
   /// Gera um CMS detached RSA para o [hashAlgorithm] informado.
   ///
   /// [hashAlgorithm] segue a convenção interna (ex.: `SHA-256`, `SHA-1`, `SHA-384`, `SHA-512`).
+  ///
+  /// [timeStampTokenFor] carimba a assinatura (RFC 3161, `signature-time-stamp`).
+  /// O carimbo é calculado **sobre o valor da assinatura**, que só existe depois
+  /// de assinar — por isso um [timeStampToken] pronto não serve para isso. A
+  /// função recebe esse valor e devolve o `TimeStampToken` (ContentInfo DER) a
+  /// embutir como atributo não assinado; o hash do imprint é escolha de quem
+  /// emite o carimbo. Devolver `null` assina sem carimbo. Ignorada quando
+  /// [timeStampToken] é informado.
   static Uint8List signDetachedRsa({
     required Uint8List contentDigest,
     required Uint8List certificateDer,
@@ -2168,6 +2183,7 @@ class PdfCmsSigner {
     required String hashAlgorithm,
     CryptographicStandard cryptographicStandard = CryptographicStandard.cms,
     Uint8List? timeStampToken,
+    Uint8List? Function(Uint8List signatureValue)? timeStampTokenFor,
     String? signaturePolicyOid,
   }) {
     final X509CertificateParser parser = X509CertificateParser();
@@ -2215,10 +2231,13 @@ class PdfCmsSigner {
 
     cms.setSignedData(signature, null, keySigner.getEncryptionAlgorithm());
 
+    final Uint8List? token = timeStampToken ??
+        timeStampTokenFor?.call(Uint8List.fromList(signature));
+
     final List<int>? cmsDer = cms.sign(
       contentDigest,
       null,
-      timeStampToken,
+      token,
       null,
       null,
       cryptographicStandard,

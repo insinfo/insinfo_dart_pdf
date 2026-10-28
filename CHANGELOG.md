@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.8
+
+Signature timestamps and LTV data for external signing done by the issuer of
+the chain itself (an in-house CA), without network calls.
+
+- `PdfCmsSigner.signDetachedRsa` (and `signDetachedSha256Rsa`,
+  `signDetachedSha256RsaFromPem`) take `timeStampTokenFor`. A signature
+  timestamp is computed over the signature value, which only exists after
+  signing, so the ready-made `timeStampToken` could not carry one. The
+  function receives that value and returns the `TimeStampToken`, embedded as
+  the `signature-time-stamp` unsigned attribute; `null` signs without it.
+- `PdfLtvManager.addValidationData` writes certificates, CRLs and OCSP
+  responses the caller already holds into the DSS. `enableLtv` downloads them
+  from the certificate URLs, which for an in-house CA means the server calling
+  itself through its public address mid-signing. Items already in the DSS are
+  not written again.
+- Covered by `test/cms_timestamp_callback_and_dss_test.dart`.
+
 ## 1.0.7
 
 Online revocation checking, which started to work in 1.0.6, made validation
