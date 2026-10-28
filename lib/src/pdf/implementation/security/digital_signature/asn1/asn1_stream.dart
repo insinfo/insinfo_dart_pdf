@@ -75,7 +75,11 @@ class Asn1Stream {
   static List<int> getBytes(Asn1StreamHelper stream, List<List<int>> buffers) {
     final int length = stream.remaining;
     if (length >= buffers.length) {
-      stream.toArray();
+      // The reusable buffers cover short values only (< 16 bytes). Before
+      // 1.0.9 the result of toArray() was dropped and the lookup below threw
+      // RangeError: any BOOLEAN/ENUMERATED/OID of 16+ bytes — a UUID-based
+      // OID such as `2.25.<uuid>` — broke parsing of the whole structure.
+      return stream.toArray();
     }
     List<int> bytes = buffers[length];
     if (bytes.isEmpty) {

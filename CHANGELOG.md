@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.9
+
+Signature timestamps were never read: `timestampStatus.present` came back
+`false` for every timestamped signature, ICP-Brasil ones included. Three
+parser faults, each enough to hide them:
+
+- Fix: unsignedAttrs is `[1] IMPLICIT SET OF Attribute`. With the implicit
+  tag the parser hands back the first Attribute itself, not the list, and the
+  validator only accepted a SET, so the `signature-time-stamp` attribute was
+  never found. The tag bytes are now re-read as a SET, as the signed
+  attributes already were.
+- Fix: `Asn1Stream.getBytes` dropped the result of `toArray()` for values of
+  16 bytes or more and threw `RangeError`: any BOOLEAN, ENUMERATED or OID that
+  long (a UUID-based OID such as `2.25.<uuid>`) broke the whole structure.
+- Fix: OID arcs past 64 bits were truncated to 32 bits, turning
+  `2.25.<128-bit uuid>` into another OID.
+- Covered by `test/signature_timestamp_parsing_test.dart`, with an internal
+  SALI signature timestamped by its own TSA and carrying a DSS
+  (`test/assets/sali_interna_carimbo_tempo_dss.pdf`).
+
 ## 1.0.8
 
 Signature timestamps and LTV data for external signing done by the issuer of

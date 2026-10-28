@@ -1243,12 +1243,22 @@ class PdfSignatureValidator {
       }
       if (unsignedAttrs == null) return null;
 
-      final Asn1? unsignedObj = unsignedAttrs.getObject();
-      final Asn1Set? attrsSet = unsignedObj is Asn1Set ? unsignedObj : null;
-      if (attrsSet == null) return null;
+      // unsignedAttrs is [1] IMPLICIT SET OF Attribute. With the implicit tag
+      // the parser cannot tell the content was a SET: getObject() hands back
+      // the first Attribute itself (OID, values), not the list. Reading it as
+      // a set meant no signature timestamp was ever found — every timestamped
+      // signature, ICP-Brasil included, reported "no timestamp". Re-read the
+      // tag bytes with the SET tag instead, as the signed attributes are.
+      final List<int>? taggedDer = unsignedAttrs.getDerEncoded();
+      if (taggedDer == null || taggedDer.isEmpty) return null;
+      final List<int> asSet = List<int>.from(taggedDer)..[0] = 0x31;
+      final Asn1? attrsObj = Asn1Stream(PdfStreamReader(asSet)).readAsn1();
+      if (attrsObj is! Asn1Set) return null;
+      final List<Asn1?> attrs = <Asn1?>[
+        for (int i = 0; i < attrsObj.objects.length; i++) attrsObj[i]?.getAsn1(),
+      ];
 
-      for (int i = 0; i < attrsSet.objects.length; i++) {
-        final Asn1? attrObj = attrsSet[i]?.getAsn1();
+      for (final Asn1? attrObj in attrs) {
         if (attrObj is! DerSequence || attrObj.count < 2) continue;
         final Asn1? oidObj = attrObj[0]?.getAsn1();
         if (oidObj is! DerObjectID) continue;

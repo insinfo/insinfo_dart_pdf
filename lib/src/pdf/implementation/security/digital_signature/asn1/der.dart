@@ -723,7 +723,9 @@ class DerObjectID extends Asn1 {
             first = false;
           }
           result += '.';
-          result += number.toSigned(32).toInt().toString();
+          // The whole arc. Truncating to 32 bits turned a UUID-based OID
+          // (`2.25.<128-bit uuid>`) into a different, short OID.
+          result += number.toString();
           number = null;
           value = 0;
         } else {
